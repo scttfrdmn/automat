@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -345,5 +346,62 @@ func TestDefaultPathHonorsXDG(t *testing.T) {
 	}
 	if got != "/tmp/xdg/automat/config.toml" {
 		t.Errorf("DefaultPath = %q", got)
+	}
+}
+
+// TestSSOStartURLIsRefusedInsecure covers the value that decides where a bearer
+// token is exchanged. It is checked at load time rather than only in
+// internal/login, so an operator running any command against a config with an
+// http:// start URL is told before a credential is ever exchanged over it.
+func TestSSOStartURLIsRefusedInsecure(t *testing.T) {
+	for name, url := range map[string]string{
+		"plain http":        "http://example.awsapps.com/start",
+		"file scheme":       "file:///etc/passwd",
+		"no scheme":         "example.awsapps.com/start",
+		"no host":           "https:///start",
+		"padded":            " https://example.awsapps.com/start ",
+		"newline injection": "https://example.awsapps.com/start\nsso_region = \"evil\"",
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := "[context.research]\nsso_start_url = " + strconv.Quote(url) + "\n"
+			if _, err := Decode([]byte(doc), "test.toml"); err == nil {
+				t.Errorf("Decode accepted sso_start_url %q", url)
+			}
+		})
+	}
+	// And the valid form still loads.
+	doc := "[context.research]\nsso_start_url = \"https://example.awsapps.com/start\"\n" +
+		"sso_region = \"us-east-1\"\n"
+	if _, err := Decode([]byte(doc), "test.toml"); err != nil {
+		t.Errorf("Decode rejected a valid SSO configuration: %v", err)
+	}
+}
+
+// TestRegionMustLookLikeARegion: both region fields reach an SDK endpoint
+// resolver. A value with a dot or a slash in it is one that has been mistaken for
+// a hostname or a path somewhere upstream, and an endpoint built from it points
+// somewhere the operator did not choose.
+func TestRegionMustLookLikeARegion(t *testing.T) {
+	for _, key := range []string{"region", "sso_region"} {
+		for _, bad := range []string{
+			"us-east-1.evil.example.com",
+			"../us-east-1",
+			"US-EAST-1",
+			"us_east_1",
+			"us-east-1/",
+			"http://evil.example.com",
+		} {
+			doc := "[context.research]\n" + key + " = " + strconv.Quote(bad) + "\n"
+			if _, err := Decode([]byte(doc), "test.toml"); err == nil {
+				t.Errorf("Decode accepted %s = %q", key, bad)
+			}
+		}
+		// Real region shapes, including the ones with three segments.
+		for _, good := range []string{"us-east-1", "eu-west-2", "ap-southeast-4", "us-gov-west-1"} {
+			doc := "[context.research]\n" + key + " = " + strconv.Quote(good) + "\n"
+			if _, err := Decode([]byte(doc), "test.toml"); err != nil {
+				t.Errorf("Decode rejected %s = %q, which is a real region: %v", key, good, err)
+			}
+		}
 	}
 }

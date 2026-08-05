@@ -3,11 +3,12 @@
 
 // Command automat vends compliant AWS sub-accounts.
 //
-// This is the Phase 0 stub: the root command and version reporting only. The
-// subcommands of DESIGN §13 land in later phases, each in its own file here.
+// Each subcommand of DESIGN §13 lives in its own file here. Phase 1 provides
+// login, preflight, and setup --request; the rest arrive with their phases.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,6 +19,14 @@ import (
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
+		// A command that has already printed everything the operator needs
+		// carries its exit code rather than a message: `preflight` reporting
+		// "not ready" is a successful run with a non-zero answer, and printing
+		// an error after the report would suggest the tool failed.
+		var ex *exitError
+		if errors.As(err, &ex) {
+			os.Exit(ex.ExitCode())
+		}
 		// cobra has already printed the error; exit non-zero for cron and CI.
 		// DESIGN §12 wants a richer exit-code taxonomy; it arrives with `verify`.
 		os.Exit(1)
@@ -30,8 +39,10 @@ func newRootCmd() *cobra.Command {
 		Short: "Vend compliant AWS accounts from an org you already control",
 		Long: "automat vends AWS member accounts with compliance controls attached at birth,\n" +
 			"driven by a compiled control artifact rather than a landing-zone deployment.\n\n" +
-			"Phase 0 build: the control artifact schema and vendored catalogs exist; the\n" +
-			"vend pipeline does not yet.",
+			"Start with `automat preflight`: it reports where you stand in an organization and\n" +
+			"what automat can and cannot do from there. If you are in a member account, it\n" +
+			"will point you at `automat setup --request`.\n\n" +
+			"Phase 1 build: preflight and onboarding work; `vend` does not exist yet.",
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		// Print help rather than an opaque error when invoked bare.
@@ -41,7 +52,19 @@ func newRootCmd() *cobra.Command {
 	}
 	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	cmd.Version = version.Version
-	cmd.AddCommand(newVersionCmd())
+
+	g := &globals{}
+	cmd.PersistentFlags().StringVar(&g.configPath, "config", "",
+		"config file (default ~/.config/automat/config.toml)")
+	cmd.PersistentFlags().StringVar(&g.contextName, "context", "",
+		"named context in the config file to use")
+
+	cmd.AddCommand(
+		newVersionCmd(),
+		newLoginCmd(g),
+		newPreflightCmd(g),
+		newSetupCmd(g),
+	)
 	return cmd
 }
 

@@ -28,6 +28,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,6 +71,17 @@ type Context struct {
 	Region string `toml:"region"`
 	// Profile is the AWS shared-config profile to resolve credentials from.
 	Profile string `toml:"profile"`
+
+	// SSOStartURL is the identity provider's start URL for `automat login`,
+	// e.g. "https://example.awsapps.com/start". Optional: an operator who gets
+	// credentials from a profile, an instance role, or a federated session never
+	// needs it, because every other command reads the standard credential chain.
+	SSOStartURL string `toml:"sso_start_url"`
+	// SSORegion is the region the identity store lives in, which is not
+	// necessarily Region — an organization vending into us-west-2 may well have
+	// its SSO instance in us-east-1. Kept separate rather than reusing Region so
+	// that getting one wrong cannot silently mean the other.
+	SSORegion string `toml:"sso_region"`
 }
 
 // DefaultPath returns the config file path, honoring XDG_CONFIG_HOME.
@@ -148,6 +160,7 @@ var (
 	contextTags = map[string]bool{
 		"org": true, "ou": true, "vendor_role_arn": true, "external_id_ref": true,
 		"email_pattern": true, "region": true, "profile": true,
+		"sso_start_url": true, "sso_region": true,
 	}
 )
 
@@ -202,7 +215,33 @@ var (
 	reOrgID   = regexp.MustCompile(`^o-[a-z0-9]{10,32}$`)
 	reOUID    = regexp.MustCompile(`^ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}$`)
 	reRoleARN = regexp.MustCompile(`^arn:aws[a-z-]*:iam::\d{12}:role/[\w+=,.@/-]{1,512}$`)
+	// A region name, deliberately strict: this value reaches an SDK endpoint
+	// resolver, and a region containing a dot or a slash is a value that has been
+	// mistaken for a hostname or a path somewhere upstream.
+	reRegion = regexp.MustCompile(`^[a-z]{2}(?:-[a-z]+)+-\d$`)
 )
+
+// validateSSOStartURL checks the start URL without resolving it. Kept here rather
+// than only in internal/login so that `automat preflight` on a bad config reports
+// the problem before any credential exchange is attempted.
+func validateSSOStartURL(raw string) error {
+	if strings.TrimSpace(raw) != raw {
+		return fmt.Errorf("%q has surrounding whitespace, which makes it read as valid and "+
+			"compare as something else", raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%q is not a URL: %w", raw, err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("%q uses scheme %q; automat requires https, because the login flow "+
+			"exchanges a bearer token over it", raw, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%q has no host; it should look like https://example.awsapps.com/start", raw)
+	}
+	return nil
+}
 
 // validate checks the shape of every value that will later be interpolated into
 // an ARN, a policy document, or an API call.
@@ -243,6 +282,23 @@ func (c *Config) validate(path string) error {
 			if err := validateExternalIDRef(ctx.ExternalIDRef); err != nil {
 				return fmt.Errorf("%s: external_id_ref: %w", where, err)
 			}
+		}
+		// The start URL decides where a bearer token is exchanged and where it
+		// is cached. Refused here rather than only at login time, so a config
+		// file with an http:// start URL is a validation error the operator sees
+		// before it becomes a downgraded credential exchange.
+		if ctx.SSOStartURL != "" {
+			if err := validateSSOStartURL(ctx.SSOStartURL); err != nil {
+				return fmt.Errorf("%s: sso_start_url: %w", where, err)
+			}
+		}
+		if ctx.SSORegion != "" && !reRegion.MatchString(ctx.SSORegion) {
+			return fmt.Errorf("%s: sso_region %q is not a region name — use the us-east-1 form",
+				where, ctx.SSORegion)
+		}
+		if ctx.Region != "" && !reRegion.MatchString(ctx.Region) {
+			return fmt.Errorf("%s: region %q is not a region name — use the us-east-1 form",
+				where, ctx.Region)
 		}
 	}
 	return nil

@@ -169,6 +169,23 @@ func (r *Report) Failures() []Check {
 	return out
 }
 
+// Undetermined returns the checks automat could not complete.
+//
+// These are not failures and must not be reported as any: a check that could not
+// run has told the operator nothing, whereas a Fail has told them something
+// actionable. The distinction is the whole reason Result has three values, and it
+// matters most to a caller that turns this report into an exit code — "not ready"
+// and "could not tell" call for different responses from whoever is reading.
+func (r *Report) Undetermined() []Check {
+	var out []Check
+	for _, c := range r.Checks {
+		if c.Result == Unknown {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // Runner performs preflight. Every field is an interface so this runs entirely
 // against fakes (CLAUDE.md rule 1).
 type Runner struct {
