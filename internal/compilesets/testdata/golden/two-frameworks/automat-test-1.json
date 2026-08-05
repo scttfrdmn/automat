@@ -1,0 +1,85 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::*:root"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat186d154f156fa914"
+    },
+    {
+      "Action": [
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:StopLogging"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat3cecb82c76ed0eea"
+    },
+    {
+      "Action": [
+        "config:DeleteConfigurationRecorder"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatfe61910e9a0a5800"
+    },
+    {
+      "Action": [
+        "config:StopConfigurationRecorder"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatcbf52cfb40b7819f"
+    },
+    {
+      "Action": [
+        "iam:CreateAccessKey",
+        "iam:CreateUser"
+      ],
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat8e53b7944a78c63a"
+    }
+  ]
+}

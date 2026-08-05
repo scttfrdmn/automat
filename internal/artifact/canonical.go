@@ -130,7 +130,7 @@ func (s *SCP) canonicalize() {
 func (s *SCPStatement) canonicalize() {
 	s.Action = sortedUnique(s.Action)
 	s.Resource = sortedUnique(s.Resource)
-	s.ExemptPrincipals = s.ExemptPrincipals.canonicalize()
+	s.ExemptPrincipals = s.ExemptPrincipals.Canonical()
 	if len(s.Condition) == 0 {
 		s.Condition = nil
 		return
@@ -149,7 +149,7 @@ func (s *SCPStatement) canonicalize() {
 	}
 }
 
-// canonicalize sorts the exemption list by principal and drops entries that are
+// Canonical sorts the exemption list by principal and drops entries that are
 // duplicates in both fields, the same way sortedUnique treats an action list.
 //
 // It deliberately keeps two entries that name the same principal with different
@@ -157,7 +157,11 @@ func (s *SCPStatement) canonicalize() {
 // would let the artifact hash agree while the two files disagree about why a
 // hole in a Deny exists. Validate rejects it — canonicalization normalizes, it
 // does not adjudicate.
-func (es ExemptPrincipals) canonicalize() ExemptPrincipals {
+//
+// Exported because the SCP packer intersects exemption lists and its output has
+// to be in the same canonical form this hashes: two spellings of one exemption
+// set must not produce two policies.
+func (es ExemptPrincipals) Canonical() ExemptPrincipals {
 	if len(es) == 0 {
 		return nil
 	}

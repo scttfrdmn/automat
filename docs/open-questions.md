@@ -111,11 +111,37 @@ effects where visible". Whether a member account can read the delegation policy 
 it policy-management rights is unverified. If it cannot, preflight must be told rather than
 detect, and the onboarding bundle needs to carry that fact.
 
-### Q6 — SCP quota edges under union output
+### Q6 — SCP quota edges under union output — **PARTLY ANSWERED, BLOCKED ON CATALOG CONTENT**
 
 DESIGN §16 names the quotas (5 SCPs per target, 5120 characters each). What is unverified is
 how close a real union of `cmmc-l1` + `800-171r2` + a campus baseline comes to them, and
 therefore how aggressive the packer must be about merging Action lists.
+
+The packer now exists and is measured, so half of this is answered: with 3 usable slots and
+4864 usable characters each, synthetic statements of one action and one condition fit about
+28 to a policy and about 85 before overflow (`TestQuotaWarningsFireBeforeTheFailure` searches
+for the boundaries rather than pinning them, since they move with the rendered form). The
+merger reduces a restated requirement to one statement, so a crosswalk between two frameworks
+costs roughly what one framework does.
+
+**What is still unanswered is the input, not the packer.** `catalogs/cmmc-l1.json` carries 15
+controls and *none* of them has an `scp` block — the preventive half of the shipped catalog is
+empty, so no real artifact exercises the packer at all.
+`TestTheModelUnderstandsEveryOperatorTheCatalogsUse` logs that count (`shipped catalogs
+contribute 0 SCP-bearing controls`) rather than asserting on it, and falls back to the golden
+fixtures so it is not a test with an empty subject. Two consequences worth holding onto:
+
+- Every number above is from synthetic fixtures. A real conformance-pack-derived SCP has
+  longer action lists and more conditions, so the real per-policy statement count will be
+  lower — plausibly much lower.
+- The behavioral model's operator coverage is currently verified against fixtures automat's
+  own tests wrote. A catalog using an operator `conditionMatches` does not model would weaken
+  the property suite silently; the test is in place to catch it the moment a real SCP arrives.
+
+**Revisit when `gen/catalog` emits SCP blocks** (Phase 4's conformance-pack join). At that
+point re-measure with real statements, and treat a real union landing above ~2 of the 3 usable
+slots as a signal that the merger needs to be more aggressive about Action lists than the
+normal form is.
 
 ### Q7 — Does `MoveAccount` reliably succeed immediately after `CreateAccount`?
 

@@ -15,3 +15,11 @@ coverage.*
 *.swp
 .idea/
 .vscode/
+
+# rapid's failure reproductions. Written when a property test fails, named with a
+# timestamp and a pid, and only meaningful to the run that produced them: rapid
+# replays one to re-derive the shrunk counterexample locally. Committing them would
+# add a file per red run — including ones for tests that no longer exist — and imply
+# a fixture where there is only a scratch artifact. A counterexample worth keeping
+# becomes a table-driven case in the test file, where it is named and explained.
+/**/testdata/rapid/

@@ -1,0 +1,162 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "NotAction": [
+        "access-analyzer:*",
+        "account:*",
+        "acm:*",
+        "aws-marketplace:*",
+        "aws-portal:*",
+        "batch:*",
+        "budgets:*",
+        "ce:*",
+        "cloudfront:*",
+        "config:*",
+        "cur:*",
+        "directconnect:*",
+        "ec2:*",
+        "fsx:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "kms:*",
+        "networkmanager:*",
+        "organizations:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "s3:*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "trustedadvisor:*",
+        "waf:*",
+        "wellarchitected:*"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Sid": "AutomatDenyServicesOutsideAllowlist"
+    },
+    {
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        },
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "us-west-2"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "NotAction": [
+        "access-analyzer:*",
+        "account:*",
+        "acm:*",
+        "aws-marketplace:*",
+        "aws-portal:*",
+        "budgets:*",
+        "ce:*",
+        "cloudfront:*",
+        "config:*",
+        "cur:*",
+        "directconnect:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "kms:*",
+        "networkmanager:*",
+        "organizations:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "trustedadvisor:*",
+        "waf:*",
+        "wellarchitected:*"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Sid": "AutomatDenyRegionsOutsideAllowlist"
+    },
+    {
+      "Action": [
+        "*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::*:root"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat186d154f156fa914"
+    },
+    {
+      "Action": [
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:StopLogging"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat3cecb82c76ed0eea"
+    },
+    {
+      "Action": [
+        "config:DeleteConfigurationRecorder",
+        "config:StopConfigurationRecorder"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automata6f3f604f5c36c91"
+    },
+    {
+      "Action": [
+        "securityhub:DisableSecurityHub"
+      ],
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat1004f9ed05db2091"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "service058:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-058"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat752b20c6e253c45e"
+    },
+    {
+      "Action": [
+        "service059:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-059"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatf120fb36fab8942b"
+    }
+  ]
+}

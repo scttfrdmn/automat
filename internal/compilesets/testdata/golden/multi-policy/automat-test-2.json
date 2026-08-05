@@ -1,0 +1,498 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "service029:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-029"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat3de6f4841d8adc7c"
+    },
+    {
+      "Action": [
+        "service030:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-030"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat7159175f2ec30372"
+    },
+    {
+      "Action": [
+        "service031:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-031"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatef442557c4cd6446"
+    },
+    {
+      "Action": [
+        "service032:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-032"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat69313f45b63021e2"
+    },
+    {
+      "Action": [
+        "service033:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-033"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat635295ee699f3bab"
+    },
+    {
+      "Action": [
+        "service034:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-034"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat383c6d89cf16924d"
+    },
+    {
+      "Action": [
+        "service035:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-035"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat554a4614835c7e7b"
+    },
+    {
+      "Action": [
+        "service036:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-036"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat9dc6a3d071ae865a"
+    },
+    {
+      "Action": [
+        "service037:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-037"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat301a2d3ae2bfd668"
+    },
+    {
+      "Action": [
+        "service038:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-038"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatdc4d8989149223ef"
+    },
+    {
+      "Action": [
+        "service039:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-039"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat8e38a3f8343d65c6"
+    },
+    {
+      "Action": [
+        "service040:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-040"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat7dc2cb13eefd541f"
+    },
+    {
+      "Action": [
+        "service041:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-041"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatad5e8883b7ee85b2"
+    },
+    {
+      "Action": [
+        "service042:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-042"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat7153a0ba0e1b2d91"
+    },
+    {
+      "Action": [
+        "service043:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-043"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat58ce2a37a96ee605"
+    },
+    {
+      "Action": [
+        "service044:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-044"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatf5597c4de79ec0e3"
+    },
+    {
+      "Action": [
+        "service045:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-045"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat0f62fd211fa20538"
+    },
+    {
+      "Action": [
+        "service046:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-046"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat95e9683736713104"
+    },
+    {
+      "Action": [
+        "service047:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-047"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat582b5817a65bbddd"
+    },
+    {
+      "Action": [
+        "service048:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-048"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatf3589075bca4699f"
+    },
+    {
+      "Action": [
+        "service049:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-049"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat7c7bf521d762d7d5"
+    },
+    {
+      "Action": [
+        "service050:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-050"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatf78b163c496862da"
+    },
+    {
+      "Action": [
+        "service051:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-051"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat80ac8eb4d60dedc5"
+    },
+    {
+      "Action": [
+        "service052:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-052"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat912999a6ef7e8054"
+    },
+    {
+      "Action": [
+        "service053:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-053"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automate416307f4e33e2dc"
+    },
+    {
+      "Action": [
+        "service054:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-054"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automate91539720cb200d4"
+    },
+    {
+      "Action": [
+        "service055:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-055"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat56ec7f52a8a712e4"
+    },
+    {
+      "Action": [
+        "service056:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-056"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatbaeb05281cdadf86"
+    },
+    {
+      "Action": [
+        "service057:Action"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/unit": [
+            "unit-057"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat502efe575145ae1d"
+    }
+  ]
+}
