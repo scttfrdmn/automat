@@ -190,6 +190,20 @@ func (r *Request) Validate() error {
 			"value is not shown here because it may be a live one. AWS itself permits `/` and spaces; "+
 			"automat does not, so a value from an existing trust policy may be rejected here",
 			redactExternalID(r.ExternalID)))
+	} else if reason, weak := weakExternalID(r.ExternalID); weak {
+		// Length and charset are satisfied and the value is still not a secret:
+		// "0000000000000000" and "password12345678" both passed before this. An
+		// ExternalId's only property is being unguessable, so one of these is worse
+		// than none at all — it puts a condition in the trust policy that reviews as
+		// a control and is not one.
+		//
+		// The reason is printed, the value is not: see redactExternalID. Note this
+		// says nothing about a value that passes; see weakExternalID.
+		problems = append(problems, fmt.Sprintf("external_id: the value given is not usable "+
+			"because %s. An ExternalId's only job is to be a value a third party who knows the "+
+			"role ARN was never told, so a guessable one leaves the confused-deputy condition in "+
+			"the trust policy looking like a control while being none. Drop --external-id and let "+
+			"automat generate one", reason))
 	}
 	check("requester_contact", r.RequesterContact, reEmail, "use one email address")
 	check("generated_at", r.GeneratedAt, reTimestamp, "use RFC 3339 UTC to the second, e.g. 2026-08-05T14:00:00Z")

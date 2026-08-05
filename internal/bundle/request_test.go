@@ -238,8 +238,16 @@ func TestShortExternalIDIsRejected(t *testing.T) {
 			t.Errorf("ExternalId %q (%d chars) was accepted", v, len(v))
 		}
 	}
+	// Exactly at the floor is accepted. Not strings.Repeat("a", 16), which this
+	// fixture used to be: that is 16 characters and also one character repeated, so
+	// once weakExternalID existed the test was asserting the length floor with a
+	// value refused for a different reason. A fixture that passes for the wrong
+	// reason is a test that stops testing what it says.
 	r := validRequest()
-	r.ExternalID = strings.Repeat("a", 16)
+	r.ExternalID = "k7Rq2mZx9Tp4Wc8v"
+	if len(r.ExternalID) != 16 {
+		t.Fatalf("fixture is %d characters, not the 16 this test is about", len(r.ExternalID))
+	}
 	if err := r.Validate(); err != nil {
 		t.Errorf("a 16-character ExternalId was rejected: %v", err)
 	}

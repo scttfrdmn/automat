@@ -158,8 +158,14 @@ func newSetupCmd(g *globals) *cobra.Command {
 	f.StringVar(&roleName, "vendor-role-name", "automat-vendor",
 		"name for the role to create in the management account")
 	f.StringVar(&contact, "contact", "", "address central IT should reply to")
+	// The help text says "reuse", not "set", and names the only case. automat cannot
+	// measure whether a supplied value is unguessable -- that is the value's whole
+	// job and no computation reveals it -- so the wording has to steer rather than
+	// reassure. Obvious placeholders are refused by Request.Validate; anything past
+	// that is the operator's word.
 	f.StringVar(&externalID, "external-id", "",
-		"reuse an existing ExternalId instead of generating one (only when re-sending a bundle for a role that already exists)")
+		"reuse the ExternalId an existing role already trusts (only when re-sending a bundle for "+
+			"a deployed role; otherwise omit this and let automat generate one)")
 	f.StringVar(&outDir, "out", "automat-onboarding", "directory to write the bundle into")
 	f.BoolVar(&dryRun, "dry-run", false, "print what would be written and stop")
 	f.BoolVar(&force, "force", false, "overwrite files that were edited by hand")
