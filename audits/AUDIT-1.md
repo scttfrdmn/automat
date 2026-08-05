@@ -44,6 +44,13 @@ L3 → `73ab082`. H2, M1 → `541c3ec`. N1, N2 → `b973b2c`. M2 → `2057fc9`.
 **For the human: 2 ACCEPTED findings, 2 carried-forward AUDIT-0 acceptances, 3
 ratification requests, and one trade — in the two sections at the end.**
 
+**Amended after the Phase 1 review.** The review's own instructions changed the tree
+this audit describes, so the ratification and carry-forward sections were extended
+rather than left to describe a tree that no longer exists: two post-audit schema
+changes are recorded for ratification (item 4), and the carry-forwards gained two
+entries the review created (items 6 and 7). Everything above those sections is as
+audited.
+
 ---
 
 ## Critical
@@ -513,6 +520,79 @@ three were made during the phase; none is retroactively self-approved.
    two OU-name checks (N1, N2). **No schema file changed in Phase 1** — these are Go
    validators, so `schema/CHANGELOG.md` is untouched.
 
+   That last sentence stopped being true after the review; see item 4.
+
+4. **Two schema changes made after this audit, at the review's own instruction
+   (item 9).** Listed here because rule 6 says schema changes are ratified in the
+   audit file, and because these two do **not** fit the "strictly tightens" exception
+   that lets 3 above land unasked: 9(a) adds a record type and 9(b) changes a field's
+   type. The review authorized both explicitly, so this is the record, not a request —
+   but it should be visible here rather than only in `schema/CHANGELOG.md`, since an
+   auditor reading the audits alone would otherwise see a phase that changed no schema.
+
+   Both landed **pre-publication**, so neither bumps a version: nothing has emitted or
+   consumed a 1.0.0 manifest or artifact, and no file in `catalogs/` was affected.
+   After publication 9(a) would be a major bump (it changes what a complete chain looks
+   like) and so would 9(b) (a field's type changes). Landing them now rather than in
+   Phase 2 is the whole reason the review asked for them while schemas are still soft.
+
+   - **9(a) — `custody-transfer`, a terminal evidence record** (`b54bd0f`).
+     `schema/evidence-manifest-v1.schema.json`. Security-relevant in a way worth
+     stating plainly: an append-only chain with no way to end deliberately means an
+     abandoned chain and a **truncated** one are indistinguishable, so no silent
+     ending can be trusted and every chain is weaker for it. With the terminal record,
+     a chain that stops without one is positively suspicious. Constraints, each
+     verified by deletion: required on a `custody-transfer` record and **forbidden on
+     every other kind** (without the negative half a transfer could ride along on an
+     ordinary `account-move` record, ending the chain where no reader looks); no
+     `artifact` or `enforcement` on the same record; `outcome` must be `success`; at
+     most one per manifest; prose fields reject control characters, because they are
+     printed back in reports where a newline forges a line.
+
+     **One constraint the schema cannot express, and AUDIT-2 inherits it.** That the
+     record is the *last* one is not statable in JSON Schema — it cannot refer to an
+     array's final position. "At most one" is the expressible half. The Phase 2 chain
+     validator must enforce terminality alongside the hash links, and
+     `TestTheSchemaCannotSayCustodyTransferIsLast` pins the document the schema lets
+     through so the obligation cannot be quietly dropped. No Go types were added: the
+     review asked for schema and reasoning explicitly without implementation.
+
+   - **9(b) — `exempt_automation_role` (boolean) becomes `exempt_principals`**
+     (`02827cb`). `schema/control-artifact-v1.schema.json`. **This is the one field in
+     a catalog that WIDENS a policy**, and a catalog file is attacker-controlled input
+     in this threat model, which makes it the highest-value thing to smuggle into one.
+     Four constraints follow from that, and all four are properly AUDIT-2's business
+     since the packer that consumes them does not exist yet:
+
+     1. **Union intersects these lists, never concatenates.** Concatenating would let
+        adding a control set *widen* the merge — the direction DESIGN §9's monotonicity
+        property forbids. This is a direct feed into carry-forward item 2 below: the
+        can-any-merge-widen property test must cover exemptions, not only actions and
+        resources, and this is the field where a widening merge would be easiest to
+        write and hardest to notice.
+     2. **No wildcards, roles only.** Either `automat:automation-role` (materialized at
+        vend time) or a fully qualified IAM role ARN. Not `arn:aws:iam::*:root`, not a
+        trailing `*`, not a user — one such entry would undo the root-user Deny DESIGN
+        §10 exists to apply. Partition-agnostic, so GovCloud is not locked out of the
+        catalog most likely to need it.
+     3. **The reason is required and inside the content hash**, so the stated
+        justification for a hole in a Deny cannot be rewritten under a signature that
+        still verifies. Capped at 512 bytes, control characters rejected.
+     4. **At most eight per statement**, against §16's 5120-character SCP quota. A hard
+        error beats a policy that silently stops fitting.
+
+     Canonicalization sorts and drops exact duplicates but deliberately **keeps** two
+     entries naming one principal with different reasons, because silently picking one
+     would let the artifact hash agree while the two files disagree about why a hole
+     exists. `Validate` rejects it — canonicalization normalizes, it does not
+     adjudicate. Both the Go validator and the published schema reject all eleven abuse
+     cases independently, each jam-checked from both sides.
+
+     **DESIGN §10 was stale and is updated in the same commit.** It said "a Condition
+     exempting only the automat automation role ARN". Flagged rather than silently
+     reinterpreted, per CLAUDE.md; the review authorized the list, so the design text
+     was the wrong half.
+
 ## For the human to review — ACCEPTED items
 
 Two new findings, plus two AUDIT-0 acceptances re-examined. Each with a reason a
@@ -689,3 +769,29 @@ Added by the §13 reconciliation:
    now written and specifies the checklist (Q9 first, per review item 4), but no test
    carries the `smoke` tag. AUDIT-2 should confirm the gap is still deliberate and still
    documented, since a target that runs zero tests and exits 0 reads as a pass.
+
+Added by review item 9 (see ratification item 4 for what changed and why):
+
+6. **Two schema obligations now sit in Go code that does not exist.** Both are cases
+   where the schema deliberately stops short and something in Phase 2 has to finish the
+   job, which makes them exactly the kind of thing an audit finds missing a year later:
+
+   - **Chain terminality.** JSON Schema cannot say a `custody-transfer` record is the
+     *last* record. The Phase 2 chain validator must enforce it alongside the hash
+     links. Until it does, a manifest with records appended *after* a transfer is a
+     document the published schema accepts, and
+     `TestTheSchemaCannotSayCustodyTransferIsLast` exists to keep that visible rather
+     than to bless it.
+   - **Intersect-not-concatenate for exemptions.** The rule is written into the schema
+     description, the Go doc comment, and `schema/CHANGELOG.md`; the code that must obey
+     it is the SCP packer. AUDIT-2 should treat "does union intersect exemption lists"
+     as a named sub-question of item 2 and not assume the prose was read.
+
+7. **Tag-write authority, the negative half (review item 7, now in CLAUDE.md's ritual).**
+   Recorded here as well because it applies to something Phase 1 shipped and Phase 2
+   multiplies: wherever a grant is gated on `aws:ResourceTag`, the audit must also
+   establish **which principals can write that tag at the same scope**, since a
+   tag-writer is a privilege boundary wherever a tag-reader gates access. Q8
+   (`docs/open-questions.md`) is the live-org half of the same question. Item 3 above is
+   the `vend`-specific instance; this is the general rule, and the two should not be
+   read as one item satisfied by checking one grant.
