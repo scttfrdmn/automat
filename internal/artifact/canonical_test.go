@@ -62,12 +62,27 @@ func unhashedSampleArtifact() *Artifact {
 					{
 						Identifier: "IAM_PASSWORD_POLICY",
 						Name:       "iam-password-policy",
+						Provenance: ProvenanceAWSMapping,
 						Parameters: map[string]RuleParameter{
 							"MinimumPasswordLength": {Value: "14", Order: OrderMax},
 							"MaxPasswordAge":        {Value: "90", Order: OrderMin},
 						},
 					},
-					{Identifier: "ACCESS_KEYS_ROTATED", Name: "access-keys-rotated"},
+					{
+						Identifier: "ACCESS_KEYS_ROTATED",
+						Name:       "access-keys-rotated",
+						Provenance: ProvenanceAWSMapping,
+					},
+					{
+						Identifier: "RESTRICTED_INCOMING_TRAFFIC",
+						Name:       "restricted-common-ports",
+						Provenance: ProvenanceCurated,
+						Rationale:  "Bound by this project, not by an upstream mapping, to exercise both provenances.",
+						Parameters: map[string]RuleParameter{
+							"blockedPort1":       {Value: "3389", Order: OrderSetUnion},
+							"authorizedTcpPorts": {Value: "443,22", Order: OrderSetIntersect},
+						},
+					},
 				},
 			},
 			{
@@ -154,8 +169,21 @@ func TestContentHashIsOrderIndependent(t *testing.T) {
 			}
 			reverse(c.SCP.RegionAllowlist)
 		}
-		if len(c.ConfigRules) == 2 {
-			c.ConfigRules[0], c.ConfigRules[1] = c.ConfigRules[1], c.ConfigRules[0]
+		for j, k := 0, len(c.ConfigRules)-1; j < k; j, k = j+1, k-1 {
+			c.ConfigRules[j], c.ConfigRules[k] = c.ConfigRules[k], c.ConfigRules[j]
+		}
+		// Set-valued parameter members are a set, so respelling one must not
+		// move the hash either.
+		for j := range c.ConfigRules {
+			for name, param := range c.ConfigRules[j].Parameters {
+				if !param.Order.IsSet() {
+					continue
+				}
+				members := param.Members()
+				reverse(members)
+				param.Value = strings.Join(members, " , ")
+				c.ConfigRules[j].Parameters[name] = param
+			}
 		}
 	}
 	if err := b.SetContentHash(); err != nil {
@@ -252,7 +280,7 @@ func TestContentHashIsStable(t *testing.T) {
 	// every previously written tag, SCP tag, and evidence record that names an
 	// artifact hash is now unverifiable. Treat a diff here as a schema-breaking
 	// change requiring a version bump and a note in schema/CHANGELOG.md.
-	const want = "6d17e08fa50949ae9acf48f5ac2a0fa225a653aeeb2e2235ff709f6307d96312"
+	const want = "9d80614faf8540914d658edc41027f657d7074273d9d462bb98d422fdadaa96d"
 
 	a := sampleArtifact()
 	got, err := a.ComputeContentHash()

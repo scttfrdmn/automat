@@ -53,6 +53,10 @@ func (e EnforcementClass) valid() bool {
 
 // ParamOrder is the partial order used to resolve a Config rule parameter when
 // two control sets bind the same parameter during union (DESIGN §9).
+//
+// Every order must be monotone: the resolved value never permits behavior that
+// either input forbade. That is the property the union code is tested against,
+// and it is why there is no "first wins" or "last wins" option.
 type ParamOrder string
 
 // The parameter orders.
@@ -64,12 +68,61 @@ const (
 	// OrderExact means there is no ordering: conflicting values are a hard
 	// error demanding an explicit override. Never guess.
 	OrderExact ParamOrder = "exact"
+	// OrderSetUnion means the value is a set of prohibited items — blocked
+	// ports, blocked action patterns — so the union of both sets is stricter.
+	OrderSetUnion ParamOrder = "set-union"
+	// OrderSetIntersect means the value is a set of permitted items —
+	// authorized ports — so the intersection of both sets is stricter.
+	OrderSetIntersect ParamOrder = "set-intersect"
 )
 
+// AllParamOrders lists every valid order in canonical order.
+var AllParamOrders = []ParamOrder{OrderMin, OrderMax, OrderExact, OrderSetUnion, OrderSetIntersect}
+
 func (o ParamOrder) valid() bool {
-	switch o {
-	case OrderMin, OrderMax, OrderExact:
-		return true
+	for _, v := range AllParamOrders {
+		if v == o {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSet reports whether the order treats the value as a set of members rather
+// than a scalar.
+func (o ParamOrder) IsSet() bool {
+	return o == OrderSetUnion || o == OrderSetIntersect
+}
+
+// BindingProvenance says who asserts that a Config rule enforces a control.
+//
+// The distinction is load-bearing for review, not decoration: an aws-mapping
+// binding is vouched for by a published AWS mapping recorded in
+// artifact.sources and is mechanically generated, whereas a curated binding is
+// this project's own judgment and must say why. `verify` and the enforcement
+// breakdown can therefore report how much of a control set rests on automat's
+// own claims rather than AWS's.
+type BindingProvenance string
+
+// The binding provenances.
+const (
+	// ProvenanceAWSMapping means a published AWS mapping associates this rule
+	// with this control. Bindings of this kind are generated from the mapping
+	// and must never be hand-edited.
+	ProvenanceAWSMapping BindingProvenance = "aws-mapping"
+	// ProvenanceCurated means this project asserts the association itself. A
+	// curated binding must carry a Rationale.
+	ProvenanceCurated BindingProvenance = "curated"
+)
+
+// AllBindingProvenances lists every valid provenance in canonical order.
+var AllBindingProvenances = []BindingProvenance{ProvenanceAWSMapping, ProvenanceCurated}
+
+func (b BindingProvenance) valid() bool {
+	for _, v := range AllBindingProvenances {
+		if v == b {
+			return true
+		}
 	}
 	return false
 }
@@ -187,18 +240,58 @@ type SCPStatement struct {
 // that canonicalization has one shape to hash.
 type Condition map[string]map[string][]string
 
-// ConfigRule is one AWS Config managed rule.
+// ConfigRule is one AWS Config managed rule bound to a control, with the
+// provenance of that binding.
 type ConfigRule struct {
-	Identifier    string                   `json:"identifier"`
-	Name          string                   `json:"name,omitempty"`
+	Identifier string            `json:"identifier"`
+	Name       string            `json:"name,omitempty"`
+	Provenance BindingProvenance `json:"provenance"`
+	// Rationale says why this rule is bound to this control. Required when
+	// Provenance is ProvenanceCurated, where no upstream mapping vouches for
+	// the association.
+	Rationale     string                   `json:"rationale,omitempty"`
 	Parameters    map[string]RuleParameter `json:"parameters,omitempty"`
 	ResourceTypes []string                 `json:"resource_types,omitempty"`
 }
+
+// DefaultSetSeparator splits a set-valued parameter into its members when the
+// parameter does not say otherwise. AWS Config managed rules that take lists
+// take them comma-separated.
+const DefaultSetSeparator = ","
 
 // RuleParameter is a rule parameter value plus its union order.
 type RuleParameter struct {
 	Value string     `json:"value"`
 	Order ParamOrder `json:"order"`
+	// SetSeparator splits Value into set members, for the set-valued orders
+	// only. Empty means DefaultSetSeparator.
+	SetSeparator string `json:"set_separator,omitempty"`
+}
+
+// Separator returns the separator that splits Value into members.
+func (p RuleParameter) Separator() string {
+	if p.SetSeparator != "" {
+		return p.SetSeparator
+	}
+	return DefaultSetSeparator
+}
+
+// Members splits a set-valued parameter into its members, trimmed of
+// surrounding space and deduplicated, in sorted order. It returns nil for
+// scalar orders — a scalar has a value, not members.
+func (p RuleParameter) Members() []string {
+	if !p.Order.IsSet() {
+		return nil
+	}
+	sep := p.Separator()
+	parts := strings.Split(p.Value, sep)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if m := strings.TrimSpace(part); m != "" {
+			out = append(out, m)
+		}
+	}
+	return sortedUnique(out)
 }
 
 // Attestation describes a procedural control's stub.

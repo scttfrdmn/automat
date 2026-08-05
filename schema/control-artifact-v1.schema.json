@@ -232,8 +232,9 @@
     },
 
     "config_rule": {
+      "description": "One AWS Config managed rule bound to a control, with the provenance of that binding.",
       "type": "object",
-      "required": ["identifier"],
+      "required": ["identifier", "provenance"],
       "additionalProperties": false,
       "properties": {
         "identifier": {
@@ -246,6 +247,12 @@
           "type": "string",
           "pattern": "^[a-z0-9-]+$"
         },
+        "provenance": { "$ref": "#/$defs/binding_provenance" },
+        "rationale": {
+          "description": "Why this rule is bound to this control. Required for curated bindings, where no upstream mapping vouches for the association.",
+          "type": "string",
+          "minLength": 1
+        },
         "parameters": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/config_rule_parameter" }
@@ -256,7 +263,19 @@
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "provenance": { "const": "curated" } }, "required": ["provenance"] },
+          "then": { "required": ["rationale"] }
+        }
+      ]
+    },
+
+    "binding_provenance": {
+      "description": "Who asserts that this rule enforces this control. aws-mapping: the binding comes from a published AWS mapping recorded in artifact.sources, and is mechanically generated — never hand-edited. curated: the binding is this project's own judgment, and must carry a rationale.",
+      "type": "string",
+      "enum": ["aws-mapping", "curated"]
     },
 
     "config_rule_parameter": {
@@ -265,13 +284,34 @@
       "required": ["value", "order"],
       "additionalProperties": false,
       "properties": {
-        "value": { "type": "string" },
-        "order": {
-          "description": "min: the smaller value is stricter. max: the larger value is stricter. exact: no ordering; conflicting values are a hard error requiring an explicit override.",
+        "value": {
+          "description": "The parameter value. For set-union and set-intersect orders this is a separator-joined set; see set_separator.",
+          "type": "string"
+        },
+        "order": { "$ref": "#/$defs/parameter_order" },
+        "set_separator": {
+          "description": "Separator splitting value into set members, for set-union and set-intersect orders. Defaults to \",\" when absent.",
           "type": "string",
-          "enum": ["min", "max", "exact"]
+          "minLength": 1
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "order": { "enum": ["min", "max", "exact"] } },
+            "required": ["order"]
+          },
+          "then": {
+            "not": { "required": ["set_separator"] }
+          }
+        }
+      ]
+    },
+
+    "parameter_order": {
+      "description": "How union resolves two control sets binding the same parameter (DESIGN 9). Every order must be monotone: the resolved value never permits behavior either input forbade. min: the smaller value is stricter. max: the larger value is stricter. exact: no ordering; conflicting values are a hard error requiring an explicit override. set-union: the value is a set of prohibited items, so the union of both sets is stricter. set-intersect: the value is a set of permitted items, so the intersection of both sets is stricter.",
+      "type": "string",
+      "enum": ["min", "max", "exact", "set-union", "set-intersect"]
     },
 
     "attestation": {

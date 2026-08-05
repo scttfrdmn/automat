@@ -160,6 +160,19 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "IAM_PASSWORD_POLICY")
 			r.Parameters["MinimumPasswordLength"] = RuleParameter{Value: "14", Order: "average"}
 		}},
+		{"binding missing provenance", func(t *testing.T, a *Artifact) {
+			mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "IAM_PASSWORD_POLICY").Provenance = ""
+		}},
+		{"binding bad provenance", func(t *testing.T, a *Artifact) {
+			mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "IAM_PASSWORD_POLICY").Provenance = "vibes"
+		}},
+		{"curated binding without rationale", func(t *testing.T, a *Artifact) {
+			mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC").Rationale = ""
+		}},
+		{"separator on a scalar parameter", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "IAM_PASSWORD_POLICY")
+			r.Parameters["MaxPasswordAge"] = RuleParameter{Value: "90", Order: OrderMin, SetSeparator: ";"}
+		}},
 		{"bad statement effect", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].Effect = "Maybe"
 		}},
@@ -249,6 +262,38 @@ func TestSchemaAcceptsWhatGoAccepts(t *testing.T) {
 		}},
 		{"all attestation frequencies", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "ZZ.L1-b.1.z").Attestation.Frequency = "on-change"
+		}},
+		{"aws-mapping binding carries no rationale", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "ACCESS_KEYS_ROTATED")
+			if r.Provenance != ProvenanceAWSMapping || r.Rationale != "" {
+				t.Fatal("test setup: expected an aws-mapping binding with no rationale")
+			}
+		}},
+		{"curated binding with a rationale", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+			if r.Provenance != ProvenanceCurated || r.Rationale == "" {
+				t.Fatal("test setup: expected a curated binding with a rationale")
+			}
+		}},
+		{"aws-mapping binding may also carry a rationale", func(t *testing.T, a *Artifact) {
+			// Only curated bindings *require* one; the schema does not forbid an
+			// explanatory note on a mapped binding. gen/ chooses not to emit one
+			// (TestAWSMappingLayerIsMechanical), which is a compiler policy, not
+			// a schema constraint.
+			mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "ACCESS_KEYS_ROTATED").Rationale = "context for a reader"
+		}},
+		{"both set orders with the default separator", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+			r.Parameters["blockedActionsPatterns"] = RuleParameter{
+				Value: "kms:Decrypt,kms:ReEncryptFrom", Order: OrderSetUnion,
+			}
+			r.Parameters["authorizedTcpPorts"] = RuleParameter{Value: "443", Order: OrderSetIntersect}
+		}},
+		{"explicit non-default separator on a set order", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+			r.Parameters["blockedActionsPatterns"] = RuleParameter{
+				Value: "kms:Decrypt;kms:ReEncryptFrom", Order: OrderSetUnion, SetSeparator: ";",
+			}
 		}},
 		{"resource types on a rule", func(t *testing.T, a *Artifact) {
 			mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "ACCESS_KEYS_ROTATED").ResourceTypes =

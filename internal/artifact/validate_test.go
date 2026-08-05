@@ -196,6 +196,44 @@ func TestValidateRejects(t *testing.T) {
 			wantFix:  "hard error",
 		},
 		{
+			name: "separator on a scalar parameter",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "AA.L1-b.1.a")
+				mustRule(t, c, "IAM_PASSWORD_POLICY").Parameters["MaxPasswordAge"] = RuleParameter{
+					Value: "90", Order: OrderMin, SetSeparator: ";",
+				}
+			},
+			wantPath: "set_separator",
+			wantFix:  "drop set_separator",
+		},
+		{
+			name: "binding without provenance",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "AA.L1-b.1.a")
+				mustRule(t, c, "IAM_PASSWORD_POLICY").Provenance = ""
+			},
+			wantPath: "provenance",
+			wantFix:  "which claims are AWS's",
+		},
+		{
+			name: "binding with invalid provenance",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "AA.L1-b.1.a")
+				mustRule(t, c, "IAM_PASSWORD_POLICY").Provenance = "vibes"
+			},
+			wantPath: "provenance",
+			wantFix:  "aws-mapping, curated",
+		},
+		{
+			name: "curated binding without a rationale",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "AA.L1-b.1.a")
+				mustRule(t, c, "RESTRICTED_INCOMING_TRAFFIC").Rationale = ""
+			},
+			wantPath: "rationale",
+			wantFix:  "state in one line why",
+		},
+		{
 			name: "lowercase config rule identifier",
 			mutate: func(a *Artifact) {
 				c := mustControl(t, a, "AA.L1-b.1.a")

@@ -355,6 +355,19 @@ func (r *ConfigRule) validate(p *problems, path string) {
 		p.add(path+".name", fmt.Sprintf("%q is not a valid rule name", r.Name),
 			"deployed rule names are lowercase with hyphens, e.g. access-keys-rotated")
 	}
+	switch {
+	case r.Provenance == "":
+		p.add(path+".provenance", "missing",
+			"say who asserts this binding: "+provenanceList()+
+				"; review needs to know which claims are AWS's and which are ours")
+	case !r.Provenance.valid():
+		p.add(path+".provenance", fmt.Sprintf("%q is not a valid provenance", r.Provenance),
+			"use one of: "+provenanceList())
+	case r.Provenance == ProvenanceCurated && r.Rationale == "":
+		p.add(path+".rationale", "missing on a curated binding",
+			"state in one line why this rule enforces this control; no published AWS mapping "+
+				"vouches for a curated binding, so the artifact must carry the reason itself")
+	}
 	names := make([]string, 0, len(r.Parameters))
 	for k := range r.Parameters {
 		names = append(names, k)
@@ -366,15 +379,36 @@ func (r *ConfigRule) validate(p *problems, path string) {
 		if k == "" {
 			p.add(path+".parameters", "has an empty parameter name", "name each parameter as the rule expects it")
 		}
-		if param.Order == "" {
+		switch {
+		case param.Order == "":
 			p.add(ppath+".order", "missing",
-				"declare min, max, or exact; union needs the order to resolve two sets binding this parameter, "+
-					"and guessing is not allowed (DESIGN §9)")
-		} else if !param.Order.valid() {
+				"declare one of "+orderList()+"; union needs the order to resolve two sets binding this "+
+					"parameter, and guessing is not allowed (DESIGN §9)")
+		case !param.Order.valid():
 			p.add(ppath+".order", fmt.Sprintf("%q is not a valid order", param.Order),
-				"use min (smaller is stricter), max (larger is stricter), or exact (conflict is a hard error)")
+				"use min (smaller is stricter), max (larger is stricter), exact (conflict is a hard error), "+
+					"set-union (the value is a set of prohibited items), or set-intersect (a set of permitted items)")
+		case param.SetSeparator != "" && !param.Order.IsSet():
+			p.add(ppath+".set_separator", fmt.Sprintf("set on a %s parameter, which has no members", param.Order),
+				"drop set_separator, or change order to set-union or set-intersect if the value really is a set")
 		}
 	}
+}
+
+func orderList() string {
+	out := make([]string, len(AllParamOrders))
+	for i, o := range AllParamOrders {
+		out[i] = string(o)
+	}
+	return strings.Join(out, ", ")
+}
+
+func provenanceList() string {
+	out := make([]string, len(AllBindingProvenances))
+	for i, b := range AllBindingProvenances {
+		out[i] = string(b)
+	}
+	return strings.Join(out, ", ")
 }
 
 func (at *Attestation) validate(p *problems, path string) {

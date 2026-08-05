@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Canonicalize puts the artifact into canonical form in place.
@@ -152,7 +153,28 @@ func (r *ConfigRule) canonicalize() {
 	r.ResourceTypes = sortedUnique(r.ResourceTypes)
 	if len(r.Parameters) == 0 {
 		r.Parameters = nil
+		return
 	}
+	for name, param := range r.Parameters {
+		param.canonicalize()
+		r.Parameters[name] = param
+	}
+}
+
+// canonicalize normalizes a set-valued parameter so that two spellings of the
+// same set hash identically: members are trimmed, deduped, sorted, and rejoined
+// on the separator. A scalar parameter's value is opaque and left alone.
+//
+// An explicit separator equal to the default is dropped, again so that the two
+// spellings of "comma-separated" cannot produce two hashes.
+func (p *RuleParameter) canonicalize() {
+	if p.SetSeparator == DefaultSetSeparator {
+		p.SetSeparator = ""
+	}
+	if !p.Order.IsSet() {
+		return
+	}
+	p.Value = strings.Join(p.Members(), p.Separator())
 }
 
 // sortedUnique returns the input sorted with duplicates removed, or nil if the
