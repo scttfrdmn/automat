@@ -258,3 +258,28 @@ output.
 
 Note that **CMMC Level 1 needs none of this**: L1 is MET/NOT MET with no scoring, so Q10
 gates only the 800-171 renderer and must not be allowed to hold up the L1 path.
+
+### Q11 — Does FAR Case 2017-016 become a fourth obligation profile? — **NOT YET; ASK AGAIN IF FINALIZED**
+
+The proposed FAR CUI rule (FAR Case 2017-016, with its proposed clause set and the
+standard-form CUI marking requirements) would put a CUI obligation on civilian-agency
+awards, not just DoD contracts — which is most of what a university actually holds. If it
+is finalized it is plausibly the most broadly applicable profile in the set.
+
+It is deliberately **not** shipped. A proposed rule creates no obligation, and a selectable
+profile invites an operator to adopt one that does not exist. The schema's `status` enum
+does include `"proposed"`, but only so that the *description* can say why nothing uses it:
+a shipped profile carrying that value would make the dangerous thing reachable in order to
+save a docs paragraph. The rule's current home is prose —
+`docs/assessment-reporting.md` — where it can be read but not selected.
+
+`TestTheShippedProfileSetIsTheOneThatWasApproved` pins the set at exactly three
+(`cmmc-l1`, `dfars-7012`, `nih-cadr-dua`) and names this question in its failure message.
+That is the mechanism: adding a fourth profile fails a test, so it becomes a deliberate
+decision with a maintainer behind it rather than a plausible-looking file that appears in
+`catalogs/obligations/` and starts being used.
+
+**Revisit when, and only when, the final rule publishes** — at which point the profile's
+citations get effective dates from the final rule, not the proposal, and the phase-gate
+citation re-verification (CLAUDE.md's audit ritual) covers it from then on. Until then the
+answer to "should we get ahead of this?" is no.

@@ -226,12 +226,10 @@ func TestEveryProfileCarriesThePolicyCaveatInSubstance(t *testing.T) {
 	}
 }
 
-// TestTheCaveatAppearsInTheDesignDocument covers the other place
-// docs/policy-caveat.md says it must appear. README.md does not exist in this
-// repo yet; when it does, it belongs in this test's list, and the absence is
-// recorded here rather than left for someone to notice.
+// TestTheCaveatAppearsInTheDesignDocument covers the other places
+// docs/policy-caveat.md says the caveat must appear.
 func TestTheCaveatAppearsInTheDesignDocument(t *testing.T) {
-	for _, rel := range []string{"../../DESIGN.md"} {
+	for _, rel := range []string{"../../DESIGN.md", "../../README.md"} {
 		t.Run(filepath.Base(rel), func(t *testing.T) {
 			data, err := os.ReadFile(rel) //nolint:gosec // fixed in-repo path
 			if err != nil {
@@ -517,8 +515,9 @@ func TestTheShippedProfileSetIsTheOneThatWasApproved(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("shipped profiles are %v, approved set is %v.\n\n"+
 			"Adding or removing a profile is a policy decision — FAR Case 2017-016, for one, is "+
-			"still a proposed rule and is deliberately not shipped as a profile. Update this "+
-			"list in the same change that argues for the profile.", got, want)
+			"still a proposed rule and is deliberately not shipped as a profile (Q11 in "+
+			"docs/open-questions.md). Update this list in the same change that argues for the "+
+			"profile.", got, want)
 	}
 }
 
