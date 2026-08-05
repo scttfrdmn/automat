@@ -12,16 +12,24 @@ import (
 
 // Enforcement assignment for CMMC 2.0 Level 1.
 //
-// The governing principle is evidence, not judgment: a control is class
-// config-rule when AWS's published mapping associates Config rules with it, and
-// procedural otherwise. ROADMAP Phase 0 requires unmapped controls be marked
-// procedural with a provenance note rather than dropped, so all fifteen appear.
+// There are two layers, kept structurally distinct because they carry different
+// authority:
 //
-// Three of the six procedural controls are arguably enforceable in AWS but are
-// not mapped upstream (see candidateForEnforcement). Promoting one is a decision
-// about what automat asserts on an operator's behalf, so it is left to human
-// review rather than inferred here. gen/MAPPING-NOTES.md records the rationale
-// for every one of the fifteen assignments.
+//   - The **aws-mapping layer**: a control is class config-rule when AWS's
+//     published conformance-pack mapping associates Config rules with it. This
+//     layer is mechanically generated from the mapping and is never hand-edited;
+//     the mapping's sha256 in artifact.sources is what vouches for it.
+//   - The **curated layer** (curatedBindings, below): bindings this project
+//     asserts itself, each carrying a rationale into the artifact. Reviewed by
+//     hand, one at a time.
+//
+// ROADMAP Phase 0 requires unmapped controls be marked procedural with a
+// provenance note rather than dropped, so all fifteen requirements appear.
+// A curated binding does not remove a control's procedural class: the rationales
+// below explain what the rules do and do not observe, and dropping the
+// attestation would claim more coverage than the rules deliver (DESIGN §12).
+// gen/MAPPING-NOTES.md records the rationale for every one of the fifteen
+// assignments.
 
 // attestation describes the stub written for a procedural control.
 type attestationSpec struct {
@@ -84,49 +92,111 @@ var proceduralSpecs = map[string]attestationSpec{
 	},
 }
 
-// candidateForEnforcement flags procedural controls that could plausibly carry a
-// technical enforcement class but are not mapped upstream.
+// curatedBindings are Config rule bindings this project asserts itself, for
+// controls AWS's mapping leaves without technical coverage.
 //
-// This is surfaced in MAPPING-NOTES.md rather than acted on. Promoting a control
-// from procedural to config-rule changes what automat claims is enforced, and
-// that claim ends up in an evidence manifest — so it is a human decision.
-var candidateForEnforcement = map[string]string{
-	"AC.L1-b.1.iv": "The conformance pack contains rules that bear directly on publicly accessible " +
-		"content (s3-bucket-public-read-prohibited, s3-bucket-public-write-prohibited, and the " +
-		"various *-not-public rules), but AWS maps them to AC.L1-3.1.1 and AC.L1-3.1.2 rather than " +
-		"to 3.1.22. Reusing them here would mean asserting an enforcement AWS does not claim.",
-	"SC.L1-b.1.xi": "Subnetwork separation is partially observable (subnet-auto-assign-public-ip-disabled, " +
-		"ec2-instance-no-public-ip), but AWS maps those to other controls. Whether a topology " +
-		"genuinely separates public components is an architecture question a rule cannot answer.",
-	"SI.L1-b.1.xiv": "guardduty-enabled-centralized is mapped to SI.L1-3.14.1 and 3.14.2 upstream; " +
-		"a managed service arguably satisfies 'update mechanisms when new releases are available' " +
-		"implicitly, but no rule observes the update itself.",
+// Each is reviewed by hand and each carries its rationale into the artifact, so
+// a reader of catalogs/cmmc-l1.json can audit automat's judgment separately from
+// AWS's. These bindings are additive: the control keeps its procedural class and
+// its attestation stub, because in all three cases the rules observe a *symptom*
+// of the requirement and not the requirement itself, and DESIGN §12 requires the
+// tool state that limit rather than paper over it.
+//
+// The rules named here are all already in the conformance pack — nothing is
+// invented, only bound to a second control. AWS maps them to other requirements;
+// what is curated is the additional association, not the rule.
+var curatedBindings = map[string][]curatedBinding{
+	"AC.L1-b.1.iv": {{
+		rule: "s3-bucket-public-read-prohibited",
+		rationale: "Control public information: this rule detects the most common way Federal " +
+			"Contract Information becomes publicly readable. AWS's mapping binds it to AC.L1-3.1.1 " +
+			"and 3.1.2 rather than to 3.1.22, so the association with the public-information " +
+			"requirement is automat's own. It observes exposure, not the review process the " +
+			"requirement mandates, which is why the attestation stub remains.",
+	}, {
+		rule: "s3-bucket-public-write-prohibited",
+		rationale: "Control public information: a publicly writable bucket means content can be " +
+			"posted to a publicly accessible system with no review at all. Bound here by automat " +
+			"rather than by AWS, which maps it to the general access-control requirements.",
+	}, {
+		rule: "s3-account-level-public-access-blocks-periodic",
+		rationale: "Control public information: account-level public access blocks are the " +
+			"preventive floor under the two bucket-level rules above, so the three are bound " +
+			"together. Detects the case where a reviewer's intent is correct but the account " +
+			"permits public exposure anyway.",
+	}},
+	"SC.L1-b.1.xi": {{
+		rule: "subnet-auto-assign-public-ip-disabled",
+		rationale: "Public-access system separation: a subnet that auto-assigns public IPs is not " +
+			"an internal network, so this rule detects the clearest violation of the separation " +
+			"the requirement demands. AWS maps it elsewhere. Whether a topology genuinely " +
+			"separates publicly accessible components from internal ones is an architecture " +
+			"question no rule can answer, which is why the attestation stub remains.",
+	}, {
+		rule: "ec2-instance-no-public-ip",
+		rationale: "Public-access system separation: an instance with a public IP sits on the " +
+			"boundary regardless of subnet intent. Bound here by automat as the instance-level " +
+			"counterpart to the subnet rule above; AWS maps it to boundary protection instead.",
+	}},
+	"SI.L1-b.1.xiv": {{
+		rule: "guardduty-enabled-centralized",
+		rationale: "Update malicious code protection: a managed detection service updates its own " +
+			"threat intelligence, so keeping it enabled is the AWS-native form of 'update " +
+			"protection mechanisms when new releases are available'. AWS maps this rule to " +
+			"SI.L1-3.14.1 and 3.14.2, not to 3.14.5, so the association is automat's. No rule " +
+			"observes the update itself, and it says nothing about protection mechanisms on " +
+			"instances, which is why the attestation stub remains.",
+	}},
 }
 
-// checkCandidateNotes keeps candidateForEnforcement honest about the artifact.
+// curatedBinding is one hand-reviewed rule binding and the reason for it.
+type curatedBinding struct {
+	rule      string // conformance-pack rule name, which must exist in the pack
+	rationale string
+}
+
+// checkCuratedBindings keeps the curated layer honest about the artifact.
 //
-// A note explaining why a control was left procedural is misleading if that
-// control is no longer procedural, and it is the kind of stale comment nobody
-// notices. Compiling fails rather than shipping a wrong rationale.
-func checkCandidateNotes(controls artifact.Controls) error {
+// A rationale describing a control automat does not compile, or a curated
+// binding that did not survive into the artifact, is the kind of stale claim
+// nobody notices — and these claims end up in an evidence manifest. Compiling
+// fails rather than shipping one.
+func checkCuratedBindings(controls artifact.Controls) error {
 	byID := make(map[string]artifact.Control, len(controls))
 	for _, c := range controls {
 		byID[c.ID] = c
 	}
-	ids := make([]string, 0, len(candidateForEnforcement))
-	for id := range candidateForEnforcement {
+	ids := make([]string, 0, len(curatedBindings))
+	for id := range curatedBindings {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
 		c, ok := byID[id]
 		if !ok {
-			return fmt.Errorf("candidateForEnforcement names control %s, which the catalog does not contain "+
+			return fmt.Errorf("curatedBindings names control %s, which the catalog does not contain "+
 				"(gen/catalog/enforcement.go)", id)
 		}
-		if !c.Enforces(artifact.EnforcementProcedural) {
-			return fmt.Errorf("candidateForEnforcement explains why %s was left procedural, but the compiled "+
-				"control is not procedural; remove the note and update gen/MAPPING-NOTES.md", id)
+		for _, b := range curatedBindings[id] {
+			found := false
+			for _, r := range c.ConfigRules {
+				if r.Name != b.rule {
+					continue
+				}
+				found = true
+				if r.Provenance != artifact.ProvenanceCurated {
+					return fmt.Errorf("control %s binds rule %s with provenance %q, but it is a curated "+
+						"binding; the aws-mapping layer must never absorb a curated one", id, b.rule, r.Provenance)
+				}
+				if r.Rationale != b.rationale {
+					return fmt.Errorf("control %s binds rule %s with a rationale that is not the reviewed "+
+						"one from curatedBindings (gen/catalog/enforcement.go)", id, b.rule)
+				}
+			}
+			if !found {
+				return fmt.Errorf("curatedBindings binds rule %s to control %s, but the compiled control "+
+					"does not carry it", b.rule, id)
+			}
 		}
 	}
 	return nil
@@ -155,18 +225,25 @@ var paramOrders = map[string]artifact.ParamOrder{
 	"alarmActionRequired":            artifact.OrderExact,
 	"insufficientDataActionRequired": artifact.OrderExact,
 	"okActionRequired":               artifact.OrderExact,
-	// Set-valued parameters. These are conceptually unions of blocked items or
-	// intersections of allowed ones, but the pack encodes them as
-	// comma-separated strings, and merging strings by guesswork is exactly what
-	// DESIGN §9 forbids. Left exact until the union code can model them
-	// properly; recorded in docs/open-questions.md.
-	"blockedActionsPatterns": artifact.OrderExact,
-	"authorizedTcpPorts":     artifact.OrderExact,
-	"blockedPort1":           artifact.OrderExact,
-	"blockedPort2":           artifact.OrderExact,
-	"blockedPort3":           artifact.OrderExact,
-	"blockedPort4":           artifact.OrderExact,
-	"blockedPort5":           artifact.OrderExact,
+	// Deny-shaped sets: the value enumerates prohibited items, so prohibiting
+	// more is stricter and union is the monotone resolution.
+	"blockedActionsPatterns": artifact.OrderSetUnion,
+	// The five blockedPort parameters each hold one port in the pack, but they
+	// are one prohibited-port set spread across five slots, and set-union is the
+	// only monotone order for a member of such a set: dropping either input's
+	// port would permit traffic that input forbade. See the caveat in
+	// gen/MAPPING-NOTES.md — RESTRICTED_INCOMING_TRAFFIC types each parameter as
+	// a single integer, so Phase 4's union must re-slot the unioned ports across
+	// blockedPort1..5 (and hard-error above five) rather than emit a joined
+	// value the rule would reject.
+	"blockedPort1": artifact.OrderSetUnion,
+	"blockedPort2": artifact.OrderSetUnion,
+	"blockedPort3": artifact.OrderSetUnion,
+	"blockedPort4": artifact.OrderSetUnion,
+	"blockedPort5": artifact.OrderSetUnion,
+	// Allow-shaped sets: the value enumerates permitted items, so permitting
+	// fewer is stricter and intersection is the monotone resolution.
+	"authorizedTcpPorts": artifact.OrderSetIntersect,
 }
 
 // orderFor returns the declared union order for a parameter.

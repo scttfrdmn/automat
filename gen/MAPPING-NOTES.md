@@ -5,25 +5,42 @@ Rationale for every enforcement-class assignment in `catalogs/cmmc-l1.json`.
 
 ## The rule I applied
 
-A control is **`config-rule`** if AWS's published conformance-pack mapping associates
-Config rules with it, and **`procedural`** if it does not. Nothing here is my judgment
-about whether a requirement *could* be automated — the assignment follows the evidence
-in `gen/sources/aws-config-cmmc-l1.json`, which is the join of two AWS documents whose
-hashes are recorded in the artifact's `sources`.
+There are two layers, kept structurally distinct in the artifact by each binding's
+`provenance` field:
+
+- **The aws-mapping layer.** A control is **`config-rule`** if AWS's published
+  conformance-pack mapping associates Config rules with it. This layer is
+  mechanically generated from `gen/sources/aws-config-cmmc-l1.json` — the join of
+  two AWS documents whose hashes are recorded in the artifact's `sources` — and is
+  **never hand-edited**. Nothing here is judgment about whether a requirement
+  *could* be automated.
+- **The curated layer.** Three controls AWS leaves without technical coverage carry
+  bindings automat asserts itself, each with `provenance: "curated"` and a
+  `rationale` in the artifact. These were promoted by hand review (see
+  [Curated bindings](#curated-bindings-the-three-promoted-controls)). They are
+  **additive**: those controls keep `procedural` and their attestation stubs.
+
+The two layers stay separable so a reviewer can audit automat's claims apart from
+AWS's, and so regenerating the catalog cannot silently overwrite a reviewed binding.
+`TestAWSMappingLayerIsMechanical` and `TestCuratedBindingsAreExactlyTheReviewedOnes`
+enforce both properties.
 
 Two consequences worth stating plainly:
 
-- **No control is class `scp` in this catalog.** The conformance pack is a detective
-  mapping; it says nothing about preventive policy. Deriving Deny statements from
-  requirement text would be me inventing enforcement AWS does not claim, and an SCP
-  is the one thing in automat that can lock an operator out of their own account.
-  The region/service allowlists and the baseline-protection set (DESIGN §10) are
-  separate control sets, not derived from CMMC text.
+- **No control is class `scp` in this catalog, and that is permanent by design, not a
+  gap awaiting work.** Preventive posture for CMMC Level 1 belongs to the
+  baseline-protection set and to profile SCPs (region and service allowlists), which
+  are separate control sets and not derived from requirement text. The conformance
+  pack is a detective mapping and says nothing about preventive policy; deriving Deny
+  statements from requirement prose would be inventing enforcement AWS does not
+  claim, and an SCP is the one thing in automat that can lock an operator out of
+  their own account.
 - **No control is class `baseline-protection`.** That set is its own catalog
   (`catalogs/baseline-protection.json`, still to be written).
 
-Result: 15 controls — **9 `config-rule`**, **6 `procedural`**, 0 `scp`,
-0 `baseline-protection`. `TestEnforcementBreakdownIsPinned` fails if any of this
+Result: 15 controls — **12 `config-rule`**, **6 `procedural`**, 0 `scp`,
+0 `baseline-protection`. The two counts sum to more than 15 because the three curated
+controls carry both classes. `TestEnforcementBreakdownIsPinned` fails if any of this
 changes without a corresponding edit here.
 
 ## The join, and why it needs one
@@ -56,38 +73,49 @@ check) — a silently dropped mapping is a coverage gap, not a rounding error.
 
 ### `procedural` — AWS maps nothing to these
 
+Three of the six also carry curated `config-rule` bindings; the class and stub remain
+because those rules observe a symptom of the requirement, not the requirement.
+
 | # | Control | R2 | Attestation stub | One-line rationale |
 |---|---|---|---|---|
-| iv | `AC.L1-b.1.iv` | 3.1.22 | `publicly-accessible-content.md` | Control of information posted on public systems is a *review process* — who approves content before publication — and AWS maps no rule to 3.1.22. |
+| iv | `AC.L1-b.1.iv` | 3.1.22 | `publicly-accessible-content.md` | Control of information posted on public systems is a *review process* — who approves content before publication — and AWS maps no rule to 3.1.22. Carries 3 curated rules. |
 | vii | `MP.L1-b.1.vii` | 3.8.3 | `media-sanitization.md` | Media sanitization before disposal or reuse is physical; AWS handles its own storage media under the shared-responsibility model, and no rule observes yours. |
 | viii | `PE.L1-b.1.viii` | 3.10.1 | `physical-access.md` | Physical access limitation is inherited from AWS data-center controls for cloud-only workloads and is not observable through any API. |
 | ix | `PE.L1-b.1.ix` | 3.10.3/.4/.5 | `visitor-access.md` | Visitor escort, physical access logs, and access-device management — the one requirement that maps to three R2 requirements, all physical, none observable. |
-| xi | `SC.L1-b.1.xi` | 3.13.5 | `publicly-accessible-subnetworks.md` | Separation of publicly accessible components into their own subnetworks is an architecture property; AWS maps no rule to 3.13.5. |
-| xiv | `SI.L1-b.1.xiv` | 3.14.4 | `malicious-code-updates.md` | "Update protection mechanisms when new releases are available" is a maintenance process; no rule observes an update having happened. |
+| xi | `SC.L1-b.1.xi` | 3.13.5 | `publicly-accessible-subnetworks.md` | Separation of publicly accessible components into their own subnetworks is an architecture property; AWS maps no rule to 3.13.5. Carries 2 curated rules. |
+| xiv | `SI.L1-b.1.xiv` | 3.14.4 | `malicious-code-updates.md` | "Update protection mechanisms when new releases are available" is a maintenance process; no rule observes an update having happened. Carries 1 curated rule. |
 
 All six use `frequency: annual`, matching the annual self-assessment and affirmation
 cycle of 32 CFR 170.15(c). Each stub carries `guidance` text stating what to record and,
 where relevant, what is inherited from AWS.
 
-### Three procedural assignments a reviewer may want to overturn
+### Curated bindings: the three promoted controls
 
-Recorded in `candidateForEnforcement` (`gen/catalog/enforcement.go`) rather than acted on,
-because promoting one means automat asserting an enforcement AWS does not, and that
-assertion lands in an evidence manifest:
+Reviewed and approved by hand. Each of these six bindings is automat asserting an
+enforcement AWS does not claim, which is why each carries its `rationale` **into the
+artifact** — a reader of `catalogs/cmmc-l1.json` can see exactly which associations are
+ours, and why, without reading this file. Defined in `curatedBindings`
+(`gen/catalog/enforcement.go`).
 
-- **`AC.L1-b.1.iv`** — the pack has `s3-bucket-public-read-prohibited`,
-  `s3-bucket-public-write-prohibited`, `ssm-document-not-public` and friends, but AWS maps
-  them to 3.1.1 and 3.1.2. They bear on public exposure of *resources*, not on review of
-  *content*.
-- **`SC.L1-b.1.xi`** — `subnet-auto-assign-public-ip-disabled` and
-  `ec2-instance-no-public-ip` are partial evidence of segmentation; AWS maps them to 3.1.20
-  and 3.13.1.
-- **`SI.L1-b.1.xiv`** — GuardDuty updates its own detections, which arguably satisfies the
-  requirement implicitly; nothing observes it.
+Every rule named below is already in the conformance pack; nothing is invented. What is
+curated is the additional association, not the rule. And all three controls **keep
+`procedural` and their attestation stubs**: in each case the rules observe a symptom of
+the requirement rather than the requirement itself, and dropping the stub would claim
+more coverage than the rules deliver (DESIGN §12).
 
-If you want any of these promoted, the honest form is a **second** enforcement class on the
-control with the rule reused from its upstream home, not a re-mapping — and then
-`TestEnforcementBreakdownIsPinned` and this table both need updating.
+| Control | Curated rules | Why, and what it still does not cover |
+|---|---|---|
+| `AC.L1-b.1.iv` | `s3-bucket-public-read-prohibited`, `s3-bucket-public-write-prohibited`, `s3-account-level-public-access-blocks-periodic` | The three together detect the common ways Federal Contract Information becomes publicly reachable, plus the account-level preventive floor beneath them. AWS maps all three to 3.1.1/3.1.2. They observe *exposure*; the requirement is a *review process*, which no rule can see. |
+| `SC.L1-b.1.xi` | `subnet-auto-assign-public-ip-disabled`, `ec2-instance-no-public-ip` | A subnet that auto-assigns public IPs is not an internal network, and an instance with a public IP sits on the boundary regardless of subnet intent. AWS maps these to 3.1.20 and 3.13.1. Whether a topology genuinely separates public components is an architecture question. |
+| `SI.L1-b.1.xiv` | `guardduty-enabled-centralized` | A managed detection service updates its own threat intelligence, so keeping it enabled is the AWS-native form of "update when new releases are available". AWS maps it to 3.14.1/3.14.2. Nothing observes the update itself, and it says nothing about protection on instances. |
+
+`IA.L1-b.1.v` was reviewed and **left as-is** under the aws-mapping layer: AWS's reading
+that identification is evidenced by attributable logs is defensible, and second-guessing
+a mapping AWS does publish is a different kind of act from filling a gap it leaves.
+
+Adding a curated binding must fail `TestCuratedBindingsAreExactlyTheReviewedOnes`, which
+enumerates the set above rather than deriving it — a new claim about what automat enforces
+should not be able to arrive quietly.
 
 ## Parameter union orders
 
@@ -102,16 +130,37 @@ either loosens a control or turns a legitimate union into a spurious conflict.
 | `MinimumPasswordLength`, `PasswordReusePrevention` | `max` | Strength floors: a larger requirement is stricter. |
 | `RequireLowercaseCharacters`, `RequireUppercaseCharacters`, `RequireNumbers`, `RequireSymbols` | `exact` | Booleans have no ordering; disagreement must be resolved explicitly. |
 | `alarmActionRequired`, `insufficientDataActionRequired`, `okActionRequired` | `exact` | Booleans, same reasoning. Note the pack sets `okActionRequired: false`. |
-| `blockedActionsPatterns`, `authorizedTcpPorts`, `blockedPort1`–`blockedPort5` | `exact` | Conceptually unions of blocked items / intersections of allowed ones, but the pack encodes them as comma-separated strings. Merging strings by guesswork is exactly what DESIGN §9 forbids, so these are `exact` until the union code can model set-valued parameters. **Open question** — see `docs/open-questions.md`. |
+| `blockedActionsPatterns`, `blockedPort1`–`blockedPort5` | `set-union` | Deny-shaped sets: the members are *prohibited* items, so prohibiting more is stricter. |
+| `authorizedTcpPorts` | `set-intersect` | Allow-shaped set: the members are *permitted* items, so permitting fewer is stricter. |
+
+The two set orders are the only monotone resolutions for their shapes, and
+`internal/artifact/order.go` implements exactly that: `Resolve` is a meet, with
+idempotence, commutativity, associativity, and monotonicity stated as property tests over
+generated bindings (`order_test.go`). Monotonicity is the load-bearing one — a
+non-monotone order silently loosens a control when two catalogs are compiled together.
+Two conflict cases are deliberately *not* resolved: disjoint `set-intersect` sets (an
+empty allowlist is a parameter Config rejects, not "permit nothing"), and two bindings
+declaring different orders or separators for one parameter.
+
+**Caveat for Phase 4, `blockedPort1`–`blockedPort5`.** These five are one prohibited-port
+set spread across five single-valued slots — `RESTRICTED_INCOMING_TRAFFIC` types each
+parameter as a lone integer. `set-union` is still the right order per slot (dropping
+either input's port would permit traffic that input forbade), but the artifact-level union
+must **re-slot** the unioned ports across the five parameters and hard-error above five,
+rather than emit a joined value the rule would reject. Noted in
+`gen/catalog/enforcement.go` at the declaration and in `docs/open-questions.md`.
 
 ## What this catalog does not claim
 
 Stated here because `verify` prints the same thing from the artifact (DESIGN §12):
 
-- 6 of 15 requirements have no technical enforcement in this catalog and produce
-  attestation stubs.
-- The 9 mapped requirements are **detective**, not preventive: Config reports
-  noncompliance, it does not prevent it.
+- 6 of 15 requirements produce attestation stubs, and 3 of those 6 have only curated
+  technical coverage — rules that observe a symptom, not the requirement.
+- All 12 `config-rule` requirements are **detective**, not preventive: Config reports
+  noncompliance, it does not prevent it. No requirement in this catalog is preventively
+  enforced, by design (see above).
+- 6 of the bindings are automat's own judgment rather than AWS's, and say so in the
+  artifact.
 - `SI.L1-b.1.xiii` (malicious code protection) rests on a single rule, and
   `SI.L1-b.1.xv` (scanning) covers container images only.
 - Rule *presence* is what automat verifies. Whether resources are compliant is a

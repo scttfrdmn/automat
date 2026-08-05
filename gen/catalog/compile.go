@@ -104,25 +104,62 @@ func compile(s *sourceSet, compiledAt string) (*artifact.Artifact, error) {
 			c.Crosswalk["aws_config_mapping_id"] = strings.Join(dedupe(awsIDs), ", ")
 		}
 
-		switch {
-		case len(ruleNames) > 0:
-			c.Enforcement = []artifact.EnforcementClass{artifact.EnforcementConfigRule}
-			if c.ConfigRules, err = configRules(s, dedupe(ruleNames)); err != nil {
+		// The aws-mapping layer, generated mechanically from AWS's published
+		// mapping. Nothing hand-written enters here.
+		if len(ruleNames) > 0 {
+			if c.ConfigRules, err = configRules(s, dedupe(ruleNames), artifact.ProvenanceAWSMapping, nil); err != nil {
 				return nil, fmt.Errorf("control %s: %w", cw.ID, err)
 			}
-		default:
-			spec, ok := proceduralSpecs[cw.ID]
-			if !ok {
-				return nil, fmt.Errorf("control %s has no AWS Config coverage and no attestation stub in "+
-					"proceduralSpecs (gen/catalog/enforcement.go); ROADMAP Phase 0 requires unmapped controls "+
-					"be marked procedural with a provenance note rather than dropped", cw.ID)
+		}
+
+		// The curated layer, appended on top: reviewed by hand, each binding
+		// carrying its own rationale (see curatedBindings).
+		if bindings, ok := curatedBindings[cw.ID]; ok {
+			names := make([]string, 0, len(bindings))
+			why := make(map[string]string, len(bindings))
+			for _, b := range bindings {
+				if _, dup := why[b.rule]; dup {
+					return nil, fmt.Errorf("control %s binds rule %s twice in curatedBindings "+
+						"(gen/catalog/enforcement.go)", cw.ID, b.rule)
+				}
+				names = append(names, b.rule)
+				why[b.rule] = b.rationale
 			}
-			c.Enforcement = []artifact.EnforcementClass{artifact.EnforcementProcedural}
+			// A rule AWS already maps to this control must not be re-bound as
+			// curated: that would overstate what automat asserts and would make
+			// the two layers indistinguishable.
+			for _, r := range c.ConfigRules {
+				if _, clash := why[r.Name]; clash {
+					return nil, fmt.Errorf("control %s: rule %s is already bound by AWS's mapping, so it must "+
+						"not also appear in curatedBindings (gen/catalog/enforcement.go)", cw.ID, r.Name)
+				}
+			}
+			curated, err := configRules(s, dedupe(names), artifact.ProvenanceCurated, why)
+			if err != nil {
+				return nil, fmt.Errorf("control %s: %w", cw.ID, err)
+			}
+			c.ConfigRules = append(c.ConfigRules, curated...)
+		}
+
+		if len(c.ConfigRules) > 0 {
+			c.Enforcement = append(c.Enforcement, artifact.EnforcementConfigRule)
+		}
+
+		// A control with no rule from either layer must still appear, marked
+		// procedural (ROADMAP Phase 0). A control that has rules but only
+		// curated ones keeps its attestation too: those rules observe a symptom
+		// of the requirement, not the requirement itself.
+		if spec, ok := proceduralSpecs[cw.ID]; ok {
+			c.Enforcement = append(c.Enforcement, artifact.EnforcementProcedural)
 			c.Attestation = &artifact.Attestation{
 				Template:  spec.template,
 				Frequency: spec.frequency,
 				Guidance:  spec.guidance,
 			}
+		} else if len(c.ConfigRules) == 0 {
+			return nil, fmt.Errorf("control %s has no AWS Config coverage and no attestation stub in "+
+				"proceduralSpecs (gen/catalog/enforcement.go); ROADMAP Phase 0 requires unmapped controls "+
+				"be marked procedural with a provenance note rather than dropped", cw.ID)
 		}
 		controls = append(controls, c)
 	}
@@ -144,7 +181,7 @@ func compile(s *sourceSet, compiledAt string) (*artifact.Artifact, error) {
 			awsSourceFile, orphans, crosswalkSourceFile)
 	}
 
-	if err := checkCandidateNotes(controls); err != nil {
+	if err := checkCuratedBindings(controls); err != nil {
 		return nil, err
 	}
 
@@ -194,8 +231,18 @@ func indexAWSMapping(s *sourceSet) (rulesByR2 map[string][]string, awsIDByR2 map
 	return rulesByR2, awsIDByR2, nil
 }
 
-// configRules converts pack rule names into artifact config rules.
-func configRules(s *sourceSet, names []string) ([]artifact.ConfigRule, error) {
+// configRules converts pack rule names into artifact config rules carrying the
+// given provenance.
+//
+// rationales is consulted only for curated bindings, where the schema requires a
+// reason; passing it for an aws-mapping binding is a programming error, because
+// the mapping's own sha256 in artifact.sources is what vouches for those.
+func configRules(
+	s *sourceSet, names []string, prov artifact.BindingProvenance, rationales map[string]string,
+) ([]artifact.ConfigRule, error) {
+	if prov != artifact.ProvenanceCurated && len(rationales) > 0 {
+		return nil, fmt.Errorf("rationales supplied for %s bindings; only curated bindings carry one", prov)
+	}
 	out := make([]artifact.ConfigRule, 0, len(names))
 	for _, name := range names {
 		r, ok := s.aws.Rules[name]
@@ -205,7 +252,14 @@ func configRules(s *sourceSet, names []string) ([]artifact.ConfigRule, error) {
 		cr := artifact.ConfigRule{
 			Identifier:    r.Identifier,
 			Name:          r.Name,
+			Provenance:    prov,
 			ResourceTypes: r.ResourceTypes,
+		}
+		if prov == artifact.ProvenanceCurated {
+			if cr.Rationale = rationales[name]; cr.Rationale == "" {
+				return nil, fmt.Errorf("curated binding of rule %s has no rationale; a curated binding is "+
+					"automat's own claim, so the artifact must say why (gen/catalog/enforcement.go)", name)
+			}
 		}
 		if len(r.Parameters) > 0 {
 			cr.Parameters = make(map[string]artifact.RuleParameter, len(r.Parameters))

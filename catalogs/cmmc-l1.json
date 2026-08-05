@@ -39,7 +39,7 @@
       }
     ],
     "compiled_at": "2026-08-04T00:00:00Z",
-    "content_sha256": "5721c6d1eb2a68a284cdd6656b5a33f964a369e5c24188f064fa59f35ce04f57"
+    "content_sha256": "a3200da04a1833344648f3efe3c510f51b81e69762c7bf1c3c2d2e3cc4d77481"
   },
   "controls": [
     {
@@ -58,6 +58,7 @@
         {
           "identifier": "ACCESS_KEYS_ROTATED",
           "name": "access-keys-rotated",
+          "provenance": "aws-mapping",
           "parameters": {
             "maxAccessKeyAge": {
               "value": "90",
@@ -67,15 +68,18 @@
         },
         {
           "identifier": "DMS_REPLICATION_NOT_PUBLIC",
-          "name": "dms-replication-not-public"
+          "name": "dms-replication-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
-          "name": "ebs-snapshot-public-restorable-check"
+          "name": "ebs-snapshot-public-restorable-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EC2_IMDSV2_CHECK",
           "name": "ec2-imdsv2-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -83,6 +87,7 @@
         {
           "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
           "name": "ec2-instance-no-public-ip",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -90,29 +95,34 @@
         {
           "identifier": "EC2_INSTANCE_PROFILE_ATTACHED",
           "name": "ec2-instance-profile-attached",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
         },
         {
           "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
-          "name": "elasticsearch-in-vpc-only"
+          "name": "elasticsearch-in-vpc-only",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EMR_KERBEROS_ENABLED",
-          "name": "emr-kerberos-enabled"
+          "name": "emr-kerberos-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EMR_MASTER_NO_PUBLIC_IP",
-          "name": "emr-master-no-public-ip"
+          "name": "emr-master-no-public-ip",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_CUSTOMER_POLICY_BLOCKED_KMS_ACTIONS",
           "name": "iam-customer-policy-blocked-kms-actions",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedActionsPatterns": {
               "value": "kms:Decrypt,kms:ReEncryptFrom",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -122,6 +132,7 @@
         {
           "identifier": "IAM_GROUP_HAS_USERS_CHECK",
           "name": "iam-group-has-users-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Group"
           ]
@@ -129,10 +140,11 @@
         {
           "identifier": "IAM_INLINE_POLICY_BLOCKED_KMS_ACTIONS",
           "name": "iam-inline-policy-blocked-kms-actions",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedActionsPatterns": {
               "value": "kms:Decrypt,kms:ReEncryptFrom",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -144,6 +156,7 @@
         {
           "identifier": "IAM_NO_INLINE_POLICY_CHECK",
           "name": "iam-no-inline-policy-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Group",
             "AWS::IAM::Role",
@@ -153,6 +166,7 @@
         {
           "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS",
           "name": "iam-policy-no-statements-with-admin-access",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Policy"
           ]
@@ -160,28 +174,33 @@
         {
           "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_FULL_ACCESS",
           "name": "iam-policy-no-statements-with-full-access",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Policy"
           ]
         },
         {
           "identifier": "IAM_ROOT_ACCESS_KEY_CHECK",
-          "name": "iam-root-access-key-check"
+          "name": "iam-root-access-key-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_USER_GROUP_MEMBERSHIP_CHECK",
           "name": "iam-user-group-membership-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::User"
           ]
         },
         {
           "identifier": "IAM_USER_MFA_ENABLED",
-          "name": "iam-user-mfa-enabled"
+          "name": "iam-user-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_USER_NO_POLICIES_CHECK",
           "name": "iam-user-no-policies-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::User"
           ]
@@ -189,6 +208,7 @@
         {
           "identifier": "IAM_USER_UNUSED_CREDENTIALS_CHECK",
           "name": "iam-user-unused-credentials-check",
+          "provenance": "aws-mapping",
           "parameters": {
             "maxCredentialUsageAge": {
               "value": "90",
@@ -199,6 +219,7 @@
         {
           "identifier": "INCOMING_SSH_DISABLED",
           "name": "restricted-ssh",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -206,6 +227,7 @@
         {
           "identifier": "INSTANCES_IN_VPC",
           "name": "ec2-instances-in-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -213,6 +235,7 @@
         {
           "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
           "name": "internet-gateway-authorized-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::InternetGateway"
           ]
@@ -220,6 +243,7 @@
         {
           "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
           "name": "lambda-function-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
@@ -227,17 +251,20 @@
         {
           "identifier": "LAMBDA_INSIDE_VPC",
           "name": "lambda-inside-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
         },
         {
           "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
-          "name": "mfa-enabled-for-iam-console-access"
+          "name": "mfa-enabled-for-iam-console-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "OPENSEARCH_IN_VPC_ONLY",
           "name": "opensearch-in-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::OpenSearch::Domain"
           ]
@@ -245,6 +272,7 @@
         {
           "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
           "name": "rds-instance-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBInstance"
           ]
@@ -252,6 +280,7 @@
         {
           "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
           "name": "rds-snapshots-public-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBClusterSnapshot",
             "AWS::RDS::DBSnapshot"
@@ -260,6 +289,7 @@
         {
           "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
           "name": "redshift-cluster-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Redshift::Cluster"
           ]
@@ -267,26 +297,27 @@
         {
           "identifier": "RESTRICTED_INCOMING_TRAFFIC",
           "name": "restricted-common-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedPort1": {
               "value": "20",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort2": {
               "value": "21",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort3": {
               "value": "3389",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort4": {
               "value": "3306",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort5": {
               "value": "4333",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -295,19 +326,23 @@
         },
         {
           "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
-          "name": "root-account-hardware-mfa-enabled"
+          "name": "root-account-hardware-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
-          "name": "root-account-mfa-enabled"
+          "name": "root-account-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
-          "name": "s3-account-level-public-access-blocks-periodic"
+          "name": "s3-account-level-public-access-blocks-periodic",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
           "name": "s3-bucket-level-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -315,6 +350,7 @@
         {
           "identifier": "S3_BUCKET_POLICY_GRANTEE_CHECK",
           "name": "s3-bucket-policy-grantee-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -322,6 +358,7 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
           "name": "s3-bucket-public-read-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -329,17 +366,20 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
           "name": "s3-bucket-public-write-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
         },
         {
           "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
-          "name": "sagemaker-notebook-no-direct-internet-access"
+          "name": "sagemaker-notebook-no-direct-internet-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SECRETSMANAGER_ROTATION_ENABLED_CHECK",
           "name": "secretsmanager-rotation-enabled-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::SecretsManager::Secret"
           ]
@@ -347,17 +387,20 @@
         {
           "identifier": "SECRETSMANAGER_SCHEDULED_ROTATION_SUCCESS_CHECK",
           "name": "secretsmanager-scheduled-rotation-success-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::SecretsManager::Secret"
           ]
         },
         {
           "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
-          "name": "ssm-document-not-public"
+          "name": "ssm-document-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
           "name": "vpc-default-security-group-closed",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -365,10 +408,11 @@
         {
           "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
           "name": "vpc-sg-open-only-to-authorized-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "authorizedTcpPorts": {
               "value": "443",
-              "order": "exact"
+              "order": "set-intersect"
             }
           },
           "resource_types": [
@@ -392,15 +436,18 @@
       "config_rules": [
         {
           "identifier": "DMS_REPLICATION_NOT_PUBLIC",
-          "name": "dms-replication-not-public"
+          "name": "dms-replication-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
-          "name": "ebs-snapshot-public-restorable-check"
+          "name": "ebs-snapshot-public-restorable-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EC2_IMDSV2_CHECK",
           "name": "ec2-imdsv2-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -408,25 +455,30 @@
         {
           "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
           "name": "ec2-instance-no-public-ip",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
         },
         {
           "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
-          "name": "elasticsearch-in-vpc-only"
+          "name": "elasticsearch-in-vpc-only",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EMR_KERBEROS_ENABLED",
-          "name": "emr-kerberos-enabled"
+          "name": "emr-kerberos-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EMR_MASTER_NO_PUBLIC_IP",
-          "name": "emr-master-no-public-ip"
+          "name": "emr-master-no-public-ip",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_NO_INLINE_POLICY_CHECK",
           "name": "iam-no-inline-policy-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Group",
             "AWS::IAM::Role",
@@ -436,6 +488,7 @@
         {
           "identifier": "IAM_PASSWORD_POLICY",
           "name": "iam-password-policy",
+          "provenance": "aws-mapping",
           "parameters": {
             "MaxPasswordAge": {
               "value": "90",
@@ -470,28 +523,33 @@
         {
           "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS",
           "name": "iam-policy-no-statements-with-admin-access",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::Policy"
           ]
         },
         {
           "identifier": "IAM_ROOT_ACCESS_KEY_CHECK",
-          "name": "iam-root-access-key-check"
+          "name": "iam-root-access-key-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_USER_GROUP_MEMBERSHIP_CHECK",
           "name": "iam-user-group-membership-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::User"
           ]
         },
         {
           "identifier": "IAM_USER_MFA_ENABLED",
-          "name": "iam-user-mfa-enabled"
+          "name": "iam-user-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_USER_NO_POLICIES_CHECK",
           "name": "iam-user-no-policies-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::IAM::User"
           ]
@@ -499,6 +557,7 @@
         {
           "identifier": "INCOMING_SSH_DISABLED",
           "name": "restricted-ssh",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -506,6 +565,7 @@
         {
           "identifier": "INSTANCES_IN_VPC",
           "name": "ec2-instances-in-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -513,6 +573,7 @@
         {
           "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
           "name": "internet-gateway-authorized-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::InternetGateway"
           ]
@@ -520,6 +581,7 @@
         {
           "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
           "name": "lambda-function-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
@@ -527,17 +589,20 @@
         {
           "identifier": "LAMBDA_INSIDE_VPC",
           "name": "lambda-inside-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
         },
         {
           "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
-          "name": "mfa-enabled-for-iam-console-access"
+          "name": "mfa-enabled-for-iam-console-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "OPENSEARCH_IN_VPC_ONLY",
           "name": "opensearch-in-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::OpenSearch::Domain"
           ]
@@ -545,6 +610,7 @@
         {
           "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
           "name": "rds-instance-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBInstance"
           ]
@@ -552,6 +618,7 @@
         {
           "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
           "name": "rds-snapshots-public-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBClusterSnapshot",
             "AWS::RDS::DBSnapshot"
@@ -560,6 +627,7 @@
         {
           "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
           "name": "redshift-cluster-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Redshift::Cluster"
           ]
@@ -567,26 +635,27 @@
         {
           "identifier": "RESTRICTED_INCOMING_TRAFFIC",
           "name": "restricted-common-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedPort1": {
               "value": "20",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort2": {
               "value": "21",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort3": {
               "value": "3389",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort4": {
               "value": "3306",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort5": {
               "value": "4333",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -595,19 +664,23 @@
         },
         {
           "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
-          "name": "root-account-hardware-mfa-enabled"
+          "name": "root-account-hardware-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
-          "name": "root-account-mfa-enabled"
+          "name": "root-account-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
-          "name": "s3-account-level-public-access-blocks-periodic"
+          "name": "s3-account-level-public-access-blocks-periodic",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
           "name": "s3-bucket-level-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -615,6 +688,7 @@
         {
           "identifier": "S3_BUCKET_POLICY_GRANTEE_CHECK",
           "name": "s3-bucket-policy-grantee-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -622,6 +696,7 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
           "name": "s3-bucket-public-read-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -629,17 +704,20 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
           "name": "s3-bucket-public-write-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
         },
         {
           "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
-          "name": "sagemaker-notebook-no-direct-internet-access"
+          "name": "sagemaker-notebook-no-direct-internet-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
           "name": "vpc-default-security-group-closed",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -647,10 +725,11 @@
         {
           "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
           "name": "vpc-sg-open-only-to-authorized-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "authorizedTcpPorts": {
               "value": "443",
-              "order": "exact"
+              "order": "set-intersect"
             }
           },
           "resource_types": [
@@ -675,6 +754,7 @@
         {
           "identifier": "ALB_WAF_ENABLED",
           "name": "alb-waf-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancingV2::LoadBalancer"
           ]
@@ -682,6 +762,7 @@
         {
           "identifier": "AUTOSCALING_LAUNCH_CONFIG_PUBLIC_IP_DISABLED",
           "name": "autoscaling-launch-config-public-ip-disabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::AutoScaling::LaunchConfiguration"
           ]
@@ -689,17 +770,20 @@
         {
           "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
           "name": "ec2-instance-no-public-ip",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
         },
         {
           "identifier": "EMR_MASTER_NO_PUBLIC_IP",
-          "name": "emr-master-no-public-ip"
+          "name": "emr-master-no-public-ip",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "INCOMING_SSH_DISABLED",
           "name": "restricted-ssh",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -707,6 +791,7 @@
         {
           "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
           "name": "internet-gateway-authorized-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::InternetGateway"
           ]
@@ -714,6 +799,7 @@
         {
           "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
           "name": "lambda-function-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
@@ -721,6 +807,7 @@
         {
           "identifier": "NO_UNRESTRICTED_ROUTE_TO_IGW",
           "name": "no-unrestricted-route-to-igw",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::RouteTable"
           ]
@@ -728,6 +815,7 @@
         {
           "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
           "name": "rds-instance-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBInstance"
           ]
@@ -735,6 +823,7 @@
         {
           "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
           "name": "redshift-cluster-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Redshift::Cluster"
           ]
@@ -742,26 +831,27 @@
         {
           "identifier": "RESTRICTED_INCOMING_TRAFFIC",
           "name": "restricted-common-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedPort1": {
               "value": "20",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort2": {
               "value": "21",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort3": {
               "value": "3389",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort4": {
               "value": "3306",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort5": {
               "value": "4333",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -770,11 +860,13 @@
         },
         {
           "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
-          "name": "s3-account-level-public-access-blocks-periodic"
+          "name": "s3-account-level-public-access-blocks-periodic",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
           "name": "s3-bucket-level-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -782,6 +874,7 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
           "name": "s3-bucket-public-read-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -789,21 +882,25 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
           "name": "s3-bucket-public-write-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
         },
         {
           "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
-          "name": "sagemaker-notebook-no-direct-internet-access"
+          "name": "sagemaker-notebook-no-direct-internet-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
-          "name": "ssm-document-not-public"
+          "name": "ssm-document-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SUBNET_AUTO_ASSIGN_PUBLIC_IP_DISABLED",
           "name": "subnet-auto-assign-public-ip-disabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Subnet"
           ]
@@ -811,6 +908,7 @@
         {
           "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
           "name": "vpc-default-security-group-closed",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -818,10 +916,11 @@
         {
           "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
           "name": "vpc-sg-open-only-to-authorized-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "authorizedTcpPorts": {
               "value": "443",
-              "order": "exact"
+              "order": "set-intersect"
             }
           },
           "resource_types": [
@@ -839,7 +938,34 @@
         "far": "52.204-21(b)(1)(iv)"
       },
       "enforcement": [
+        "config-rule",
         "procedural"
+      ],
+      "config_rules": [
+        {
+          "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+          "name": "s3-account-level-public-access-blocks-periodic",
+          "provenance": "curated",
+          "rationale": "Control public information: account-level public access blocks are the preventive floor under the two bucket-level rules above, so the three are bound together. Detects the case where a reviewer's intent is correct but the account permits public exposure anyway."
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+          "name": "s3-bucket-public-read-prohibited",
+          "provenance": "curated",
+          "rationale": "Control public information: this rule detects the most common way Federal Contract Information becomes publicly readable. AWS's mapping binds it to AC.L1-3.1.1 and 3.1.2 rather than to 3.1.22, so the association with the public-information requirement is automat's own. It observes exposure, not the review process the requirement mandates, which is why the attestation stub remains.",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+          "name": "s3-bucket-public-write-prohibited",
+          "provenance": "curated",
+          "rationale": "Control public information: a publicly writable bucket means content can be posted to a publicly accessible system with no review at all. Bound here by automat rather than by AWS, which maps it to the general access-control requirements.",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        }
       ],
       "attestation": {
         "template": "publicly-accessible-content.md",
@@ -863,6 +989,7 @@
         {
           "identifier": "API_GW_EXECUTION_LOGGING_ENABLED",
           "name": "api-gw-execution-logging-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ApiGateway::Stage",
             "AWS::ApiGatewayV2::Stage"
@@ -870,15 +997,18 @@
         },
         {
           "identifier": "CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
-          "name": "cloudtrail-s3-dataevents-enabled"
+          "name": "cloudtrail-s3-dataevents-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "CLOUD_TRAIL_CLOUD_WATCH_LOGS_ENABLED",
-          "name": "cloud-trail-cloud-watch-logs-enabled"
+          "name": "cloud-trail-cloud-watch-logs-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ELB_LOGGING_ENABLED",
           "name": "elb-logging-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancing::LoadBalancer",
             "AWS::ElasticLoadBalancingV2::LoadBalancer"
@@ -886,15 +1016,18 @@
         },
         {
           "identifier": "EMR_KERBEROS_ENABLED",
-          "name": "emr-kerberos-enabled"
+          "name": "emr-kerberos-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "MULTI_REGION_CLOUD_TRAIL_ENABLED",
-          "name": "multi-region-cloudtrail-enabled"
+          "name": "multi-region-cloudtrail-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "RDS_LOGGING_ENABLED",
           "name": "rds-logging-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBInstance"
           ]
@@ -902,13 +1035,15 @@
         {
           "identifier": "S3_BUCKET_LOGGING_ENABLED",
           "name": "s3-bucket-logging-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
         },
         {
           "identifier": "WAFV2_LOGGING_ENABLED",
-          "name": "wafv2-logging-enabled"
+          "name": "wafv2-logging-enabled",
+          "provenance": "aws-mapping"
         }
       ]
     },
@@ -927,11 +1062,13 @@
       "config_rules": [
         {
           "identifier": "EMR_KERBEROS_ENABLED",
-          "name": "emr-kerberos-enabled"
+          "name": "emr-kerberos-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "IAM_PASSWORD_POLICY",
           "name": "iam-password-policy",
+          "provenance": "aws-mapping",
           "parameters": {
             "MaxPasswordAge": {
               "value": "90",
@@ -965,19 +1102,23 @@
         },
         {
           "identifier": "IAM_USER_MFA_ENABLED",
-          "name": "iam-user-mfa-enabled"
+          "name": "iam-user-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
-          "name": "mfa-enabled-for-iam-console-access"
+          "name": "mfa-enabled-for-iam-console-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
-          "name": "root-account-hardware-mfa-enabled"
+          "name": "root-account-hardware-mfa-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
-          "name": "root-account-mfa-enabled"
+          "name": "root-account-mfa-enabled",
+          "provenance": "aws-mapping"
         }
       ]
     },
@@ -1048,17 +1189,20 @@
         {
           "identifier": "ALB_HTTP_DROP_INVALID_HEADER_ENABLED",
           "name": "alb-http-drop-invalid-header-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancingV2::LoadBalancer"
           ]
         },
         {
           "identifier": "ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK",
-          "name": "alb-http-to-https-redirection-check"
+          "name": "alb-http-to-https-redirection-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ALB_WAF_ENABLED",
           "name": "alb-waf-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancingV2::LoadBalancer"
           ]
@@ -1066,6 +1210,7 @@
         {
           "identifier": "API_GW_ASSOCIATED_WITH_WAF",
           "name": "api-gw-associated-with-waf",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ApiGateway::Stage"
           ]
@@ -1073,6 +1218,7 @@
         {
           "identifier": "CLOUDWATCH_ALARM_ACTION_CHECK",
           "name": "cloudwatch-alarm-action-check",
+          "provenance": "aws-mapping",
           "parameters": {
             "alarmActionRequired": {
               "value": "true",
@@ -1093,19 +1239,23 @@
         },
         {
           "identifier": "DMS_REPLICATION_NOT_PUBLIC",
-          "name": "dms-replication-not-public"
+          "name": "dms-replication-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
-          "name": "ebs-snapshot-public-restorable-check"
+          "name": "ebs-snapshot-public-restorable-check",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
-          "name": "elasticsearch-in-vpc-only"
+          "name": "elasticsearch-in-vpc-only",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "ELASTICSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
           "name": "elasticsearch-node-to-node-encryption-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Elasticsearch::Domain"
           ]
@@ -1113,6 +1263,7 @@
         {
           "identifier": "ELB_ACM_CERTIFICATE_REQUIRED",
           "name": "elb-acm-certificate-required",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancing::LoadBalancer"
           ]
@@ -1120,17 +1271,20 @@
         {
           "identifier": "ELB_TLS_HTTPS_LISTENERS_ONLY",
           "name": "elb-tls-https-listeners-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ElasticLoadBalancing::LoadBalancer"
           ]
         },
         {
           "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
-          "name": "guardduty-enabled-centralized"
+          "name": "guardduty-enabled-centralized",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "INCOMING_SSH_DISABLED",
           "name": "restricted-ssh",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -1138,6 +1292,7 @@
         {
           "identifier": "INSTANCES_IN_VPC",
           "name": "ec2-instances-in-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::Instance"
           ]
@@ -1145,6 +1300,7 @@
         {
           "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
           "name": "internet-gateway-authorized-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::InternetGateway"
           ]
@@ -1152,6 +1308,7 @@
         {
           "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
           "name": "lambda-function-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
@@ -1159,6 +1316,7 @@
         {
           "identifier": "LAMBDA_INSIDE_VPC",
           "name": "lambda-inside-vpc",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Lambda::Function"
           ]
@@ -1166,6 +1324,7 @@
         {
           "identifier": "NO_UNRESTRICTED_ROUTE_TO_IGW",
           "name": "no-unrestricted-route-to-igw",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::RouteTable"
           ]
@@ -1173,6 +1332,7 @@
         {
           "identifier": "OPENSEARCH_IN_VPC_ONLY",
           "name": "opensearch-in-vpc-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::OpenSearch::Domain"
           ]
@@ -1180,6 +1340,7 @@
         {
           "identifier": "OPENSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
           "name": "opensearch-node-to-node-encryption-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::OpenSearch::Domain"
           ]
@@ -1187,6 +1348,7 @@
         {
           "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
           "name": "rds-instance-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBInstance"
           ]
@@ -1194,6 +1356,7 @@
         {
           "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
           "name": "rds-snapshots-public-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::RDS::DBClusterSnapshot",
             "AWS::RDS::DBSnapshot"
@@ -1202,6 +1365,7 @@
         {
           "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
           "name": "redshift-cluster-public-access-check",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Redshift::Cluster"
           ]
@@ -1209,6 +1373,7 @@
         {
           "identifier": "REDSHIFT_REQUIRE_TLS_SSL",
           "name": "redshift-require-tls-ssl",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::Redshift::Cluster"
           ]
@@ -1216,26 +1381,27 @@
         {
           "identifier": "RESTRICTED_INCOMING_TRAFFIC",
           "name": "restricted-common-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "blockedPort1": {
               "value": "20",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort2": {
               "value": "21",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort3": {
               "value": "3389",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort4": {
               "value": "3306",
-              "order": "exact"
+              "order": "set-union"
             },
             "blockedPort5": {
               "value": "4333",
-              "order": "exact"
+              "order": "set-union"
             }
           },
           "resource_types": [
@@ -1244,11 +1410,13 @@
         },
         {
           "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
-          "name": "s3-account-level-public-access-blocks-periodic"
+          "name": "s3-account-level-public-access-blocks-periodic",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
           "name": "s3-bucket-level-public-access-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -1256,6 +1424,7 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
           "name": "s3-bucket-public-read-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -1263,6 +1432,7 @@
         {
           "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
           "name": "s3-bucket-public-write-prohibited",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
@@ -1270,25 +1440,30 @@
         {
           "identifier": "S3_BUCKET_SSL_REQUESTS_ONLY",
           "name": "s3-bucket-ssl-requests-only",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::S3::Bucket"
           ]
         },
         {
           "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
-          "name": "sagemaker-notebook-no-direct-internet-access"
+          "name": "sagemaker-notebook-no-direct-internet-access",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SECURITYHUB_ENABLED",
-          "name": "securityhub-enabled"
+          "name": "securityhub-enabled",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
-          "name": "ssm-document-not-public"
+          "name": "ssm-document-not-public",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
           "name": "vpc-default-security-group-closed",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::EC2::SecurityGroup"
           ]
@@ -1296,10 +1471,11 @@
         {
           "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
           "name": "vpc-sg-open-only-to-authorized-ports",
+          "provenance": "aws-mapping",
           "parameters": {
             "authorizedTcpPorts": {
               "value": "443",
-              "order": "exact"
+              "order": "set-intersect"
             }
           },
           "resource_types": [
@@ -1317,7 +1493,28 @@
         "far": "52.204-21(b)(1)(xi)"
       },
       "enforcement": [
+        "config-rule",
         "procedural"
+      ],
+      "config_rules": [
+        {
+          "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
+          "name": "ec2-instance-no-public-ip",
+          "provenance": "curated",
+          "rationale": "Public-access system separation: an instance with a public IP sits on the boundary regardless of subnet intent. Bound here by automat as the instance-level counterpart to the subnet rule above; AWS maps it to boundary protection instead.",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "SUBNET_AUTO_ASSIGN_PUBLIC_IP_DISABLED",
+          "name": "subnet-auto-assign-public-ip-disabled",
+          "provenance": "curated",
+          "rationale": "Public-access system separation: a subnet that auto-assigns public IPs is not an internal network, so this rule detects the clearest violation of the separation the requirement demands. AWS maps it elsewhere. Whether a topology genuinely separates publicly accessible components from internal ones is an architecture question no rule can answer, which is why the attestation stub remains.",
+          "resource_types": [
+            "AWS::EC2::Subnet"
+          ]
+        }
       ],
       "attestation": {
         "template": "publicly-accessible-subnetworks.md",
@@ -1341,6 +1538,7 @@
         {
           "identifier": "CLOUDWATCH_ALARM_ACTION_CHECK",
           "name": "cloudwatch-alarm-action-check",
+          "provenance": "aws-mapping",
           "parameters": {
             "alarmActionRequired": {
               "value": "true",
@@ -1361,11 +1559,13 @@
         },
         {
           "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
-          "name": "guardduty-enabled-centralized"
+          "name": "guardduty-enabled-centralized",
+          "provenance": "aws-mapping"
         },
         {
           "identifier": "SECURITYHUB_ENABLED",
-          "name": "securityhub-enabled"
+          "name": "securityhub-enabled",
+          "provenance": "aws-mapping"
         }
       ]
     },
@@ -1384,7 +1584,8 @@
       "config_rules": [
         {
           "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
-          "name": "guardduty-enabled-centralized"
+          "name": "guardduty-enabled-centralized",
+          "provenance": "aws-mapping"
         }
       ]
     },
@@ -1397,7 +1598,16 @@
         "far": "52.204-21(b)(1)(xiv)"
       },
       "enforcement": [
+        "config-rule",
         "procedural"
+      ],
+      "config_rules": [
+        {
+          "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
+          "name": "guardduty-enabled-centralized",
+          "provenance": "curated",
+          "rationale": "Update malicious code protection: a managed detection service updates its own threat intelligence, so keeping it enabled is the AWS-native form of 'update protection mechanisms when new releases are available'. AWS maps this rule to SI.L1-3.14.1 and 3.14.2, not to 3.14.5, so the association is automat's. No rule observes the update itself, and it says nothing about protection mechanisms on instances, which is why the attestation stub remains."
+        }
       ],
       "attestation": {
         "template": "malicious-code-updates.md",
@@ -1421,6 +1631,7 @@
         {
           "identifier": "ECR_PRIVATE_IMAGE_SCANNING_ENABLED",
           "name": "ecr-private-image-scanning-enabled",
+          "provenance": "aws-mapping",
           "resource_types": [
             "AWS::ECR::Repository"
           ]
