@@ -1,0 +1,672 @@
+{
+  "_comment": "AWS Config managed-rule mapping for CMMC 2.0 Level 1. Two upstream inputs are joined here: the conformance-pack template (which carries the rule set, its default parameters, and resource scopes but no control ids) and the AWS Config Developer Guide mapping table (which carries control-id -> rule associations but no parameters). Control ids in aws_config_mapping use the 800-171-style numbering AWS publishes; the compiler joins them to CMMC final-rule ids via the 800-171 R2 crosswalk in cfr-170-crosswalk.json.",
+  "sources": [
+    {
+      "mapping": "aws-config-conformance-pack-cmmc-2.0-level-1",
+      "version": "awslabs/aws-config-rules master @ 2026-08-04",
+      "uri": "https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml",
+      "retrieved_at": "2026-08-04T00:00:00Z",
+      "upstream_sha256": "193b61321756eb018f78d2a70d08fdc772b79489ea188f0d374834a3635d0427",
+      "upstream_file": "cmmc-l1-pack.yaml"
+    },
+    {
+      "mapping": "aws-config-developer-guide-cmmc-2.0-level-1-mapping",
+      "version": "retrieved 2026-08-04",
+      "uri": "https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html",
+      "retrieved_at": "2026-08-04T00:00:00Z",
+      "upstream_sha256": "943efa9d9ddda0ce17f98468322fdd5f5410da1da549f525236dff967cd0f50a",
+      "upstream_file": "cmmc-page.html"
+    }
+  ],
+  "aws_control_descriptions": {
+    "AC.L1-3.1.1": "Limit information system access to authorized users, processes acting on behalf of authorized users, or devices (including other information systems).",
+    "AC.L1-3.1.2": "Limit information system access to the types of transactions and functions that authorized users are permitted to execute.",
+    "AC.L1-3.1.20": "Verify and control/limit connections to and use of external information systems.",
+    "IA.L1-3.5.1": "Identify information system users, processes acting on behalf of users, or devices.",
+    "IA.L1-3.5.2": "Authenticate (or verify) the identities of those users, processes, or devices, as a prerequisite to allowing access to organizational information systems.",
+    "SC.L1-3.13.1": "Monitor, control, and protect organizational communications (i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
+    "SI.L1-3.14.1": "Identify, report, and correct information and information system flaws in a timely manner.",
+    "SI.L1-3.14.2": "Provide protection from malicious code at appropriate locations within organizational information systems.",
+    "SI.L1-3.14.5": "Perform periodic scans of the information system and real-time scans of files from external sources as files are downloaded, opened, or executed."
+  },
+  "aws_config_mapping": {
+    "AC.L1-3.1.1": [
+      "access-keys-rotated",
+      "dms-replication-not-public",
+      "ebs-snapshot-public-restorable-check",
+      "ec2-imdsv2-check",
+      "ec2-instance-no-public-ip",
+      "ec2-instance-profile-attached",
+      "ec2-instances-in-vpc",
+      "elasticsearch-in-vpc-only",
+      "emr-kerberos-enabled",
+      "emr-master-no-public-ip",
+      "iam-customer-policy-blocked-kms-actions",
+      "iam-group-has-users-check",
+      "iam-inline-policy-blocked-kms-actions",
+      "iam-no-inline-policy-check",
+      "iam-policy-no-statements-with-admin-access",
+      "iam-policy-no-statements-with-full-access",
+      "iam-root-access-key-check",
+      "iam-user-group-membership-check",
+      "iam-user-mfa-enabled",
+      "iam-user-no-policies-check",
+      "iam-user-unused-credentials-check",
+      "internet-gateway-authorized-vpc-only",
+      "lambda-function-public-access-prohibited",
+      "lambda-inside-vpc",
+      "mfa-enabled-for-iam-console-access",
+      "opensearch-in-vpc-only",
+      "rds-instance-public-access-check",
+      "rds-snapshots-public-prohibited",
+      "redshift-cluster-public-access-check",
+      "restricted-common-ports",
+      "restricted-ssh",
+      "root-account-hardware-mfa-enabled",
+      "root-account-mfa-enabled",
+      "s3-account-level-public-access-blocks-periodic",
+      "s3-bucket-level-public-access-prohibited",
+      "s3-bucket-policy-grantee-check",
+      "s3-bucket-public-read-prohibited",
+      "s3-bucket-public-write-prohibited",
+      "sagemaker-notebook-no-direct-internet-access",
+      "secretsmanager-rotation-enabled-check",
+      "secretsmanager-scheduled-rotation-success-check",
+      "ssm-document-not-public",
+      "vpc-default-security-group-closed",
+      "vpc-sg-open-only-to-authorized-ports"
+    ],
+    "AC.L1-3.1.2": [
+      "dms-replication-not-public",
+      "ebs-snapshot-public-restorable-check",
+      "ec2-imdsv2-check",
+      "ec2-instance-no-public-ip",
+      "ec2-instances-in-vpc",
+      "elasticsearch-in-vpc-only",
+      "emr-kerberos-enabled",
+      "emr-master-no-public-ip",
+      "iam-no-inline-policy-check",
+      "iam-password-policy",
+      "iam-policy-no-statements-with-admin-access",
+      "iam-root-access-key-check",
+      "iam-user-group-membership-check",
+      "iam-user-mfa-enabled",
+      "iam-user-no-policies-check",
+      "internet-gateway-authorized-vpc-only",
+      "lambda-function-public-access-prohibited",
+      "lambda-inside-vpc",
+      "mfa-enabled-for-iam-console-access",
+      "opensearch-in-vpc-only",
+      "rds-instance-public-access-check",
+      "rds-snapshots-public-prohibited",
+      "redshift-cluster-public-access-check",
+      "restricted-common-ports",
+      "restricted-ssh",
+      "root-account-hardware-mfa-enabled",
+      "root-account-mfa-enabled",
+      "s3-account-level-public-access-blocks-periodic",
+      "s3-bucket-level-public-access-prohibited",
+      "s3-bucket-policy-grantee-check",
+      "s3-bucket-public-read-prohibited",
+      "s3-bucket-public-write-prohibited",
+      "sagemaker-notebook-no-direct-internet-access",
+      "vpc-default-security-group-closed",
+      "vpc-sg-open-only-to-authorized-ports"
+    ],
+    "AC.L1-3.1.20": [
+      "alb-waf-enabled",
+      "autoscaling-launch-config-public-ip-disabled",
+      "ec2-instance-no-public-ip",
+      "emr-master-no-public-ip",
+      "internet-gateway-authorized-vpc-only",
+      "lambda-function-public-access-prohibited",
+      "no-unrestricted-route-to-igw",
+      "rds-instance-public-access-check",
+      "redshift-cluster-public-access-check",
+      "restricted-common-ports",
+      "restricted-ssh",
+      "s3-account-level-public-access-blocks-periodic",
+      "s3-bucket-level-public-access-prohibited",
+      "s3-bucket-public-read-prohibited",
+      "s3-bucket-public-write-prohibited",
+      "sagemaker-notebook-no-direct-internet-access",
+      "ssm-document-not-public",
+      "subnet-auto-assign-public-ip-disabled",
+      "vpc-default-security-group-closed",
+      "vpc-sg-open-only-to-authorized-ports"
+    ],
+    "IA.L1-3.5.1": [
+      "api-gw-execution-logging-enabled",
+      "cloud-trail-cloud-watch-logs-enabled",
+      "cloudtrail-s3-dataevents-enabled",
+      "elb-logging-enabled",
+      "emr-kerberos-enabled",
+      "multi-region-cloudtrail-enabled",
+      "rds-logging-enabled",
+      "s3-bucket-logging-enabled",
+      "wafv2-logging-enabled"
+    ],
+    "IA.L1-3.5.2": [
+      "emr-kerberos-enabled",
+      "iam-password-policy",
+      "iam-user-mfa-enabled",
+      "mfa-enabled-for-iam-console-access",
+      "root-account-hardware-mfa-enabled",
+      "root-account-mfa-enabled"
+    ],
+    "SC.L1-3.13.1": [
+      "alb-http-drop-invalid-header-enabled",
+      "alb-http-to-https-redirection-check",
+      "alb-waf-enabled",
+      "api-gw-associated-with-waf",
+      "cloudwatch-alarm-action-check",
+      "dms-replication-not-public",
+      "ebs-snapshot-public-restorable-check",
+      "ec2-instances-in-vpc",
+      "elasticsearch-in-vpc-only",
+      "elasticsearch-node-to-node-encryption-check",
+      "elb-acm-certificate-required",
+      "elb-tls-https-listeners-only",
+      "guardduty-enabled-centralized",
+      "internet-gateway-authorized-vpc-only",
+      "lambda-function-public-access-prohibited",
+      "lambda-inside-vpc",
+      "no-unrestricted-route-to-igw",
+      "opensearch-in-vpc-only",
+      "opensearch-node-to-node-encryption-check",
+      "rds-instance-public-access-check",
+      "rds-snapshots-public-prohibited",
+      "redshift-cluster-public-access-check",
+      "redshift-require-tls-ssl",
+      "restricted-common-ports",
+      "restricted-ssh",
+      "s3-account-level-public-access-blocks-periodic",
+      "s3-bucket-level-public-access-prohibited",
+      "s3-bucket-public-read-prohibited",
+      "s3-bucket-public-write-prohibited",
+      "s3-bucket-ssl-requests-only",
+      "sagemaker-notebook-no-direct-internet-access",
+      "securityhub-enabled",
+      "ssm-document-not-public",
+      "vpc-default-security-group-closed",
+      "vpc-sg-open-only-to-authorized-ports"
+    ],
+    "SI.L1-3.14.1": [
+      "cloudwatch-alarm-action-check",
+      "guardduty-enabled-centralized",
+      "securityhub-enabled"
+    ],
+    "SI.L1-3.14.2": [
+      "guardduty-enabled-centralized"
+    ],
+    "SI.L1-3.14.5": [
+      "ecr-private-image-scanning-enabled"
+    ]
+  },
+  "rules": {
+    "access-keys-rotated": {
+      "identifier": "ACCESS_KEYS_ROTATED",
+      "name": "access-keys-rotated",
+      "parameters": {
+        "maxAccessKeyAge": "90"
+      }
+    },
+    "alb-http-drop-invalid-header-enabled": {
+      "identifier": "ALB_HTTP_DROP_INVALID_HEADER_ENABLED",
+      "name": "alb-http-drop-invalid-header-enabled",
+      "resource_types": [
+        "AWS::ElasticLoadBalancingV2::LoadBalancer"
+      ]
+    },
+    "alb-http-to-https-redirection-check": {
+      "identifier": "ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK",
+      "name": "alb-http-to-https-redirection-check"
+    },
+    "alb-waf-enabled": {
+      "identifier": "ALB_WAF_ENABLED",
+      "name": "alb-waf-enabled",
+      "resource_types": [
+        "AWS::ElasticLoadBalancingV2::LoadBalancer"
+      ]
+    },
+    "api-gw-associated-with-waf": {
+      "identifier": "API_GW_ASSOCIATED_WITH_WAF",
+      "name": "api-gw-associated-with-waf",
+      "resource_types": [
+        "AWS::ApiGateway::Stage"
+      ]
+    },
+    "api-gw-execution-logging-enabled": {
+      "identifier": "API_GW_EXECUTION_LOGGING_ENABLED",
+      "name": "api-gw-execution-logging-enabled",
+      "resource_types": [
+        "AWS::ApiGateway::Stage",
+        "AWS::ApiGatewayV2::Stage"
+      ]
+    },
+    "autoscaling-launch-config-public-ip-disabled": {
+      "identifier": "AUTOSCALING_LAUNCH_CONFIG_PUBLIC_IP_DISABLED",
+      "name": "autoscaling-launch-config-public-ip-disabled",
+      "resource_types": [
+        "AWS::AutoScaling::LaunchConfiguration"
+      ]
+    },
+    "cloud-trail-cloud-watch-logs-enabled": {
+      "identifier": "CLOUD_TRAIL_CLOUD_WATCH_LOGS_ENABLED",
+      "name": "cloud-trail-cloud-watch-logs-enabled"
+    },
+    "cloudtrail-s3-dataevents-enabled": {
+      "identifier": "CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
+      "name": "cloudtrail-s3-dataevents-enabled"
+    },
+    "cloudwatch-alarm-action-check": {
+      "identifier": "CLOUDWATCH_ALARM_ACTION_CHECK",
+      "name": "cloudwatch-alarm-action-check",
+      "parameters": {
+        "alarmActionRequired": "true",
+        "insufficientDataActionRequired": "true",
+        "okActionRequired": "false"
+      },
+      "resource_types": [
+        "AWS::CloudWatch::Alarm"
+      ]
+    },
+    "dms-replication-not-public": {
+      "identifier": "DMS_REPLICATION_NOT_PUBLIC",
+      "name": "dms-replication-not-public"
+    },
+    "ebs-snapshot-public-restorable-check": {
+      "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
+      "name": "ebs-snapshot-public-restorable-check"
+    },
+    "ec2-imdsv2-check": {
+      "identifier": "EC2_IMDSV2_CHECK",
+      "name": "ec2-imdsv2-check",
+      "resource_types": [
+        "AWS::EC2::Instance"
+      ]
+    },
+    "ec2-instance-no-public-ip": {
+      "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
+      "name": "ec2-instance-no-public-ip",
+      "resource_types": [
+        "AWS::EC2::Instance"
+      ]
+    },
+    "ec2-instance-profile-attached": {
+      "identifier": "EC2_INSTANCE_PROFILE_ATTACHED",
+      "name": "ec2-instance-profile-attached",
+      "resource_types": [
+        "AWS::EC2::Instance"
+      ]
+    },
+    "ec2-instances-in-vpc": {
+      "identifier": "INSTANCES_IN_VPC",
+      "name": "ec2-instances-in-vpc",
+      "resource_types": [
+        "AWS::EC2::Instance"
+      ]
+    },
+    "ecr-private-image-scanning-enabled": {
+      "identifier": "ECR_PRIVATE_IMAGE_SCANNING_ENABLED",
+      "name": "ecr-private-image-scanning-enabled",
+      "resource_types": [
+        "AWS::ECR::Repository"
+      ]
+    },
+    "elasticsearch-in-vpc-only": {
+      "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
+      "name": "elasticsearch-in-vpc-only"
+    },
+    "elasticsearch-node-to-node-encryption-check": {
+      "identifier": "ELASTICSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
+      "name": "elasticsearch-node-to-node-encryption-check",
+      "resource_types": [
+        "AWS::Elasticsearch::Domain"
+      ]
+    },
+    "elb-acm-certificate-required": {
+      "identifier": "ELB_ACM_CERTIFICATE_REQUIRED",
+      "name": "elb-acm-certificate-required",
+      "resource_types": [
+        "AWS::ElasticLoadBalancing::LoadBalancer"
+      ]
+    },
+    "elb-logging-enabled": {
+      "identifier": "ELB_LOGGING_ENABLED",
+      "name": "elb-logging-enabled",
+      "resource_types": [
+        "AWS::ElasticLoadBalancing::LoadBalancer",
+        "AWS::ElasticLoadBalancingV2::LoadBalancer"
+      ]
+    },
+    "elb-tls-https-listeners-only": {
+      "identifier": "ELB_TLS_HTTPS_LISTENERS_ONLY",
+      "name": "elb-tls-https-listeners-only",
+      "resource_types": [
+        "AWS::ElasticLoadBalancing::LoadBalancer"
+      ]
+    },
+    "emr-kerberos-enabled": {
+      "identifier": "EMR_KERBEROS_ENABLED",
+      "name": "emr-kerberos-enabled"
+    },
+    "emr-master-no-public-ip": {
+      "identifier": "EMR_MASTER_NO_PUBLIC_IP",
+      "name": "emr-master-no-public-ip"
+    },
+    "guardduty-enabled-centralized": {
+      "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
+      "name": "guardduty-enabled-centralized"
+    },
+    "iam-customer-policy-blocked-kms-actions": {
+      "identifier": "IAM_CUSTOMER_POLICY_BLOCKED_KMS_ACTIONS",
+      "name": "iam-customer-policy-blocked-kms-actions",
+      "parameters": {
+        "blockedActionsPatterns": "kms:Decrypt,kms:ReEncryptFrom"
+      },
+      "resource_types": [
+        "AWS::IAM::Policy"
+      ]
+    },
+    "iam-group-has-users-check": {
+      "identifier": "IAM_GROUP_HAS_USERS_CHECK",
+      "name": "iam-group-has-users-check",
+      "resource_types": [
+        "AWS::IAM::Group"
+      ]
+    },
+    "iam-inline-policy-blocked-kms-actions": {
+      "identifier": "IAM_INLINE_POLICY_BLOCKED_KMS_ACTIONS",
+      "name": "iam-inline-policy-blocked-kms-actions",
+      "parameters": {
+        "blockedActionsPatterns": "kms:Decrypt,kms:ReEncryptFrom"
+      },
+      "resource_types": [
+        "AWS::IAM::Group",
+        "AWS::IAM::Role",
+        "AWS::IAM::User"
+      ]
+    },
+    "iam-no-inline-policy-check": {
+      "identifier": "IAM_NO_INLINE_POLICY_CHECK",
+      "name": "iam-no-inline-policy-check",
+      "resource_types": [
+        "AWS::IAM::Group",
+        "AWS::IAM::Role",
+        "AWS::IAM::User"
+      ]
+    },
+    "iam-password-policy": {
+      "identifier": "IAM_PASSWORD_POLICY",
+      "name": "iam-password-policy",
+      "parameters": {
+        "MaxPasswordAge": "90",
+        "MinimumPasswordLength": "14",
+        "PasswordReusePrevention": "24",
+        "RequireLowercaseCharacters": "true",
+        "RequireNumbers": "true",
+        "RequireSymbols": "true",
+        "RequireUppercaseCharacters": "true"
+      }
+    },
+    "iam-policy-no-statements-with-admin-access": {
+      "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS",
+      "name": "iam-policy-no-statements-with-admin-access",
+      "resource_types": [
+        "AWS::IAM::Policy"
+      ]
+    },
+    "iam-policy-no-statements-with-full-access": {
+      "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_FULL_ACCESS",
+      "name": "iam-policy-no-statements-with-full-access",
+      "resource_types": [
+        "AWS::IAM::Policy"
+      ]
+    },
+    "iam-root-access-key-check": {
+      "identifier": "IAM_ROOT_ACCESS_KEY_CHECK",
+      "name": "iam-root-access-key-check"
+    },
+    "iam-user-group-membership-check": {
+      "identifier": "IAM_USER_GROUP_MEMBERSHIP_CHECK",
+      "name": "iam-user-group-membership-check",
+      "resource_types": [
+        "AWS::IAM::User"
+      ]
+    },
+    "iam-user-mfa-enabled": {
+      "identifier": "IAM_USER_MFA_ENABLED",
+      "name": "iam-user-mfa-enabled"
+    },
+    "iam-user-no-policies-check": {
+      "identifier": "IAM_USER_NO_POLICIES_CHECK",
+      "name": "iam-user-no-policies-check",
+      "resource_types": [
+        "AWS::IAM::User"
+      ]
+    },
+    "iam-user-unused-credentials-check": {
+      "identifier": "IAM_USER_UNUSED_CREDENTIALS_CHECK",
+      "name": "iam-user-unused-credentials-check",
+      "parameters": {
+        "maxCredentialUsageAge": "90"
+      }
+    },
+    "internet-gateway-authorized-vpc-only": {
+      "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
+      "name": "internet-gateway-authorized-vpc-only",
+      "resource_types": [
+        "AWS::EC2::InternetGateway"
+      ]
+    },
+    "lambda-function-public-access-prohibited": {
+      "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
+      "name": "lambda-function-public-access-prohibited",
+      "resource_types": [
+        "AWS::Lambda::Function"
+      ]
+    },
+    "lambda-inside-vpc": {
+      "identifier": "LAMBDA_INSIDE_VPC",
+      "name": "lambda-inside-vpc",
+      "resource_types": [
+        "AWS::Lambda::Function"
+      ]
+    },
+    "mfa-enabled-for-iam-console-access": {
+      "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
+      "name": "mfa-enabled-for-iam-console-access"
+    },
+    "multi-region-cloudtrail-enabled": {
+      "identifier": "MULTI_REGION_CLOUD_TRAIL_ENABLED",
+      "name": "multi-region-cloudtrail-enabled"
+    },
+    "no-unrestricted-route-to-igw": {
+      "identifier": "NO_UNRESTRICTED_ROUTE_TO_IGW",
+      "name": "no-unrestricted-route-to-igw",
+      "resource_types": [
+        "AWS::EC2::RouteTable"
+      ]
+    },
+    "opensearch-in-vpc-only": {
+      "identifier": "OPENSEARCH_IN_VPC_ONLY",
+      "name": "opensearch-in-vpc-only",
+      "resource_types": [
+        "AWS::OpenSearch::Domain"
+      ]
+    },
+    "opensearch-node-to-node-encryption-check": {
+      "identifier": "OPENSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
+      "name": "opensearch-node-to-node-encryption-check",
+      "resource_types": [
+        "AWS::OpenSearch::Domain"
+      ]
+    },
+    "rds-instance-public-access-check": {
+      "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
+      "name": "rds-instance-public-access-check",
+      "resource_types": [
+        "AWS::RDS::DBInstance"
+      ]
+    },
+    "rds-logging-enabled": {
+      "identifier": "RDS_LOGGING_ENABLED",
+      "name": "rds-logging-enabled",
+      "resource_types": [
+        "AWS::RDS::DBInstance"
+      ]
+    },
+    "rds-snapshots-public-prohibited": {
+      "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
+      "name": "rds-snapshots-public-prohibited",
+      "resource_types": [
+        "AWS::RDS::DBClusterSnapshot",
+        "AWS::RDS::DBSnapshot"
+      ]
+    },
+    "redshift-cluster-public-access-check": {
+      "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
+      "name": "redshift-cluster-public-access-check",
+      "resource_types": [
+        "AWS::Redshift::Cluster"
+      ]
+    },
+    "redshift-require-tls-ssl": {
+      "identifier": "REDSHIFT_REQUIRE_TLS_SSL",
+      "name": "redshift-require-tls-ssl",
+      "resource_types": [
+        "AWS::Redshift::Cluster"
+      ]
+    },
+    "restricted-common-ports": {
+      "identifier": "RESTRICTED_INCOMING_TRAFFIC",
+      "name": "restricted-common-ports",
+      "parameters": {
+        "blockedPort1": "20",
+        "blockedPort2": "21",
+        "blockedPort3": "3389",
+        "blockedPort4": "3306",
+        "blockedPort5": "4333"
+      },
+      "resource_types": [
+        "AWS::EC2::SecurityGroup"
+      ]
+    },
+    "restricted-ssh": {
+      "identifier": "INCOMING_SSH_DISABLED",
+      "name": "restricted-ssh",
+      "resource_types": [
+        "AWS::EC2::SecurityGroup"
+      ]
+    },
+    "root-account-hardware-mfa-enabled": {
+      "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
+      "name": "root-account-hardware-mfa-enabled"
+    },
+    "root-account-mfa-enabled": {
+      "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
+      "name": "root-account-mfa-enabled"
+    },
+    "s3-account-level-public-access-blocks-periodic": {
+      "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+      "name": "s3-account-level-public-access-blocks-periodic"
+    },
+    "s3-bucket-level-public-access-prohibited": {
+      "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
+      "name": "s3-bucket-level-public-access-prohibited",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "s3-bucket-logging-enabled": {
+      "identifier": "S3_BUCKET_LOGGING_ENABLED",
+      "name": "s3-bucket-logging-enabled",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "s3-bucket-policy-grantee-check": {
+      "identifier": "S3_BUCKET_POLICY_GRANTEE_CHECK",
+      "name": "s3-bucket-policy-grantee-check",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "s3-bucket-public-read-prohibited": {
+      "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+      "name": "s3-bucket-public-read-prohibited",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "s3-bucket-public-write-prohibited": {
+      "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+      "name": "s3-bucket-public-write-prohibited",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "s3-bucket-ssl-requests-only": {
+      "identifier": "S3_BUCKET_SSL_REQUESTS_ONLY",
+      "name": "s3-bucket-ssl-requests-only",
+      "resource_types": [
+        "AWS::S3::Bucket"
+      ]
+    },
+    "sagemaker-notebook-no-direct-internet-access": {
+      "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
+      "name": "sagemaker-notebook-no-direct-internet-access"
+    },
+    "secretsmanager-rotation-enabled-check": {
+      "identifier": "SECRETSMANAGER_ROTATION_ENABLED_CHECK",
+      "name": "secretsmanager-rotation-enabled-check",
+      "resource_types": [
+        "AWS::SecretsManager::Secret"
+      ]
+    },
+    "secretsmanager-scheduled-rotation-success-check": {
+      "identifier": "SECRETSMANAGER_SCHEDULED_ROTATION_SUCCESS_CHECK",
+      "name": "secretsmanager-scheduled-rotation-success-check",
+      "resource_types": [
+        "AWS::SecretsManager::Secret"
+      ]
+    },
+    "securityhub-enabled": {
+      "identifier": "SECURITYHUB_ENABLED",
+      "name": "securityhub-enabled"
+    },
+    "ssm-document-not-public": {
+      "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
+      "name": "ssm-document-not-public"
+    },
+    "subnet-auto-assign-public-ip-disabled": {
+      "identifier": "SUBNET_AUTO_ASSIGN_PUBLIC_IP_DISABLED",
+      "name": "subnet-auto-assign-public-ip-disabled",
+      "resource_types": [
+        "AWS::EC2::Subnet"
+      ]
+    },
+    "vpc-default-security-group-closed": {
+      "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
+      "name": "vpc-default-security-group-closed",
+      "resource_types": [
+        "AWS::EC2::SecurityGroup"
+      ]
+    },
+    "vpc-sg-open-only-to-authorized-ports": {
+      "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
+      "name": "vpc-sg-open-only-to-authorized-ports",
+      "parameters": {
+        "authorizedTcpPorts": "443"
+      },
+      "resource_types": [
+        "AWS::EC2::SecurityGroup"
+      ]
+    },
+    "wafv2-logging-enabled": {
+      "identifier": "WAFV2_LOGGING_ENABLED",
+      "name": "wafv2-logging-enabled"
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "_comment": "CMMC Level 1 security requirement identifiers and their NIST SP 800-171 R2 equivalents, from Table 1 to 32 CFR 170.15(c)(1)(ii). Identifiers follow the DD.L#-REQ scheme of 170.14(c)(1), where REQ is the 48 CFR 52.204-21 paragraph. Three FAR requirements were split by phrase when 800-171 R2 was developed; PE.L1-b.1.ix therefore maps to three R2 requirements.",
+  "source": {
+    "catalog": "32 CFR 170 (CMMC Program final rule)",
+    "version": "eCFR title-32 part 170, 2026-01-01",
+    "uri": "https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170",
+    "retrieved_at": "2026-08-04T00:00:00Z",
+    "upstream_sha256": "4df7572a76794b236c0d5f9fb1d2ff814d8c973cf2d030067d00f9c0b0fb2680",
+    "upstream_file": "ecfr170.xml"
+  },
+  "controls": [
+    {
+      "id": "AC.L1-b.1.i",
+      "domain": "AC",
+      "paragraph": "i",
+      "r2": [
+        "3.1.1"
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.ii",
+      "domain": "AC",
+      "paragraph": "ii",
+      "r2": [
+        "3.1.2"
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.iii",
+      "domain": "AC",
+      "paragraph": "iii",
+      "r2": [
+        "3.1.20"
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.iv",
+      "domain": "AC",
+      "paragraph": "iv",
+      "r2": [
+        "3.1.22"
+      ]
+    },
+    {
+      "id": "IA.L1-b.1.v",
+      "domain": "IA",
+      "paragraph": "v",
+      "r2": [
+        "3.5.1"
+      ]
+    },
+    {
+      "id": "IA.L1-b.1.vi",
+      "domain": "IA",
+      "paragraph": "vi",
+      "r2": [
+        "3.5.2"
+      ]
+    },
+    {
+      "id": "MP.L1-b.1.vii",
+      "domain": "MP",
+      "paragraph": "vii",
+      "r2": [
+        "3.8.3"
+      ]
+    },
+    {
+      "id": "PE.L1-b.1.viii",
+      "domain": "PE",
+      "paragraph": "viii",
+      "r2": [
+        "3.10.1"
+      ]
+    },
+    {
+      "id": "PE.L1-b.1.ix",
+      "domain": "PE",
+      "paragraph": "ix",
+      "r2": [
+        "3.10.3",
+        "3.10.4",
+        "3.10.5"
+      ]
+    },
+    {
+      "id": "SC.L1-b.1.x",
+      "domain": "SC",
+      "paragraph": "x",
+      "r2": [
+        "3.13.1"
+      ]
+    },
+    {
+      "id": "SC.L1-b.1.xi",
+      "domain": "SC",
+      "paragraph": "xi",
+      "r2": [
+        "3.13.5"
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xii",
+      "domain": "SI",
+      "paragraph": "xii",
+      "r2": [
+        "3.14.1"
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xiii",
+      "domain": "SI",
+      "paragraph": "xiii",
+      "r2": [
+        "3.14.2"
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xiv",
+      "domain": "SI",
+      "paragraph": "xiv",
+      "r2": [
+        "3.14.4"
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xv",
+      "domain": "SI",
+      "paragraph": "xv",
+      "r2": [
+        "3.14.5"
+      ]
+    }
+  ]
+}

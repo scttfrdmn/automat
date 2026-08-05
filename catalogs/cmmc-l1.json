@@ -1,0 +1,1431 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": {
+    "id": "cmmc-l1",
+    "title": "CMMC 2.0 Level 1",
+    "description": "The fifteen basic safeguarding requirements of FAR 52.204-21(b)(1), which 32 CFR 170.14(c)(2) establishes as CMMC Level 1, joined with the AWS Config conformance-pack mapping AWS publishes for them.",
+    "sources": [
+      {
+        "catalog": "32 CFR 170 (CMMC Program final rule)",
+        "version": "eCFR title-32 part 170, 2026-01-01",
+        "retrieved_at": "2026-08-04T00:00:00Z",
+        "uri": "https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170",
+        "sha256": "85eb2b688159d55ed546fd7e7f4390b51fd5878625650480135fa6e58523ccd6",
+        "note": "control identifiers and 800-171 R2 crosswalk; curated from https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170 (sha256 4df7572a76794b236c0d5f9fb1d2ff814d8c973cf2d030067d00f9c0b0fb2680)"
+      },
+      {
+        "catalog": "FAR 52.204-21",
+        "version": "Nov 2021 (FAC 2026-01, eff. 2026-03-13)",
+        "retrieved_at": "2026-08-04T00:00:00Z",
+        "uri": "https://www.acquisition.gov/far/52.204-21",
+        "sha256": "ba44e932cd1bb9c39ba145acde39bc1111e6fa8daf2e0b51ff6122cfcb6338e7",
+        "note": "verbatim requirement text; curated from https://www.acquisition.gov/far/52.204-21 (sha256 69eb760fae80b42b55a76f5bf055bb4ee1564fa90d7b613b011644dfca13ce5d)"
+      },
+      {
+        "mapping": "aws-config-conformance-pack-cmmc-2.0-level-1",
+        "version": "awslabs/aws-config-rules master @ 2026-08-04",
+        "retrieved_at": "2026-08-04T00:00:00Z",
+        "uri": "https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml",
+        "sha256": "f314618e48bbfabe2963f307ffe88166e3e9e3dc4ba6adbb6ecba0346b16e740",
+        "note": "enforcement mapping; curated join in aws-config-cmmc-l1.json from https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml (sha256 193b61321756eb018f78d2a70d08fdc772b79489ea188f0d374834a3635d0427)"
+      },
+      {
+        "mapping": "aws-config-developer-guide-cmmc-2.0-level-1-mapping",
+        "version": "retrieved 2026-08-04",
+        "retrieved_at": "2026-08-04T00:00:00Z",
+        "uri": "https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html",
+        "sha256": "f314618e48bbfabe2963f307ffe88166e3e9e3dc4ba6adbb6ecba0346b16e740",
+        "note": "enforcement mapping; curated join in aws-config-cmmc-l1.json from https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html (sha256 943efa9d9ddda0ce17f98468322fdd5f5410da1da549f525236dff967cd0f50a)"
+      }
+    ],
+    "compiled_at": "2026-08-04T00:00:00Z",
+    "content_sha256": "5721c6d1eb2a68a284cdd6656b5a33f964a369e5c24188f064fa59f35ce04f57"
+  },
+  "controls": [
+    {
+      "id": "AC.L1-b.1.i",
+      "title": "Authorized access control",
+      "statement": "Limit information system access to authorized users, processes acting on behalf of authorized users, or devices (including other information systems).",
+      "crosswalk": {
+        "800-171r2": "3.1.1",
+        "aws_config_mapping_id": "AC.L1-3.1.1",
+        "far": "52.204-21(b)(1)(i)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "ACCESS_KEYS_ROTATED",
+          "name": "access-keys-rotated",
+          "parameters": {
+            "maxAccessKeyAge": {
+              "value": "90",
+              "order": "min"
+            }
+          }
+        },
+        {
+          "identifier": "DMS_REPLICATION_NOT_PUBLIC",
+          "name": "dms-replication-not-public"
+        },
+        {
+          "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
+          "name": "ebs-snapshot-public-restorable-check"
+        },
+        {
+          "identifier": "EC2_IMDSV2_CHECK",
+          "name": "ec2-imdsv2-check",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
+          "name": "ec2-instance-no-public-ip",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "EC2_INSTANCE_PROFILE_ATTACHED",
+          "name": "ec2-instance-profile-attached",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
+          "name": "elasticsearch-in-vpc-only"
+        },
+        {
+          "identifier": "EMR_KERBEROS_ENABLED",
+          "name": "emr-kerberos-enabled"
+        },
+        {
+          "identifier": "EMR_MASTER_NO_PUBLIC_IP",
+          "name": "emr-master-no-public-ip"
+        },
+        {
+          "identifier": "IAM_CUSTOMER_POLICY_BLOCKED_KMS_ACTIONS",
+          "name": "iam-customer-policy-blocked-kms-actions",
+          "parameters": {
+            "blockedActionsPatterns": {
+              "value": "kms:Decrypt,kms:ReEncryptFrom",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::IAM::Policy"
+          ]
+        },
+        {
+          "identifier": "IAM_GROUP_HAS_USERS_CHECK",
+          "name": "iam-group-has-users-check",
+          "resource_types": [
+            "AWS::IAM::Group"
+          ]
+        },
+        {
+          "identifier": "IAM_INLINE_POLICY_BLOCKED_KMS_ACTIONS",
+          "name": "iam-inline-policy-blocked-kms-actions",
+          "parameters": {
+            "blockedActionsPatterns": {
+              "value": "kms:Decrypt,kms:ReEncryptFrom",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::IAM::Group",
+            "AWS::IAM::Role",
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_NO_INLINE_POLICY_CHECK",
+          "name": "iam-no-inline-policy-check",
+          "resource_types": [
+            "AWS::IAM::Group",
+            "AWS::IAM::Role",
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS",
+          "name": "iam-policy-no-statements-with-admin-access",
+          "resource_types": [
+            "AWS::IAM::Policy"
+          ]
+        },
+        {
+          "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_FULL_ACCESS",
+          "name": "iam-policy-no-statements-with-full-access",
+          "resource_types": [
+            "AWS::IAM::Policy"
+          ]
+        },
+        {
+          "identifier": "IAM_ROOT_ACCESS_KEY_CHECK",
+          "name": "iam-root-access-key-check"
+        },
+        {
+          "identifier": "IAM_USER_GROUP_MEMBERSHIP_CHECK",
+          "name": "iam-user-group-membership-check",
+          "resource_types": [
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_USER_MFA_ENABLED",
+          "name": "iam-user-mfa-enabled"
+        },
+        {
+          "identifier": "IAM_USER_NO_POLICIES_CHECK",
+          "name": "iam-user-no-policies-check",
+          "resource_types": [
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_USER_UNUSED_CREDENTIALS_CHECK",
+          "name": "iam-user-unused-credentials-check",
+          "parameters": {
+            "maxCredentialUsageAge": {
+              "value": "90",
+              "order": "min"
+            }
+          }
+        },
+        {
+          "identifier": "INCOMING_SSH_DISABLED",
+          "name": "restricted-ssh",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "INSTANCES_IN_VPC",
+          "name": "ec2-instances-in-vpc",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
+          "name": "internet-gateway-authorized-vpc-only",
+          "resource_types": [
+            "AWS::EC2::InternetGateway"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
+          "name": "lambda-function-public-access-prohibited",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_INSIDE_VPC",
+          "name": "lambda-inside-vpc",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
+          "name": "mfa-enabled-for-iam-console-access"
+        },
+        {
+          "identifier": "OPENSEARCH_IN_VPC_ONLY",
+          "name": "opensearch-in-vpc-only",
+          "resource_types": [
+            "AWS::OpenSearch::Domain"
+          ]
+        },
+        {
+          "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
+          "name": "rds-instance-public-access-check",
+          "resource_types": [
+            "AWS::RDS::DBInstance"
+          ]
+        },
+        {
+          "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
+          "name": "rds-snapshots-public-prohibited",
+          "resource_types": [
+            "AWS::RDS::DBClusterSnapshot",
+            "AWS::RDS::DBSnapshot"
+          ]
+        },
+        {
+          "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
+          "name": "redshift-cluster-public-access-check",
+          "resource_types": [
+            "AWS::Redshift::Cluster"
+          ]
+        },
+        {
+          "identifier": "RESTRICTED_INCOMING_TRAFFIC",
+          "name": "restricted-common-ports",
+          "parameters": {
+            "blockedPort1": {
+              "value": "20",
+              "order": "exact"
+            },
+            "blockedPort2": {
+              "value": "21",
+              "order": "exact"
+            },
+            "blockedPort3": {
+              "value": "3389",
+              "order": "exact"
+            },
+            "blockedPort4": {
+              "value": "3306",
+              "order": "exact"
+            },
+            "blockedPort5": {
+              "value": "4333",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
+          "name": "root-account-hardware-mfa-enabled"
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
+          "name": "root-account-mfa-enabled"
+        },
+        {
+          "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+          "name": "s3-account-level-public-access-blocks-periodic"
+        },
+        {
+          "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
+          "name": "s3-bucket-level-public-access-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_POLICY_GRANTEE_CHECK",
+          "name": "s3-bucket-policy-grantee-check",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+          "name": "s3-bucket-public-read-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+          "name": "s3-bucket-public-write-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
+          "name": "sagemaker-notebook-no-direct-internet-access"
+        },
+        {
+          "identifier": "SECRETSMANAGER_ROTATION_ENABLED_CHECK",
+          "name": "secretsmanager-rotation-enabled-check",
+          "resource_types": [
+            "AWS::SecretsManager::Secret"
+          ]
+        },
+        {
+          "identifier": "SECRETSMANAGER_SCHEDULED_ROTATION_SUCCESS_CHECK",
+          "name": "secretsmanager-scheduled-rotation-success-check",
+          "resource_types": [
+            "AWS::SecretsManager::Secret"
+          ]
+        },
+        {
+          "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
+          "name": "ssm-document-not-public"
+        },
+        {
+          "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
+          "name": "vpc-default-security-group-closed",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
+          "name": "vpc-sg-open-only-to-authorized-ports",
+          "parameters": {
+            "authorizedTcpPorts": {
+              "value": "443",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.ii",
+      "title": "Transaction and function control",
+      "statement": "Limit information system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "crosswalk": {
+        "800-171r2": "3.1.2",
+        "aws_config_mapping_id": "AC.L1-3.1.2",
+        "far": "52.204-21(b)(1)(ii)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "DMS_REPLICATION_NOT_PUBLIC",
+          "name": "dms-replication-not-public"
+        },
+        {
+          "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
+          "name": "ebs-snapshot-public-restorable-check"
+        },
+        {
+          "identifier": "EC2_IMDSV2_CHECK",
+          "name": "ec2-imdsv2-check",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
+          "name": "ec2-instance-no-public-ip",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
+          "name": "elasticsearch-in-vpc-only"
+        },
+        {
+          "identifier": "EMR_KERBEROS_ENABLED",
+          "name": "emr-kerberos-enabled"
+        },
+        {
+          "identifier": "EMR_MASTER_NO_PUBLIC_IP",
+          "name": "emr-master-no-public-ip"
+        },
+        {
+          "identifier": "IAM_NO_INLINE_POLICY_CHECK",
+          "name": "iam-no-inline-policy-check",
+          "resource_types": [
+            "AWS::IAM::Group",
+            "AWS::IAM::Role",
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_PASSWORD_POLICY",
+          "name": "iam-password-policy",
+          "parameters": {
+            "MaxPasswordAge": {
+              "value": "90",
+              "order": "min"
+            },
+            "MinimumPasswordLength": {
+              "value": "14",
+              "order": "max"
+            },
+            "PasswordReusePrevention": {
+              "value": "24",
+              "order": "max"
+            },
+            "RequireLowercaseCharacters": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireNumbers": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireSymbols": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireUppercaseCharacters": {
+              "value": "true",
+              "order": "exact"
+            }
+          }
+        },
+        {
+          "identifier": "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS",
+          "name": "iam-policy-no-statements-with-admin-access",
+          "resource_types": [
+            "AWS::IAM::Policy"
+          ]
+        },
+        {
+          "identifier": "IAM_ROOT_ACCESS_KEY_CHECK",
+          "name": "iam-root-access-key-check"
+        },
+        {
+          "identifier": "IAM_USER_GROUP_MEMBERSHIP_CHECK",
+          "name": "iam-user-group-membership-check",
+          "resource_types": [
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "IAM_USER_MFA_ENABLED",
+          "name": "iam-user-mfa-enabled"
+        },
+        {
+          "identifier": "IAM_USER_NO_POLICIES_CHECK",
+          "name": "iam-user-no-policies-check",
+          "resource_types": [
+            "AWS::IAM::User"
+          ]
+        },
+        {
+          "identifier": "INCOMING_SSH_DISABLED",
+          "name": "restricted-ssh",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "INSTANCES_IN_VPC",
+          "name": "ec2-instances-in-vpc",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
+          "name": "internet-gateway-authorized-vpc-only",
+          "resource_types": [
+            "AWS::EC2::InternetGateway"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
+          "name": "lambda-function-public-access-prohibited",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_INSIDE_VPC",
+          "name": "lambda-inside-vpc",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
+          "name": "mfa-enabled-for-iam-console-access"
+        },
+        {
+          "identifier": "OPENSEARCH_IN_VPC_ONLY",
+          "name": "opensearch-in-vpc-only",
+          "resource_types": [
+            "AWS::OpenSearch::Domain"
+          ]
+        },
+        {
+          "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
+          "name": "rds-instance-public-access-check",
+          "resource_types": [
+            "AWS::RDS::DBInstance"
+          ]
+        },
+        {
+          "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
+          "name": "rds-snapshots-public-prohibited",
+          "resource_types": [
+            "AWS::RDS::DBClusterSnapshot",
+            "AWS::RDS::DBSnapshot"
+          ]
+        },
+        {
+          "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
+          "name": "redshift-cluster-public-access-check",
+          "resource_types": [
+            "AWS::Redshift::Cluster"
+          ]
+        },
+        {
+          "identifier": "RESTRICTED_INCOMING_TRAFFIC",
+          "name": "restricted-common-ports",
+          "parameters": {
+            "blockedPort1": {
+              "value": "20",
+              "order": "exact"
+            },
+            "blockedPort2": {
+              "value": "21",
+              "order": "exact"
+            },
+            "blockedPort3": {
+              "value": "3389",
+              "order": "exact"
+            },
+            "blockedPort4": {
+              "value": "3306",
+              "order": "exact"
+            },
+            "blockedPort5": {
+              "value": "4333",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
+          "name": "root-account-hardware-mfa-enabled"
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
+          "name": "root-account-mfa-enabled"
+        },
+        {
+          "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+          "name": "s3-account-level-public-access-blocks-periodic"
+        },
+        {
+          "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
+          "name": "s3-bucket-level-public-access-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_POLICY_GRANTEE_CHECK",
+          "name": "s3-bucket-policy-grantee-check",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+          "name": "s3-bucket-public-read-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+          "name": "s3-bucket-public-write-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
+          "name": "sagemaker-notebook-no-direct-internet-access"
+        },
+        {
+          "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
+          "name": "vpc-default-security-group-closed",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
+          "name": "vpc-sg-open-only-to-authorized-ports",
+          "parameters": {
+            "authorizedTcpPorts": {
+              "value": "443",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.iii",
+      "title": "External connections",
+      "statement": "Verify and control/limit connections to and use of external information systems.",
+      "crosswalk": {
+        "800-171r2": "3.1.20",
+        "aws_config_mapping_id": "AC.L1-3.1.20",
+        "far": "52.204-21(b)(1)(iii)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "ALB_WAF_ENABLED",
+          "name": "alb-waf-enabled",
+          "resource_types": [
+            "AWS::ElasticLoadBalancingV2::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "AUTOSCALING_LAUNCH_CONFIG_PUBLIC_IP_DISABLED",
+          "name": "autoscaling-launch-config-public-ip-disabled",
+          "resource_types": [
+            "AWS::AutoScaling::LaunchConfiguration"
+          ]
+        },
+        {
+          "identifier": "EC2_INSTANCE_NO_PUBLIC_IP",
+          "name": "ec2-instance-no-public-ip",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "EMR_MASTER_NO_PUBLIC_IP",
+          "name": "emr-master-no-public-ip"
+        },
+        {
+          "identifier": "INCOMING_SSH_DISABLED",
+          "name": "restricted-ssh",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
+          "name": "internet-gateway-authorized-vpc-only",
+          "resource_types": [
+            "AWS::EC2::InternetGateway"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
+          "name": "lambda-function-public-access-prohibited",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "NO_UNRESTRICTED_ROUTE_TO_IGW",
+          "name": "no-unrestricted-route-to-igw",
+          "resource_types": [
+            "AWS::EC2::RouteTable"
+          ]
+        },
+        {
+          "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
+          "name": "rds-instance-public-access-check",
+          "resource_types": [
+            "AWS::RDS::DBInstance"
+          ]
+        },
+        {
+          "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
+          "name": "redshift-cluster-public-access-check",
+          "resource_types": [
+            "AWS::Redshift::Cluster"
+          ]
+        },
+        {
+          "identifier": "RESTRICTED_INCOMING_TRAFFIC",
+          "name": "restricted-common-ports",
+          "parameters": {
+            "blockedPort1": {
+              "value": "20",
+              "order": "exact"
+            },
+            "blockedPort2": {
+              "value": "21",
+              "order": "exact"
+            },
+            "blockedPort3": {
+              "value": "3389",
+              "order": "exact"
+            },
+            "blockedPort4": {
+              "value": "3306",
+              "order": "exact"
+            },
+            "blockedPort5": {
+              "value": "4333",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+          "name": "s3-account-level-public-access-blocks-periodic"
+        },
+        {
+          "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
+          "name": "s3-bucket-level-public-access-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+          "name": "s3-bucket-public-read-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+          "name": "s3-bucket-public-write-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
+          "name": "sagemaker-notebook-no-direct-internet-access"
+        },
+        {
+          "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
+          "name": "ssm-document-not-public"
+        },
+        {
+          "identifier": "SUBNET_AUTO_ASSIGN_PUBLIC_IP_DISABLED",
+          "name": "subnet-auto-assign-public-ip-disabled",
+          "resource_types": [
+            "AWS::EC2::Subnet"
+          ]
+        },
+        {
+          "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
+          "name": "vpc-default-security-group-closed",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
+          "name": "vpc-sg-open-only-to-authorized-ports",
+          "parameters": {
+            "authorizedTcpPorts": {
+              "value": "443",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AC.L1-b.1.iv",
+      "title": "Control public information",
+      "statement": "Control information posted or processed on publicly accessible information systems.",
+      "crosswalk": {
+        "800-171r2": "3.1.22",
+        "far": "52.204-21(b)(1)(iv)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "publicly-accessible-content.md",
+        "frequency": "annual",
+        "guidance": "Record who reviews content before it is posted to publicly accessible systems, and how that review is evidenced. Note that automat's detective baseline does monitor public exposure of several AWS resource types under other controls; this attestation covers the review process itself, which no Config rule can observe."
+      }
+    },
+    {
+      "id": "IA.L1-b.1.v",
+      "title": "Identification",
+      "statement": "Identify information system users, processes acting on behalf of users, or devices.",
+      "crosswalk": {
+        "800-171r2": "3.5.1",
+        "aws_config_mapping_id": "IA.L1-3.5.1",
+        "far": "52.204-21(b)(1)(v)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "API_GW_EXECUTION_LOGGING_ENABLED",
+          "name": "api-gw-execution-logging-enabled",
+          "resource_types": [
+            "AWS::ApiGateway::Stage",
+            "AWS::ApiGatewayV2::Stage"
+          ]
+        },
+        {
+          "identifier": "CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
+          "name": "cloudtrail-s3-dataevents-enabled"
+        },
+        {
+          "identifier": "CLOUD_TRAIL_CLOUD_WATCH_LOGS_ENABLED",
+          "name": "cloud-trail-cloud-watch-logs-enabled"
+        },
+        {
+          "identifier": "ELB_LOGGING_ENABLED",
+          "name": "elb-logging-enabled",
+          "resource_types": [
+            "AWS::ElasticLoadBalancing::LoadBalancer",
+            "AWS::ElasticLoadBalancingV2::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "EMR_KERBEROS_ENABLED",
+          "name": "emr-kerberos-enabled"
+        },
+        {
+          "identifier": "MULTI_REGION_CLOUD_TRAIL_ENABLED",
+          "name": "multi-region-cloudtrail-enabled"
+        },
+        {
+          "identifier": "RDS_LOGGING_ENABLED",
+          "name": "rds-logging-enabled",
+          "resource_types": [
+            "AWS::RDS::DBInstance"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_LOGGING_ENABLED",
+          "name": "s3-bucket-logging-enabled",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "WAFV2_LOGGING_ENABLED",
+          "name": "wafv2-logging-enabled"
+        }
+      ]
+    },
+    {
+      "id": "IA.L1-b.1.vi",
+      "title": "Authentication",
+      "statement": "Authenticate (or verify) the identities of those users, processes, or devices, as a prerequisite to allowing access to organizational information systems.",
+      "crosswalk": {
+        "800-171r2": "3.5.2",
+        "aws_config_mapping_id": "IA.L1-3.5.2",
+        "far": "52.204-21(b)(1)(vi)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "EMR_KERBEROS_ENABLED",
+          "name": "emr-kerberos-enabled"
+        },
+        {
+          "identifier": "IAM_PASSWORD_POLICY",
+          "name": "iam-password-policy",
+          "parameters": {
+            "MaxPasswordAge": {
+              "value": "90",
+              "order": "min"
+            },
+            "MinimumPasswordLength": {
+              "value": "14",
+              "order": "max"
+            },
+            "PasswordReusePrevention": {
+              "value": "24",
+              "order": "max"
+            },
+            "RequireLowercaseCharacters": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireNumbers": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireSymbols": {
+              "value": "true",
+              "order": "exact"
+            },
+            "RequireUppercaseCharacters": {
+              "value": "true",
+              "order": "exact"
+            }
+          }
+        },
+        {
+          "identifier": "IAM_USER_MFA_ENABLED",
+          "name": "iam-user-mfa-enabled"
+        },
+        {
+          "identifier": "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS",
+          "name": "mfa-enabled-for-iam-console-access"
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_HARDWARE_MFA_ENABLED",
+          "name": "root-account-hardware-mfa-enabled"
+        },
+        {
+          "identifier": "ROOT_ACCOUNT_MFA_ENABLED",
+          "name": "root-account-mfa-enabled"
+        }
+      ]
+    },
+    {
+      "id": "MP.L1-b.1.vii",
+      "title": "Media disposal",
+      "statement": "Sanitize or destroy information system media containing Federal Contract Information before disposal or release for reuse.",
+      "crosswalk": {
+        "800-171r2": "3.8.3",
+        "far": "52.204-21(b)(1)(vii)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "media-sanitization.md",
+        "frequency": "annual",
+        "guidance": "Record the sanitization or destruction procedure for media containing Federal Contract Information before disposal or reuse, including who performs it and how it is evidenced. AWS manages sanitization of its own storage media; this attestation covers media in your custody."
+      }
+    },
+    {
+      "id": "PE.L1-b.1.ix",
+      "title": "Manage visitors and physical access",
+      "statement": "Escort visitors and monitor visitor activity; maintain audit logs of physical access; and control and manage physical access devices.",
+      "crosswalk": {
+        "800-171r2": "3.10.3, 3.10.4, 3.10.5",
+        "far": "52.204-21(b)(1)(ix)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "visitor-access.md",
+        "frequency": "annual",
+        "guidance": "Record visitor escort and monitoring, physical access audit logs, and management of physical access devices. This requirement was split into three 800-171 R2 requirements (3.10.3, 3.10.4, 3.10.5); address all three. For AWS-hosted workloads this is largely inherited; name the AWS compliance report you rely on."
+      }
+    },
+    {
+      "id": "PE.L1-b.1.viii",
+      "title": "Limit physical access",
+      "statement": "Limit physical access to organizational information systems, equipment, and the respective operating environments to authorized individuals.",
+      "crosswalk": {
+        "800-171r2": "3.10.1",
+        "far": "52.204-21(b)(1)(viii)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "physical-access.md",
+        "frequency": "annual",
+        "guidance": "Record how physical access to systems, equipment, and operating environments is limited to authorized individuals. For workloads wholly in AWS, this is largely inherited from AWS's data-center controls; name the AWS compliance report you rely on and describe controls for any on-premises equipment in scope."
+      }
+    },
+    {
+      "id": "SC.L1-b.1.x",
+      "title": "Boundary protection",
+      "statement": "Monitor, control, and protect organizational communications ( i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
+      "crosswalk": {
+        "800-171r2": "3.13.1",
+        "aws_config_mapping_id": "SC.L1-3.13.1",
+        "far": "52.204-21(b)(1)(x)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "ALB_HTTP_DROP_INVALID_HEADER_ENABLED",
+          "name": "alb-http-drop-invalid-header-enabled",
+          "resource_types": [
+            "AWS::ElasticLoadBalancingV2::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK",
+          "name": "alb-http-to-https-redirection-check"
+        },
+        {
+          "identifier": "ALB_WAF_ENABLED",
+          "name": "alb-waf-enabled",
+          "resource_types": [
+            "AWS::ElasticLoadBalancingV2::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "API_GW_ASSOCIATED_WITH_WAF",
+          "name": "api-gw-associated-with-waf",
+          "resource_types": [
+            "AWS::ApiGateway::Stage"
+          ]
+        },
+        {
+          "identifier": "CLOUDWATCH_ALARM_ACTION_CHECK",
+          "name": "cloudwatch-alarm-action-check",
+          "parameters": {
+            "alarmActionRequired": {
+              "value": "true",
+              "order": "exact"
+            },
+            "insufficientDataActionRequired": {
+              "value": "true",
+              "order": "exact"
+            },
+            "okActionRequired": {
+              "value": "false",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::CloudWatch::Alarm"
+          ]
+        },
+        {
+          "identifier": "DMS_REPLICATION_NOT_PUBLIC",
+          "name": "dms-replication-not-public"
+        },
+        {
+          "identifier": "EBS_SNAPSHOT_PUBLIC_RESTORABLE_CHECK",
+          "name": "ebs-snapshot-public-restorable-check"
+        },
+        {
+          "identifier": "ELASTICSEARCH_IN_VPC_ONLY",
+          "name": "elasticsearch-in-vpc-only"
+        },
+        {
+          "identifier": "ELASTICSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
+          "name": "elasticsearch-node-to-node-encryption-check",
+          "resource_types": [
+            "AWS::Elasticsearch::Domain"
+          ]
+        },
+        {
+          "identifier": "ELB_ACM_CERTIFICATE_REQUIRED",
+          "name": "elb-acm-certificate-required",
+          "resource_types": [
+            "AWS::ElasticLoadBalancing::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "ELB_TLS_HTTPS_LISTENERS_ONLY",
+          "name": "elb-tls-https-listeners-only",
+          "resource_types": [
+            "AWS::ElasticLoadBalancing::LoadBalancer"
+          ]
+        },
+        {
+          "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
+          "name": "guardduty-enabled-centralized"
+        },
+        {
+          "identifier": "INCOMING_SSH_DISABLED",
+          "name": "restricted-ssh",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "INSTANCES_IN_VPC",
+          "name": "ec2-instances-in-vpc",
+          "resource_types": [
+            "AWS::EC2::Instance"
+          ]
+        },
+        {
+          "identifier": "INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY",
+          "name": "internet-gateway-authorized-vpc-only",
+          "resource_types": [
+            "AWS::EC2::InternetGateway"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED",
+          "name": "lambda-function-public-access-prohibited",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "LAMBDA_INSIDE_VPC",
+          "name": "lambda-inside-vpc",
+          "resource_types": [
+            "AWS::Lambda::Function"
+          ]
+        },
+        {
+          "identifier": "NO_UNRESTRICTED_ROUTE_TO_IGW",
+          "name": "no-unrestricted-route-to-igw",
+          "resource_types": [
+            "AWS::EC2::RouteTable"
+          ]
+        },
+        {
+          "identifier": "OPENSEARCH_IN_VPC_ONLY",
+          "name": "opensearch-in-vpc-only",
+          "resource_types": [
+            "AWS::OpenSearch::Domain"
+          ]
+        },
+        {
+          "identifier": "OPENSEARCH_NODE_TO_NODE_ENCRYPTION_CHECK",
+          "name": "opensearch-node-to-node-encryption-check",
+          "resource_types": [
+            "AWS::OpenSearch::Domain"
+          ]
+        },
+        {
+          "identifier": "RDS_INSTANCE_PUBLIC_ACCESS_CHECK",
+          "name": "rds-instance-public-access-check",
+          "resource_types": [
+            "AWS::RDS::DBInstance"
+          ]
+        },
+        {
+          "identifier": "RDS_SNAPSHOTS_PUBLIC_PROHIBITED",
+          "name": "rds-snapshots-public-prohibited",
+          "resource_types": [
+            "AWS::RDS::DBClusterSnapshot",
+            "AWS::RDS::DBSnapshot"
+          ]
+        },
+        {
+          "identifier": "REDSHIFT_CLUSTER_PUBLIC_ACCESS_CHECK",
+          "name": "redshift-cluster-public-access-check",
+          "resource_types": [
+            "AWS::Redshift::Cluster"
+          ]
+        },
+        {
+          "identifier": "REDSHIFT_REQUIRE_TLS_SSL",
+          "name": "redshift-require-tls-ssl",
+          "resource_types": [
+            "AWS::Redshift::Cluster"
+          ]
+        },
+        {
+          "identifier": "RESTRICTED_INCOMING_TRAFFIC",
+          "name": "restricted-common-ports",
+          "parameters": {
+            "blockedPort1": {
+              "value": "20",
+              "order": "exact"
+            },
+            "blockedPort2": {
+              "value": "21",
+              "order": "exact"
+            },
+            "blockedPort3": {
+              "value": "3389",
+              "order": "exact"
+            },
+            "blockedPort4": {
+              "value": "3306",
+              "order": "exact"
+            },
+            "blockedPort5": {
+              "value": "4333",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "S3_ACCOUNT_LEVEL_PUBLIC_ACCESS_BLOCKS_PERIODIC",
+          "name": "s3-account-level-public-access-blocks-periodic"
+        },
+        {
+          "identifier": "S3_BUCKET_LEVEL_PUBLIC_ACCESS_PROHIBITED",
+          "name": "s3-bucket-level-public-access-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+          "name": "s3-bucket-public-read-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+          "name": "s3-bucket-public-write-prohibited",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "S3_BUCKET_SSL_REQUESTS_ONLY",
+          "name": "s3-bucket-ssl-requests-only",
+          "resource_types": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        {
+          "identifier": "SAGEMAKER_NOTEBOOK_NO_DIRECT_INTERNET_ACCESS",
+          "name": "sagemaker-notebook-no-direct-internet-access"
+        },
+        {
+          "identifier": "SECURITYHUB_ENABLED",
+          "name": "securityhub-enabled"
+        },
+        {
+          "identifier": "SSM_DOCUMENT_NOT_PUBLIC",
+          "name": "ssm-document-not-public"
+        },
+        {
+          "identifier": "VPC_DEFAULT_SECURITY_GROUP_CLOSED",
+          "name": "vpc-default-security-group-closed",
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        },
+        {
+          "identifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS",
+          "name": "vpc-sg-open-only-to-authorized-ports",
+          "parameters": {
+            "authorizedTcpPorts": {
+              "value": "443",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SC.L1-b.1.xi",
+      "title": "Public-access system separation",
+      "statement": "Implement subnetworks for publicly accessible system components that are physically or logically separated from internal networks.",
+      "crosswalk": {
+        "800-171r2": "3.13.5",
+        "far": "52.204-21(b)(1)(xi)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "publicly-accessible-subnetworks.md",
+        "frequency": "annual",
+        "guidance": "Record the network architecture that separates publicly accessible system components from internal networks — in AWS terms, the VPC subnet layout, route tables, and security group boundaries. automat cannot verify an architecture is correctly segmented, only that specific resources are not publicly exposed."
+      }
+    },
+    {
+      "id": "SI.L1-b.1.xii",
+      "title": "Flaw remediation",
+      "statement": "Identify, report, and correct information and information system flaws in a timely manner.",
+      "crosswalk": {
+        "800-171r2": "3.14.1",
+        "aws_config_mapping_id": "SI.L1-3.14.1",
+        "far": "52.204-21(b)(1)(xii)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "CLOUDWATCH_ALARM_ACTION_CHECK",
+          "name": "cloudwatch-alarm-action-check",
+          "parameters": {
+            "alarmActionRequired": {
+              "value": "true",
+              "order": "exact"
+            },
+            "insufficientDataActionRequired": {
+              "value": "true",
+              "order": "exact"
+            },
+            "okActionRequired": {
+              "value": "false",
+              "order": "exact"
+            }
+          },
+          "resource_types": [
+            "AWS::CloudWatch::Alarm"
+          ]
+        },
+        {
+          "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
+          "name": "guardduty-enabled-centralized"
+        },
+        {
+          "identifier": "SECURITYHUB_ENABLED",
+          "name": "securityhub-enabled"
+        }
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xiii",
+      "title": "Malicious code protection",
+      "statement": "Provide protection from malicious code at appropriate locations within organizational information systems.",
+      "crosswalk": {
+        "800-171r2": "3.14.2",
+        "aws_config_mapping_id": "SI.L1-3.14.2",
+        "far": "52.204-21(b)(1)(xiii)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "GUARDDUTY_ENABLED_CENTRALIZED",
+          "name": "guardduty-enabled-centralized"
+        }
+      ]
+    },
+    {
+      "id": "SI.L1-b.1.xiv",
+      "title": "Update malicious code protection",
+      "statement": "Update malicious code protection mechanisms when new releases are available.",
+      "crosswalk": {
+        "800-171r2": "3.14.4",
+        "far": "52.204-21(b)(1)(xiv)"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "malicious-code-updates.md",
+        "frequency": "annual",
+        "guidance": "Record how malicious-code protection mechanisms are updated when new releases become available, including the update mechanism and its cadence."
+      }
+    },
+    {
+      "id": "SI.L1-b.1.xv",
+      "title": "System and file scanning",
+      "statement": "Perform periodic scans of the information system and real-time scans of files from external sources as files are downloaded, opened, or executed.",
+      "crosswalk": {
+        "800-171r2": "3.14.5",
+        "aws_config_mapping_id": "SI.L1-3.14.5",
+        "far": "52.204-21(b)(1)(xv)"
+      },
+      "enforcement": [
+        "config-rule"
+      ],
+      "config_rules": [
+        {
+          "identifier": "ECR_PRIVATE_IMAGE_SCANNING_ENABLED",
+          "name": "ecr-private-image-scanning-enabled",
+          "resource_types": [
+            "AWS::ECR::Repository"
+          ]
+        }
+      ]
+    }
+  ]
+}

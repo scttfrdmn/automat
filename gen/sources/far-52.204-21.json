@@ -1,0 +1,73 @@
+{
+  "_comment": "Verbatim requirement text of FAR 52.204-21(b)(1)(i)-(xv), extracted from the upstream document recorded below. CMMC 2.0 Level 1 security requirements are exactly these fifteen, per 32 CFR 170.14(c)(2).",
+  "source": {
+    "catalog": "FAR 52.204-21",
+    "version": "Nov 2021 (FAC 2026-01, eff. 2026-03-13)",
+    "uri": "https://www.acquisition.gov/far/52.204-21",
+    "retrieved_at": "2026-08-04T00:00:00Z",
+    "upstream_sha256": "69eb760fae80b42b55a76f5bf055bb4ee1564fa90d7b613b011644dfca13ce5d",
+    "upstream_file": "far-52-204-21.html"
+  },
+  "clauses": [
+    {
+      "paragraph": "i",
+      "text": "Limit information system access to authorized users, processes acting on behalf of authorized users, or devices (including other information systems)."
+    },
+    {
+      "paragraph": "ii",
+      "text": "Limit information system access to the types of transactions and functions that authorized users are permitted to execute."
+    },
+    {
+      "paragraph": "iii",
+      "text": "Verify and control/limit connections to and use of external information systems."
+    },
+    {
+      "paragraph": "iv",
+      "text": "Control information posted or processed on publicly accessible information systems."
+    },
+    {
+      "paragraph": "v",
+      "text": "Identify information system users, processes acting on behalf of users, or devices."
+    },
+    {
+      "paragraph": "vi",
+      "text": "Authenticate (or verify) the identities of those users, processes, or devices, as a prerequisite to allowing access to organizational information systems."
+    },
+    {
+      "paragraph": "vii",
+      "text": "Sanitize or destroy information system media containing Federal Contract Information before disposal or release for reuse."
+    },
+    {
+      "paragraph": "viii",
+      "text": "Limit physical access to organizational information systems, equipment, and the respective operating environments to authorized individuals."
+    },
+    {
+      "paragraph": "ix",
+      "text": "Escort visitors and monitor visitor activity; maintain audit logs of physical access; and control and manage physical access devices."
+    },
+    {
+      "paragraph": "x",
+      "text": "Monitor, control, and protect organizational communications ( i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems."
+    },
+    {
+      "paragraph": "xi",
+      "text": "Implement subnetworks for publicly accessible system components that are physically or logically separated from internal networks."
+    },
+    {
+      "paragraph": "xii",
+      "text": "Identify, report, and correct information and information system flaws in a timely manner."
+    },
+    {
+      "paragraph": "xiii",
+      "text": "Provide protection from malicious code at appropriate locations within organizational information systems."
+    },
+    {
+      "paragraph": "xiv",
+      "text": "Update malicious code protection mechanisms when new releases are available."
+    },
+    {
+      "paragraph": "xv",
+      "text": "Perform periodic scans of the information system and real-time scans of files from external sources as files are downloaded, opened, or executed."
+    }
+  ]
+}
