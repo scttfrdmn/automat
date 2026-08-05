@@ -398,6 +398,10 @@ tested against the published schema from raw JSON
 (`internal/artifact/evidence_schema_test.go`), each one verified to fire by
 deleting it and confirming the covering case fails.
 
+*(Superseded in part: `internal/evidence` now implements this, and the
+terminality gap named above is enforced in Go. See "The Go implementation of
+evidence-manifest/v1" below.)*
+
 ## Pre-publication change to three schemas: cosigning and freshness
 
 Landed before `internal/evidence` writes its first record, and that timing is the
@@ -585,3 +589,99 @@ was implemented — that scope was explicitly excluded. Every constraint above i
 tested against the published schemas from raw JSON
 (`internal/artifact/cosign_schema_test.go`), each verified to fire by deleting it
 and confirming the covering case fails.
+
+*(Superseded in part: `internal/evidence` now implements the manifest half. See
+below.)*
+
+## Pre-publication change to evidence-manifest/v1: `request_id` is patterned
+
+Landed with `internal/evidence` (Phase 2, task #12), before publication, so there
+is **no version bump** — nothing has emitted or consumed a 1.0.0 manifest. After
+publication this would be a **major** bump: it narrows what validates, and a
+consumer written against the looser shape would be right to consider a rejection
+a breaking change.
+
+`records[].request_id` was `{"type": "string", "minLength": 1}` and is now
+`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`.
+
+The old constraint was inherited from "it is a non-empty string" thinking, and it
+was the only id in the file with no pattern while `manifest.id`, `artifact.id`,
+`profile.id`, `account_id`, `ou_id`, and `organization_id` all had one. What
+makes this one worth tightening rather than merely tidying is where the value
+goes: the request id is the single field in a record that a **human copies back
+onto a command line**, as `automat vend --resume <request-id>`. A parked record
+exists precisely so an operator can read it weeks later and re-run that command.
+
+Under the old pattern, `req-123; aws organizations close-account …` was a valid
+request id. automat would never construct one, but automat is not the only writer
+of these files — a manifest is a document institutions store, merge, and
+sometimes hand-edit, and `--resume` takes whatever the record says. A record that
+prints an id an operator will retype is a record that must not be able to suggest
+a different command than the one it appears to. Whitespace is refused for a
+duller version of the same reason: an id containing a space cannot be selected by
+double-click, so the operator retypes it by hand and gets it wrong.
+
+This is not injection *prevention* — argument construction is the CLI's problem
+and stays the CLI's problem. It is refusing to write down a value whose whole
+purpose is to be read back by a person and acted on. Enforced identically by the
+Go validator (`reRequestID`) and pinned in both directions by
+`evidence.TestGoAndSchemaAgreeOnRejection`.
+
+## The Go implementation of evidence-manifest/v1 (Phase 2, task #12)
+
+Two sections above state "No Go types were added". That was true when written and
+is no longer: `internal/evidence` now implements the manifest — types, validator,
+hash chain, signer, and store. The statements stand as a record of what those
+reviews scoped, and this section records which of the Go-side obligations they
+named are now discharged, and by what:
+
+- **Terminality** — that a `custody-transfer` record is the *last* record, which
+  JSON Schema structurally cannot say. Enforced by `evidence.validateChain` and
+  by `Append`, which refuses to extend a closed chain. The two halves of the
+  invariant are now pinned from both sides:
+  `artifact.TestTheSchemaCannotSayCustodyTransferIsLast` asserts the schema lets
+  the document through, and
+  `evidence.TestTheSchemaStillCannotSayCustodyTransferIsLast` asserts the Go
+  validator catches it. If JSON Schema ever gains the ability, the first test
+  fails and points at the second.
+- **That an attestation was verified before being recorded.** Discharged at the
+  writer: `Append` refuses any record whose `profile.verified_signatures` is
+  non-empty, because v1 verifies nothing and therefore has nothing true to put
+  there. Tested by `evidence.TestAppendRefusesUnverifiedSignatures`; the refusal
+  message says automat verifies nothing in this version, loads no trust policy,
+  and ships no trust anchor, so a caller who hits it is not left guessing whether
+  the field is broken or the feature is absent. This is the obligation the
+  cosigning section named as "a Go-side obligation of whatever writes records",
+  and it is now stated as a test rather than as a paragraph.
+- **That `review_by` being past is a warning, not an error.** The Go validator
+  accepts a lapsed date; `evidence.TestTheSchemaAcceptsWhatGoAccepts` pins it,
+  including the case with no `review_by` at all.
+
+Two obligations remain undischarged and are still Phase 4's:
+recomputing `attestation.content_sha256` against the document containing it, and
+any verification at all. Neither is implemented, and `verified_signatures` stays
+empty until they are.
+
+**The Go validator and the published schema are now held against each other in
+both directions** by `internal/evidence/schema_conformance_test.go`, mirroring
+`internal/artifact/schema_conformance_test.go`: every way of breaking a manifest
+must be rejected by both, and every valid manifest accepted by both. A case only
+one side catches is drift, and the failure message says which side is missing the
+check. The vocabularies (`operation`, `outcome`, attestation `role`, signature
+`algorithm`) are compared as *sets read out of the schema file*, not case by
+case, because a case-by-case test cannot catch a value the schema gained and Go
+did not.
+
+Writing that test found two divergences, both fixed rather than accepted:
+
+1. The Go validator checked only `scp_arns` for empty members and checked none of
+   the five enforcement arrays for duplicates, while the schema declares
+   `uniqueItems` and `minLength: 1` on all of them. `Append` canonicalizes —
+   sorting and deduping — so a manifest automat wrote was never affected, but a
+   manifest read off disk went through no such thing. An enforcement list is the
+   part of a record an auditor counts: "three SCPs attached" and "two SCPs, one
+   listed twice" are different claims. This tightens only the Go validator; no
+   `schema/` file changed.
+2. `request_id` had no pattern, per the section above.
+
+Both are listed in `audits/AUDIT-2.md` for ratification, per CLAUDE.md rule 6.

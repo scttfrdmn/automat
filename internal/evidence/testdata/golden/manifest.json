@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0.0",
+  "manifest": {
+    "id": "444455556666",
+    "account_id": "444455556666",
+    "organization_id": "o-abc1234567",
+    "created_at": "2026-08-05T00:00:00Z"
+  },
+  "records": [
+    {
+      "sequence": 0,
+      "timestamp": "2026-08-05T00:00:01Z",
+      "operation": "account-create",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "request_id": "req-abc123",
+      "target": {
+        "account_id": "444455556666",
+        "account_name": "Physics CUI Enclave",
+        "ou_id": "ou-abc1-12345678",
+        "region": "us-east-1"
+      },
+      "artifact": {
+        "id": "cmmc-l1",
+        "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "schema_version": "1.0.0"
+      },
+      "profile": {
+        "id": "research-cui",
+        "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_version": "1.0.0",
+        "review_by": "2026-11-10",
+        "verified_signatures": []
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "record_sha256": "bc45167a62bc6bbc65b0f2bc7795f18faf7b24530e664f81f553bf30ca0c596a",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "z7YSFIDQKpx5KfvSgx8igrTEH1BrsPVBmIpMPIHRIE1Q6aC5qSf76PIiqux8cLqCdHgbAT2GUyVBjyxqIX+TCQ=="
+      }
+    },
+    {
+      "sequence": 1,
+      "timestamp": "2026-08-05T00:00:02Z",
+      "operation": "baseline-apply",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "request_id": "req-abc123",
+      "target": {
+        "account_id": "444455556666",
+        "region": "us-east-1"
+      },
+      "artifact": {
+        "id": "cmmc-l1",
+        "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "schema_version": "1.0.0"
+      },
+      "profile": {
+        "id": "research-cui",
+        "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_version": "1.0.0",
+        "review_by": "2026-11-10",
+        "verified_signatures": []
+      },
+      "enforcement": {
+        "scp_arns": [
+          "arn:aws:organizations::111122223333:policy/o-abc1234567/service_control_policy/p-protect1",
+          "arn:aws:organizations::111122223333:policy/o-abc1234567/service_control_policy/p-region2"
+        ],
+        "conformance_pack_arn": "arn:aws:config:us-east-1:444455556666:conformance-pack/automat-cmmc-l1/abcd1234",
+        "config_rule_names": [
+          "ACCESS_KEYS_ROTATED",
+          "IAM_PASSWORD_POLICY"
+        ],
+        "region_set": [
+          "us-east-1",
+          "us-west-2"
+        ],
+        "service_set": [
+          "config",
+          "iam",
+          "organizations"
+        ],
+        "attestation_ids": [
+          "MP.L1-b.1.vii"
+        ]
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "bc45167a62bc6bbc65b0f2bc7795f18faf7b24530e664f81f553bf30ca0c596a",
+      "record_sha256": "66b35d8e620f1eb9fcc7049e7722c25ae1f417423ef23c8728cfe74215c2db0e",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "X5G8HYOks785ROOxYHHbIGpJqvnGBV0mS5UK0JansnTMTEvjV7CV/Why+X5yMqNrcrNH1Jb4z+6oKS2omFLyDQ=="
+      }
+    },
+    {
+      "sequence": 2,
+      "timestamp": "2026-08-05T00:00:03Z",
+      "operation": "scp-ensure",
+      "outcome": "parked",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "request_id": "req-abc123",
+      "target": {
+        "account_id": "444455556666",
+        "ou_id": "ou-abc1-12345678"
+      },
+      "artifact": {
+        "id": "cmmc-l1",
+        "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "schema_version": "1.0.0"
+      },
+      "profile": {
+        "id": "research-cui",
+        "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_version": "1.0.0",
+        "review_by": "2026-11-10",
+        "verified_signatures": []
+      },
+      "error": {
+        "message": "attaching the baseline-protection policy to ou-abc1-12345678 was denied",
+        "action": "organizations:AttachPolicy",
+        "resource": "arn:aws:organizations::111122223333:policy/o-abc1234567/service_control_policy/p-protect1",
+        "remediation": "grant organizations:AttachPolicy on ou-abc1-12345678 to the delegated administrator role, then re-run: automat vend --resume req-abc123"
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "66b35d8e620f1eb9fcc7049e7722c25ae1f417423ef23c8728cfe74215c2db0e",
+      "record_sha256": "c3581943c7d4d5e6d7e8b86b652c0f10e696583dd2c70101a59d1bcfbb7cbfbf",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "EdcFTC/CHhIoZp8Vqo/3S6kpd+BXcoz16bXRZeHlZ6/7nQ6JyWmxmIfI7wUkVeG8wUYxkYtsMkIXUXG09p/KBA=="
+      }
+    },
+    {
+      "sequence": 3,
+      "timestamp": "2026-08-05T00:00:04Z",
+      "operation": "custody-transfer",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "custody_transfer": {
+        "transferee": "Research Computing, under the FY27 shared-services agreement",
+        "effective_date": "2026-09-01",
+        "reason": "The account moves to central IT operation; automat stops managing its baseline and this chain ends here.",
+        "final_artifact": {
+          "id": "cmmc-l1",
+          "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "schema_version": "1.0.0"
+        },
+        "successor_manifest_id": "rc-central-444455556666"
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "c3581943c7d4d5e6d7e8b86b652c0f10e696583dd2c70101a59d1bcfbb7cbfbf",
+      "record_sha256": "8d8b95a9c2e974396a8576d979cd60beb4bd5c8dfe024b34043996241debea47"
+    }
+  ]
+}

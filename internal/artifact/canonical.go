@@ -255,6 +255,18 @@ func canonicalJSON(v any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// CanonicalJSON returns the canonical JSON encoding of any value: object keys
+// sorted, no insignificant whitespace, no HTML escaping, and numeric literals
+// preserved exactly as written.
+//
+// Exported for internal/evidence, which hashes records with it. There is one
+// canonicalization in automat on purpose: a record must hash identically when it
+// is written and when it is read back off disk years later, and two
+// implementations of "canonical" is how that stops being true. The doc comment on
+// canonicalJSON explains why the round trip through interface{} is what makes the
+// guarantee hold for a shape this package does not own.
+func CanonicalJSON(v any) ([]byte, error) { return canonicalJSON(v) }
+
 func marshalNoEscape(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

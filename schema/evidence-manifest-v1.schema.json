@@ -207,9 +207,9 @@
           }
         },
         "request_id": {
-          "description": "Vend request id. Ties records from a resumed run to the original request (DESIGN 7).",
+          "description": "Vend request id. Ties records from a resumed run to the original request (DESIGN 7). Patterned like every other id in this schema, and for a sharper reason: this is the one value in a record that a human copies back onto a command line as `vend --resume <request-id>`. A request id containing a space, a quote, or a shell metacharacter is a record that invites the operator to mistype a command against their own organization, and one containing whitespace alone is a record whose id cannot be selected by double-click.",
           "type": "string",
-          "minLength": 1
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
         },
         "target": {
           "type": "object",
