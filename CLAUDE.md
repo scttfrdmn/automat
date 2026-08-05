@@ -17,7 +17,7 @@ Read `DESIGN.md` first; it is the source of truth. `ROADMAP.md` sequences the wo
 3. **No product/vendor references** other than AWS anywhere in code, docs, schema, tags, or CLI output (DESIGN.md §15).
 4. **Idempotency everywhere.** Every mutating command must be safely re-runnable; `vend` is resumable by request id. Prefer "ensure" semantics (create-or-verify) over "create".
 5. **Destructive operations** (anything that closes accounts, detaches policies, deletes) require `--yes` and print a plan first. Phase 5 concern mostly, but the plumbing (plan/apply split) should exist from Phase 2.
-6. **Schema stability:** `schema/` files are versioned contracts. Any change to a published schema bumps the version and adds a migration note in `schema/CHANGELOG.md`.
+6. **Schema stability:** `schema/` files are versioned contracts. Any change to a published schema bumps the version and adds a migration note in `schema/CHANGELOG.md`. Audit-driven changes that **strictly tighten** validation may be made without pre-approval, but must be listed in the audit file for ratification. Anything that loosens or restructures still requires asking first.
 7. Errors are values with remediation text: every permission failure must say *which* action, *which* resource, and *what grant would fix it* — that reporting is a headline feature, not logging.
 
 ## Quality bar

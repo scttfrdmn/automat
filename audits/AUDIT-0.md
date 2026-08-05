@@ -28,6 +28,24 @@ or out-of-scope-with-reason.
 
 **Fix commits.** H1, H2 → `409adf2`. H3, H4, H5, M1 → `fa872b8`.
 
+**Human review: complete.** The three schema changes (H3, H4, H5) are
+**RATIFIED**. CLAUDE.md rule 6 now permits audit-driven changes that strictly
+tighten validation without pre-approval, provided they are listed in the audit
+file for ratification; loosening or restructuring still requires asking first.
+All eight ACCEPTED dispositions stand as written, with two conditions attached:
+
+- **A1 is binding on AUDIT-1** — the three `G304` sites must be revisited with
+  `os.Root` as the specific remedy, because Phase 1 is where a path first derives
+  from something other than a CLI flag.
+- **A5 now has a test, not a note** — `TestNoSchemaLeafIsNumberTyped` asserts
+  that no leaf in any schema is `number`-typed, so a future float field fails a
+  test rather than relying on a reader noticing this paragraph.
+
+**AUDIT-1 priority scope: A6** — the four generated templates
+(`delegation-policy.json`, `vendor-role.cfn.yaml`, `vendor-role.tf`, and the
+generated `README.md`) fed by operator-supplied values, with **M1 as the
+precursor class** and templates treated as **executed, not read**.
+
 ---
 
 ## High
@@ -232,7 +250,14 @@ canonicalization would mean the hash no longer covers exactly the bytes a
 reviewer read. Every numeric value in the artifact schema is a string-typed
 parameter value or a constrained integer, so the ambiguity is unreachable from a
 valid document today. The risk is that a future schema change adds a float field
-and reintroduces it. Noted for whoever does that; not worth pre-solving.
+and reintroduces it.
+
+*Amended at human review:* accepted, but with a tripwire instead of a note.
+`TestNoSchemaLeafIsNumberTyped` walks every schema and fails on any
+`"type": "number"` leaf, including inside a type union. `integer` is still
+allowed — JSON integers have one canonical spelling in the range that matters —
+so the test constrains exactly the case that would break the hash and nothing
+else.
 
 ### A6 — IAM policies, templates, and injection into CFN/TF. NOTHING TO AUDIT YET
 
@@ -285,7 +310,23 @@ tree is a security claim the project makes in `docs/`, and it is currently true.
 
 ---
 
-## For the human to review
+## For the human to review — resolved
+
+All three items below were reviewed and resolved. Recorded as raised, with the
+disposition, so the audit shows what was asked as well as what was decided.
+
+**1 → accepted, two conditions.** A1 is binding on AUDIT-1 (`os.Root`); A5 gained
+`TestNoSchemaLeafIsNumberTyped` in place of its note. **2 → ratified**, and
+CLAUDE.md rule 6 was amended to cover the general case rather than leaving the
+next audit in the same position. **3 → three verbatim edits applied** to
+`docs/vs-control-tower.md`: the SCP bullet now attributes automat's SCPs to the
+baseline-protection and profile classes and states that framework catalogs assert
+no preventive claims; the enforcement-honesty row names the real class set; and a
+status line under the title makes `ROADMAP.md` authoritative wherever
+implementation is still in progress. The evidence-manifest and 60-line claims
+stay as design targets that the Phase 5 re-verification will measure.
+
+### As raised
 
 1. **All five ACCEPTED items above** (A1, A2, A5, and the three
    nothing-to-audit-yet entries A6–A8). A1 in particular carries a condition:

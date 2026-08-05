@@ -5,6 +5,7 @@ package artifact
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,6 +332,82 @@ func TestSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNoSchemaLeafIsNumberTyped is the tripwire for AUDIT-0 A5.
+//
+// canonicalJSON preserves a number's source spelling, so `1.0` and `1` hash
+// differently. That is deliberate — respelling numbers during canonicalization
+// would mean the content hash no longer covers the bytes a reviewer actually
+// read — and it is currently unreachable, because no leaf in any schema is
+// number-typed: every numeric value is a string-typed parameter value or a
+// constrained integer. Adding a `"type": "number"` field would silently
+// reintroduce the ambiguity, and A5 was accepted on a written note rather than a
+// check. This is the check: it fails the moment the note stops being true.
+//
+// `integer` is fine. JSON integers have one canonical spelling in the range that
+// matters here, so they cannot produce two hashes for one value.
+func TestNoSchemaLeafIsNumberTyped(t *testing.T) {
+	entries, err := os.ReadDir(schemaDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", schemaDir, err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".schema.json") {
+			continue
+		}
+		t.Run(e.Name(), func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(schemaDir, e.Name())) //nolint:gosec // fixed in-repo path
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			var doc any
+			if err := json.Unmarshal(data, &doc); err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			for _, path := range findNumberTypedLeaves(doc, "$") {
+				t.Errorf("%s declares %q at %s — a float-valued field reintroduces the canonical "+
+					"numeric-spelling ambiguity AUDIT-0 A5 accepted as unreachable: 1.0 and 1 would "+
+					"hash differently, so two artifacts a reviewer reads as identical would carry "+
+					"different content hashes. Use a string with a pattern, or an integer.",
+					e.Name(), "number", path)
+			}
+		})
+	}
+}
+
+// findNumberTypedLeaves walks a parsed schema and returns the JSON paths of every
+// `"type": "number"` declaration, including inside a type union.
+func findNumberTypedLeaves(node any, path string) []string {
+	var out []string
+	switch n := node.(type) {
+	case map[string]any:
+		if t, ok := n["type"]; ok {
+			switch tv := t.(type) {
+			case string:
+				if tv == "number" {
+					out = append(out, path+".type")
+				}
+			case []any:
+				for _, alt := range tv {
+					if s, ok := alt.(string); ok && s == "number" {
+						out = append(out, path+".type")
+					}
+				}
+			}
+		}
+		for k, v := range n {
+			if k == "type" {
+				continue
+			}
+			out = append(out, findNumberTypedLeaves(v, path+"."+k)...)
+		}
+	case []any:
+		for i, v := range n {
+			out = append(out, findNumberTypedLeaves(v, fmt.Sprintf("%s[%d]", path, i))...)
+		}
+	}
+	return out
 }
 
 // TestSchemasDeclareStableIdentity guards the fields external consumers key off.

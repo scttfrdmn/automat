@@ -1,11 +1,13 @@
 # automat and AWS Control Tower
 
+This page describes automat v1. Where implementation is still in progress (evidence manifests, the onboarding bundle), ROADMAP.md is authoritative; every claim here is re-verified against code before v1 ships.
+
 People reasonably ask how automat relates to AWS Control Tower. Short answer: they share a mechanical core — both drive the same AWS Organizations primitives — and differ in almost everything wrapped around it. This page states the overlap and the differences in both directions, so you can decide honestly. In several situations Control Tower is the better choice; automat exists for the situations where it isn't an option at all.
 
 ## What both do
 
 - Create accounts via `organizations:CreateAccount` and place them into a target OU (there is no privileged API underneath either tool; account creation is the same primitive for everyone).
-- Attach preventive guardrails as Service Control Policies at the OU level.
+- Attach preventive guardrails as Service Control Policies at the OU level (in automat's case these are its baseline-protection and profile SCPs; its framework catalogs deliberately assert no preventive claims — see below).
 - Deploy detective controls (AWS Config recorder + managed rules) into new accounts so they are evaluated from early in their life.
 - Baseline new accounts by assuming a provisioning role inside them.
 - Maintain an inventory of the accounts they govern.
@@ -31,7 +33,7 @@ People reasonably ask how automat relates to AWS Control Tower. Short answer: th
 | No landing-zone prerequisite | automat works against bare AWS Organizations. No OU restructuring, no mandatory shared accounts, no multi-week enablement project. |
 | Standalone-account bootstrap | A lone account with no organization can run `automat init` and become the management account of its own fresh org, then vend. |
 | Compliance-framework-first catalogs | Controls are organized by framework (CMMC 2.0 Level 1, NIST 800-171 r2/r3) with per-control crosswalks, statement text, and source provenance (NIST catalog hashes, AWS mapping sources) — not by AWS service. |
-| Explicit enforcement honesty | Every control declares its class: preventive SCP, detective Config rule, or procedural. Procedural controls generate attestation stubs instead of silently vanishing. `verify` reports "N of M enforceable by this tool" — it never claims coverage it doesn't deliver. |
+| Explicit enforcement honesty | Every control declares its class: detective Config rule or procedural — plus a separate baseline-protection class carrying the SCPs that guard the detective baseline itself. Framework catalogs never claim preventive enforcement automat cannot honestly deliver. Procedural controls generate attestation stubs instead of silently vanishing. `verify` reports "N of M enforceable by this tool" — it never claims coverage it doesn't deliver. |
 | Composable control sets with checked union semantics | Control sets merge under defined laws (denies union, allowlists intersect, parameter conflicts are hard errors, cross-framework duplicates dedupe via crosswalks). The merged artifact is itself versioned and hashed. |
 | Evidence manifests | Every vend writes a signed, hash-chained record: what was attached, when, by whom, under which artifact hash. The "born compliant" claim is backed by a chain of custody, not a screenshot. |
 | Reviewable trust surface | The entire grant central IT approves is one delegation policy statement and one IAM role (~60 lines). Compare with security-reviewing a landing zone. |
