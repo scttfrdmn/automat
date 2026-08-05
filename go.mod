@@ -3,7 +3,9 @@ module github.com/scttfrdmn/automat
 go 1.24
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/aws/aws-sdk-go-v2 v1.43.3
+	github.com/aws/aws-sdk-go-v2/config v1.32.34
 	github.com/aws/aws-sdk-go-v2/service/iam v1.58.0
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.53.4
 	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.37.3
@@ -16,8 +18,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.34 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.33 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.34 // indirect
