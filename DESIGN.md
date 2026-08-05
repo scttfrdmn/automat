@@ -194,10 +194,54 @@ Represent as `enforcement: baseline-protection` entries in the artifact, not har
 
 Every mutating operation appends a record; `vend` writes a per-account manifest:
 
-- Content: timestamp, operator principal, operation, account/OU IDs, control artifact id + `content_sha256`, SCP ARNs attached, conformance pack ARN, region/service sets, tool version.
+- Content: timestamp, operator principal, operation, account/OU IDs, control artifact id + `content_sha256`, the vend profile id + `content_sha256` + the attestations over it that verified, SCP ARNs attached, conformance pack ARN, region/service sets, tool version.
 - Canonical JSON, hash-chained (each record includes previous record's hash), signed (start with a local key; design the signer as an interface so KMS signing is a drop-in).
 - Stored: in-account S3 (created at vend) and/or the vending account; local copy always.
 - Purpose: the "born compliant" chain of custody. The format lives in `schema/` beside the control artifact and is deliberately simple, append-only, and ingestible by future systems. (Internal note, not for docs: shaped so an evidence kernel can adopt it later. No external product named anywhere.)
+
+### 11a. Cosigning and freshness — provenance only
+
+Profile documents (both `profile/v1` and `obligation-profile/v1`) may carry an optional
+`signatures[]` array, and must carry a required `review_by` date. Both exist because a
+profile is a *reading of policy an institution acts on*, and the two ways such a
+document goes wrong are that nobody will say where it came from, and that it silently
+stops being current.
+
+**A signature attests provenance and nothing else.** Never correctness, never
+applicability to a particular institution, never approval for a particular use. Each
+entry is an attestation predicate over the document's content hash and carries a
+**role** plus a **statement in the attester's own words** — never a bare signature. The
+roles are `authored-by`, `adopted-by`, `reviewed-by`, `interpreted-by`, and
+`format-validated-by`. The vocabulary is the point: "X wrote this", "Y adopted it for
+its own use", "Z read it", and "the format validated" are four different claims, and a
+reader shown one undifferentiated checkmark will infer the strongest of them. The
+statement is required for the same reason — a bare signature invites the reader to
+supply the claim, and they supply the most flattering one available.
+
+**Trust is an operator determination.** Whether any identity in `signatures[]` counts
+for anything is decided by the operator, against a trust policy file the operator
+maintains naming accepted identities per role. **automat ships no trust anchor and no
+default accepted identity**, and it must never become a registry, a signing service, or
+a standards owner. The intended v2 mechanism is keyless
+OIDC-identity signing so that an institution never has to run a key ceremony, with
+documents and their attestations distributed over ordinary git or an OCI registry;
+`signature.format` names that form now so adopting it is not a schema version event.
+**v1 implements no verification and loads no trust policy.**
+
+**Freshness is the other half, because signed does not mean current.** A superseded
+citation renders exactly as well as a live one, and a durable, signed, stale artifact is
+worse than an unsigned one: it carries the authority without the accuracy. `review_by`
+is therefore required with no default, sits inside the content hash the attestations
+cover (so extending it is a change no earlier attestation vouches for), and `verify`
+**warns** when it has lapsed — warns, rather than fails, because a lapsed review date is
+a statement about the document, not about the account.
+
+At vend time the evidence record names the profile by id and content hash, its
+`review_by`, and the set of attestations that **verified** — identity and role. Not the
+attestations merely *present in the file*: copying those would be manufacturing
+assurance out of a document's own claims about itself. In v1 that set is always empty,
+and the field is required rather than optional precisely so an empty set is a recorded
+answer rather than an absent question.
 
 ## 12. `verify`
 
@@ -206,6 +250,7 @@ Every mutating operation appends a record; `vend` writes a per-account manifest:
 - Policy layer: attached SCPs still match the artifact (by name + content hash tag).
 - Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift).
 - Procedural layer: attestation stubs present; staleness vs. declared frequency.
+- Freshness layer: **warn** when the profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
 - Structural honesty: for each control set, print the enforcement-class breakdown ("X of Y controls enforced/monitored by this tool; N require documented process; M require continuous evidence collection outside this tool's scope"). Computed from the artifact — this is also how the tool states its limits for L2+ catalogs without ever pitching anything.
 
 Exit codes suitable for cron/CI.

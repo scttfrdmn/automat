@@ -64,6 +64,47 @@
       "pattern": "^[^\\x00-\\x1f\\x7f]+$"
     },
 
+    "profile_reference": {
+      "description": "The vend profile in force for this operation, by id and content hash, plus the attestations over it that were VERIFIED at the time — never the ones merely present in the file. A record naming only the profile id is a record whose subject can be edited afterwards; the hash is what makes 'vended under this profile' a checkable claim rather than a label.",
+      "type": "object",
+      "required": ["id", "content_sha256", "verified_signatures"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "review_by": {
+          "description": "The profile's own review-by date, copied into the record. Copied rather than looked up because the point of an evidence record is to be readable years later without the inputs: an auditor reading this record can see that the profile behind it was already six months past review when the account was vended, without needing the file.",
+          "$ref": "#/$defs/date"
+        },
+        "verified_signatures": {
+          "description": "The attestations over the profile that automat VERIFIED, as identity-and-role pairs. REQUIRED, and an EMPTY ARRAY IS THE NORMAL VALUE: automat performs no signature verification in v1, so it has nothing to put here and records the empty set. Required rather than optional so that an absent field cannot be read as 'unknown' — the distinction between 'nothing was verified' and 'the question was never asked' is exactly the one an evidence record must not blur, and the reader resolves which of those an empty set means from the record's own `tool_version`. Attestations present in the profile but unverified are deliberately NOT copied here: a record listing signatures it did not check would be a record that manufactures assurance out of a file's own claims about itself.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/verified_signature" }
+        }
+      }
+    },
+
+    "verified_signature": {
+      "description": "One attestation over a profile that verified — the identity and the CAPACITY it attested in, and nothing else. PROVENANCE ONLY: recording an attestation here says who stood behind the profile document, never that the profile is correct, applicable to this account, or approved for this use. The role is required alongside the identity so that the record cannot degrade into a bare list of names, which a reader would take for approval. What made the identity acceptable is an OPERATOR DETERMINATION against a trust policy the operator maintains; automat ships no trust anchor and no default accepted identity, so this field never means 'automat trusts this signer' — only 'this verified against the trust policy in force at the time'. automat is not a registry of signers and must never become one: it records what an operator's own trust policy accepted, and has no list of its own to consult.",
+      "type": "object",
+      "required": ["role", "identity"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "description": "The same closed vocabulary the profile schemas use. Roles exist so 'X authored this', 'Y adopted it', 'Z reviewed it' and 'the format validated' cannot collapse into one checkmark in a report generated from these records.",
+          "enum": ["authored-by", "adopted-by", "reviewed-by", "interpreted-by", "format-validated-by"]
+        },
+        "identity": { "$ref": "#/$defs/prose" },
+        "verified_against": {
+          "description": "The trust policy the operator's determination came from, by path or identifier, so a reader can ask what that policy said. Optional: v1 loads no trust policy and therefore has nothing to name.",
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+
     "account_id": { "type": "string", "pattern": "^[0-9]{12}$" },
 
     "is_custody_transfer": {
@@ -194,6 +235,10 @@
             "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
           }
         },
+        "profile": {
+          "description": "The vend profile this operation ran under: its id, its content hash, and the attestations over it that verified (an empty set in v1). Optional at the schema level because not every record has a profile behind it — `init` predates one and a custody transfer enforces nothing — but every record a `vend` writes carries it. Inside the record hash, so the profile a chain claims to have been vended under cannot be changed after the fact.",
+          "$ref": "#/$defs/profile_reference"
+        },
         "enforcement": {
           "description": "What was actually attached or deployed.",
           "type": "object",
@@ -276,11 +321,17 @@
       },
       "allOf": [
         {
-          "description": "custody_transfer belongs to a custody-transfer record and to nothing else. Without the negative half, a transfer could ride along on an ordinary account-move record, where no reader would look for it.",
+          "description": "custody_transfer belongs to a custody-transfer record and to nothing else. Without the negative half, a transfer could ride along on an ordinary account-move record, where no reader would look for it. A transfer also carries no artifact, no enforcement, and no profile: it deploys nothing, and a second document reference beside custody_transfer.final_artifact leaves the reader to guess which one is the baseline being handed over.",
           "if": { "$ref": "#/$defs/is_custody_transfer" },
           "then": {
             "required": ["custody_transfer"],
-            "not": { "anyOf": [{ "required": ["artifact"] }, { "required": ["enforcement"] }] },
+            "not": {
+              "anyOf": [
+                { "required": ["artifact"] },
+                { "required": ["enforcement"] },
+                { "required": ["profile"] }
+              ]
+            },
             "properties": {
               "outcome": {
                 "description": "A transfer that did not happen does not end a chain. Record the failure as the operation that failed; the chain continues.",

@@ -187,6 +187,8 @@ Initial definition per DESIGN.md §7 and §13. No migration.
   profile, since they are what `list` and `verify` key off.
 - `placement.ou_path` is capped at five entries, mirroring the OU nesting limit
   (DESIGN.md §3, fact 10).
+- `review_by` (required) and `signatures[]` (optional) were added
+  pre-publication; see the shared section below.
 
 ## obligation-profile/v1 — 1.0.0 (unreleased, Phase 4 scope)
 
@@ -395,3 +397,191 @@ schemas are still soft, explicitly without implementation. The constraints are
 tested against the published schema from raw JSON
 (`internal/artifact/evidence_schema_test.go`), each one verified to fire by
 deleting it and confirming the covering case fails.
+
+## Pre-publication change to three schemas: cosigning and freshness
+
+Landed before `internal/evidence` writes its first record, and that timing is the
+whole reason it landed now rather than in Phase 4 where the fields are first
+*read*. Three schemas change together — `profile/v1`, `obligation-profile/v1`, and
+`evidence-manifest/v1` — because the manifest field only makes sense if the
+profile field exists to be recorded. **No version bumps**: all three are 1.0.0
+unreleased, nothing has emitted or consumed one, and there is no earlier shape to
+migrate.
+
+**Listed here for maintainer ratification.** Under rule 6 an audit-driven change
+that strictly *tightens* validation may land without asking; this is not that.
+`review_by` is a new required property, which tightens, but `signatures[]` and the
+manifest's `profile` are new structure. Ratify or reject the structure; the
+reasoning is below rather than in a commit message so there is something to
+reject.
+
+**Why before the first manifest record exists.** Retrofitting the *record* shape
+after records exist in the wild is a versioning event, not a changelog line — and
+a worse one than the custody-transfer case, because a consumer reading a chain
+would have no way to tell a record written before the field existed from a record
+whose profile provenance was omitted. Adding the field now means every record
+automat has ever written carries it.
+
+### `review_by` — required on both profile document types
+
+A date, no default, on every `profile/v1` and `obligation-profile/v1` document. The
+date by which the document must be re-read against its sources; Phase 4's `verify`
+**warns** once it has lapsed (DESIGN.md §11a, §12).
+
+**Signed does not mean current, and this is the more dangerous failure of the
+two.** A profile is a reading of policy that an institution acts on, and policy
+moves: notices are superseded, phase-in dates arrive, a class deviation pinning a
+revision expires. The failure mode is silent and confident — **a superseded
+citation renders exactly as well as a current one**. Adding signatures without
+adding this field would make the problem worse rather than better: a durable,
+signed, stale artifact carries the authority without the accuracy, which is worse
+than an unsigned one because it discourages the reader from checking. The
+citation-freshness rule in CLAUDE.md's audit ritual ("a stale legal citation is a
+finding, ranked no lower than medium") is a rule about a human process; this field
+is the same rule expressed as data, so the process has something to check against.
+
+Required rather than optional, and with no default, for the reason the rest of
+this file keeps arriving at: an optional freshness date is absent from exactly the
+documents whose freshness nobody thought about. It sits **inside** the content hash
+the attestations cover, so extending it is a change no earlier attestation vouches
+for — which is the intended friction. A field a stale document could quietly bump
+would be worse than no field.
+
+Warn rather than fail (DESIGN.md §12). A lapsed review date says nothing about the
+account, which is exactly as compliant as it was the day before; what has expired
+is anyone's assurance that the document describing it still reads policy
+correctly. A hard failure would also make `verify` unusable in the cron job it is
+meant for, and an unusable check gets disabled.
+
+The three shipped obligation profiles carry `2026-11-10` (`cmmc-l1`,
+`dfars-7012`) and `2027-02-26` (`nih-cadr-dua`). Neither date is arbitrary: both
+are dates already cited *inside* those profiles as the moments their own reading
+changes — CMMC Phase 2 begins 2026-11-10, and NIH's expectations are stipulated in
+new or renewed agreements from 2026-02-26, one year before the review date chosen
+here. A review date later than the phase-in it knows about would be a profile
+scheduling its own re-reading for after the change it predicts.
+
+### `signatures[]` — optional attestations, provenance only
+
+An optional array on both profile document types. Each entry is an **attestation
+predicate over the document's content hash**: a `role`, an `identity`, a required
+`statement`, the `content_sha256` it is over, an `attested_at` date, and an
+*optional* `signature` block carrying the cryptographic material when there is
+any.
+
+**A signature attests PROVENANCE ONLY** — never correctness, never applicability
+to a particular institution, never approval for a particular use. That sentence is
+in the schema, in DESIGN §11a, and here, because it is the claim the whole
+mechanism will be misread as making.
+
+**The five roles exist so the claims cannot collapse into one checkmark.**
+`authored-by`, `adopted-by`, `reviewed-by`, `interpreted-by`,
+`format-validated-by`. "X wrote this", "Y adopted it for its own use", "Z read
+it", and "the format validated" are four unrelated claims of wildly different
+weight, and the last is a statement about *syntax*. A reader shown a single
+undifferentiated green tick learns nothing and will infer the strongest available
+claim, which is how "the JSON parsed" becomes "the university approved this". No
+role means approved, certified, or compliant, and none may be added that does: the
+vocabulary's entire value is that the weakest claim cannot be read as the
+strongest. `interpreted-by` is the one that carries a *negative*: it says this
+document is someone's reading of a third party's published policy, and that the
+third party has neither reviewed nor endorsed it.
+
+**`statement` is required, and it is why these are attestations rather than
+signatures.** The identity says in its own words what it is claiming, so the
+reader evaluates a sentence instead of a tick. A bare signature invites the reader
+to supply the claim themselves, and they supply the most flattering one available.
+It is `long_prose`, hashed with the rest of the document, so a statement cannot be
+rewritten under material that still verifies.
+
+**The `signature` block is optional and deliberately subordinate.** The claim is
+the attestation; the bytes are evidence for it, never the other way round. An
+entry with no signature is still a recordable attestation — an institution
+asserting authorship of a file it publishes itself — while bytes with no role and
+no statement are *not expressible at all*. Two formats are named now so adopting
+the second is not a version event: `detached-ed25519` (raw signature over the
+content hash, key obtained out of band) and `oidc-identity-bundle`, the intended
+v2 mechanism. The `if`/`then`/`else` pairs each with the field that makes it
+meaningful and forbids the other's: `key_id` is required on the detached form,
+because a detached signature nobody can locate a key for is unverifiable in a way
+that *looks* verifiable; `identity_issuer` is required on the keyless form and
+forbidden on the detached one, because in the keyless model the issuer is the whole
+of what the identity means — "signed by security@example.edu" is a different claim
+depending on who vouched for that address.
+
+**Trust is an OPERATOR DETERMINATION. automat ships no trust anchor.** No default
+accepted identity, no bundled key, no implied issuer. Whether an identity counts
+for anything is decided by the operator against a trust policy file they maintain,
+naming accepted identities per role. The intended v2 mechanism is keyless
+OIDC-identity signing so an institution never has to run a key ceremony, with
+documents distributed over ordinary git or an OCI registry — infrastructure that
+already exists at every institution automat targets. **automat is not and must
+never become a registry, a signing service, or a standards owner.** It proposes a
+format; a format has no members and no revocation list.
+
+**v1 implements no verification and loads no trust policy.** The fields are
+recordable and nothing reads them. That is deliberate: verification without a
+trust model is theatre, and a trust model automat ships is a trust model automat
+owns.
+
+`maxItems: 16` on the array and `uniqueItems: true`. Sixteen because an attestation
+list long enough to skim past is one nobody reads, and the useful case is a
+handful — an author, an adopting institution, maybe a reviewer.
+
+### `evidence_manifest.record.profile` — what the vend recorded
+
+An optional `profile` object on a record: `id`, `content_sha256`,
+`verified_signatures[]` (all three required *within* the object), plus optional
+`schema_version` and `review_by`.
+
+Optional on the record because not every record has a profile behind it — `init`
+predates one — and **forbidden on a `custody-transfer` record** for the same reason
+`artifact` and `enforcement` already are: a transfer deploys nothing, and a second
+document reference beside `custody_transfer.final_artifact` leaves the reader to
+guess which one is the baseline being handed over. Every record a `vend` writes
+carries it.
+
+`content_sha256` is what makes "vended under this profile" checkable rather than a
+label: a record naming only the profile id is a record whose subject can be edited
+afterwards. `review_by` is *copied* into the record rather than looked up, because
+an evidence record has to be readable years later without its inputs — an auditor
+should be able to see that the profile behind an account was already six months
+past review when it was vended, without needing the file.
+
+**`verified_signatures` is required, and an empty array is the normal value.**
+v1 verifies nothing, so it records the empty set. Required rather than optional so
+that an absent field cannot be read as "unknown": the difference between "nothing
+was verified" and "the question was never asked" is precisely the distinction an
+evidence record must not blur, and the reader tells which one an empty set means
+from the record's own `tool_version`. Each entry is an identity *and* a role — the
+role required alongside the identity so the field cannot degrade into a bare list
+of names, which a reader would take for approval. Attestations present in the
+profile but unverified are deliberately **not** copied here: a record listing
+signatures it did not check would manufacture assurance out of a document's own
+claims about itself, which is the exact failure the role vocabulary exists to
+prevent.
+
+### What the schemas cannot enforce, and what a validator must
+
+- **That `attestation.content_sha256` is the hash of the document containing it.**
+  A schema cannot compute a hash, so an attestation could name any hash at all —
+  including one lifted from a different document. Recording the hash is still
+  right (an attestation whose subject is implicit can be moved silently), but Phase
+  4's verifier must recompute and compare. Pinned by
+  `TestTheSchemaCannotCheckAnAttestationsOwnHash`.
+- **That the roles do not multiply.** The five-value enum is enforceable; the
+  reason it is five is not. `TestTheAttestationRoleVocabularyIsClosed` pins the
+  set and the reasoning, so a sixth role is a reviewed decision.
+- **That an attestation was verified before being recorded in a manifest.** The
+  manifest schema cannot distinguish a `verified_signatures` entry automat checked
+  from one written by hand. That is a Go-side obligation of whatever writes
+  records, asserted by `TestVerifiedSignaturesAreEmptyUntilVerificationExists`.
+- **That `review_by` is in the future.** A schema has no clock, and one that
+  rejected a past date would make every archived document invalid. Lapse is a
+  `verify` warning, not a validation error.
+
+**No Go types were added**, and no verification, trust-policy loading, or registry
+was implemented — that scope was explicitly excluded. Every constraint above is
+tested against the published schemas from raw JSON
+(`internal/artifact/cosign_schema_test.go`), each verified to fire by deleting it
+and confirming the covering case fails.

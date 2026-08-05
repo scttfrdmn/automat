@@ -4,7 +4,7 @@
   "title": "automat obligation profile",
   "description": "An obligation profile: under what instrument a control catalog is assessed, how, by whom, and whether gaps may be deferred. A catalog answers 'which controls'; this answers everything else. Several regimes invoke the SAME catalog with different assessment rules — one permits a POA&M where another forbids it — so the regime is data, not Go branching. Vendored and hashed like a catalog; every citation carries an effective date and a source hash.",
   "type": "object",
-  "required": ["schema_version", "profile", "status", "citations", "control_catalogs", "assessment", "determinations", "poam", "scoring", "submission", "applicability", "policy_caveat", "sources"],
+  "required": ["schema_version", "profile", "status", "review_by", "citations", "control_catalogs", "assessment", "determinations", "poam", "scoring", "submission", "applicability", "policy_caveat", "sources"],
   "additionalProperties": false,
 
   "properties": {
@@ -189,6 +189,19 @@
       "enum": ["in-force", "proposed", "superseded", "phased"]
     },
 
+    "review_by": {
+      "description": "The date by which this profile's citations must be re-verified against the primary source. REQUIRED, with no default: a profile is a reading of policy that an institution acts on, and policy moves — notices are superseded, phase-in dates arrive, a class deviation pinning a revision expires. `verify` warns once this date has passed. Signed does not mean current: a superseded citation renders exactly as well as a current one, and a durable-looking stale artifact is worse than an unsigned one, which is why this field sits inside the content hash the signatures cover. Extending it is therefore a change a signature no longer vouches for.",
+      "$ref": "#/$defs/date"
+    },
+
+    "signatures": {
+      "description": "Optional attestations over this document's content hash (see $defs/attestation). PROVENANCE ONLY: an attestation says who stood behind this document in what capacity, never that its contents are correct, applicable to a given institution, or approved for use. Trust is an operator determination — automat ships no trust anchor, no default accepted identity, and no verification in v1.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/attestation" }
+    },
+
     "policy_caveat": {
       "description": "The policy caveat, in substance (docs/policy-caveat.md). REQUIRED: a profile is where automat's reading of policy is most concentrated, so a profile that does not say what kind of claim it is making is not a valid profile. Asserted by test rather than trusted.",
       "$ref": "#/$defs/long_prose"
@@ -232,6 +245,75 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+
+    "attestation": {
+      "description": "One attestation over this document's content hash: an identity, the CAPACITY it acted in, and the statement it makes. A SIGNATURE ATTESTS PROVENANCE ONLY. It never attests that the document is correct, that it applies to any particular institution, or that anyone approves of its use. The roles exist precisely so that 'X wrote this', 'Y adopted it for its own use', 'Z reviewed it' and 'the format validated' cannot collapse into a single checkmark — a reader who sees one green tick learns nothing, and would reasonably infer the strongest of the four. Whether any identity here is TRUSTED is an operator determination, made against a trust policy the operator maintains naming accepted identities per role. automat ships NO trust anchor and no default accepted identity, performs no verification in v1, and is not and must never become a registry or a standards owner.",
+      "type": "object",
+      "required": ["role", "identity", "statement", "content_sha256", "attested_at"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "description": "The capacity the identity acted in, and the only thing an attestation asserts. `authored-by` — this identity wrote the document. `adopted-by` — this identity uses it, which says nothing about who wrote it. `reviewed-by` — this identity read it and stands behind having read it, not behind the contents. `interpreted-by` — this identity produced the document as its own reading of someone else's published policy, and the source institution has neither reviewed nor endorsed it. `format-validated-by` — this identity checked that the document satisfies the published schema, which is a statement about syntax and nothing else. No role means 'approved', 'certified', or 'compliant', and none may be added that does: the value of the vocabulary is that the weakest claim cannot be read as the strongest.",
+          "enum": ["authored-by", "adopted-by", "reviewed-by", "interpreted-by", "format-validated-by"]
+        },
+        "identity": {
+          "description": "Who attests, as they wish to be identified — an institution, an office, an email address, an OIDC subject. Free prose because the useful identity is an institutional one and the eventual mechanism binds it to an OIDC identity rather than to a name automat could constrain.",
+          "$ref": "#/$defs/prose"
+        },
+        "statement": {
+          "description": "REQUIRED, and the reason this is an attestation rather than a signature. The identity says in its own words what it is claiming, so a reader evaluates a sentence rather than a tick. A bare signature invites the reader to supply the claim themselves, and they supply the strongest one available. Hashed with the rest of the document, so a statement cannot be rewritten under material that still verifies.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "content_sha256": {
+          "description": "The document content hash this attestation is over. Recorded inside the document, which the schema cannot check for self-consistency — a validator must recompute it. Present anyway, because an attestation whose subject is implicit is one that can be moved to a different document.",
+          "$ref": "#/$defs/sha256"
+        },
+        "attested_at": {
+          "description": "When the attestation was made. Required for the same reason `citations[].effective_date` is: an undated claim cannot be checked for staleness, and this one ages against `review_by`.",
+          "$ref": "#/$defs/date"
+        },
+        "signature": {
+          "description": "The cryptographic material, WHEN THERE IS ANY. Optional and deliberately subordinate to the fields above: the claim is the attestation and the bytes are evidence for it, never the other way round. An entry with no signature is still a recordable attestation — an institution asserting authorship of a file it publishes itself — while bytes with no role and no statement are not expressible at all. automat performs NO verification in v1: it does not load a trust policy, does not resolve a key, and does not treat the presence of this block as meaning anything.",
+          "type": "object",
+          "required": ["format", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "description": "`detached-ed25519` is a raw detached signature over `content_sha256`, verified against a public key the operator obtains out of band. `oidc-identity-bundle` is the intended v2 mechanism: a keyless signature bound to an OIDC identity, so an institution never has to run a key ceremony, distributed alongside the document over git or an OCI registry. Both are named now so that adopting the second is not a schema version event.",
+              "enum": ["detached-ed25519", "oidc-identity-bundle"]
+            },
+            "value": {
+              "description": "Base64-encoded signature bytes, or the base64 bundle for the keyless form.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384,
+              "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+            },
+            "key_id": {
+              "description": "Which key signed, for the detached form. Required there: a detached signature nobody can locate a key for is unverifiable, which is worse than absent because it looks verifiable.",
+              "$ref": "#/$defs/prose"
+            },
+            "identity_issuer": {
+              "description": "The OIDC issuer that authenticated `identity`, for the keyless form. Required there and FORBIDDEN on the detached form, because in the keyless model the issuer is the whole of what makes the identity mean anything: 'signed by security@example.edu' is a different claim depending on who vouched for that address.",
+              "$ref": "#/$defs/prose"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "format": { "const": "oidc-identity-bundle" } }, "required": ["format"] },
+              "then": {
+                "required": ["identity_issuer"],
+                "not": { "required": ["key_id"] }
+              },
+              "else": {
+                "required": ["key_id"],
+                "not": { "required": ["identity_issuer"] }
+              }
+            }
+          ]
+        }
+      }
     },
 
     "citation": {
