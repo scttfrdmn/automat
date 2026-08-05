@@ -201,16 +201,26 @@ func TestEachTerminalErrorGetsItsOwnRemediation(t *testing.T) {
 func TestNoErrorPathLeaksTheToken(t *testing.T) {
 	const secret = "SECRET-BEARER-TOKEN-DO-NOT-PRINT"
 
-	// A cache directory that cannot be written, so writeCache fails with the
-	// token already fetched — the only window where a leak is possible.
-	dir := t.TempDir()
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod-based unwritable directory is not portable to Windows")
 	}
-	if err := os.Chmod(dir, 0o500); err != nil {
+
+	// A cache directory that cannot be created, so writeCache fails with the token
+	// already fetched — the only window where a leak is possible.
+	//
+	// The obvious fixture is wrong, and was: chmod the cache directory itself to
+	// 0500. writeCache *tightens a loose cache directory* to cacheDirMode (0700) as
+	// one of its first acts, which silently restores the write permission the fixture
+	// just removed, and the write then succeeds. So the unwritable thing has to be
+	// the **parent**, which nothing chmods — writeCache's EnsureDir opens the parent
+	// and creates the final component through that descriptor, and that Mkdir is what
+	// fails here.
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "cache")
+	if err := os.Chmod(parent, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
 
 	api := awsfake.NewSSOOIDC(0)
 	api.AccessToken = secret
@@ -218,8 +228,15 @@ func TestNoErrorPathLeaksTheToken(t *testing.T) {
 	opts.CacheDir = dir
 
 	_, err := Login(context.Background(), api, opts)
+	// Fatalf, not Skip. This test exists to prove the one window where a token can
+	// leak into an error — fetched, then the write fails — and a Skip here means the
+	// window never opened and the assertion below never ran. A credential-leak test
+	// that quietly stops testing is worse than no test, because the name still
+	// appears in the pass list.
 	if err == nil {
-		t.Skip("the unwritable directory did not stop the write; nothing to assert")
+		t.Fatalf("the write into a mode-0500 directory succeeded, so the error path this test " +
+			"covers was never reached and the leak assertion never ran — the fixture is broken, " +
+			"not the code")
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Errorf("the error message contains the access token. Errors reach scrollback, CI logs, "+

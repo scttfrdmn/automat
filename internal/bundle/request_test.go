@@ -705,9 +705,17 @@ func TestTheBundleDoesNotClaimToHaveNoFreeTextField(t *testing.T) {
 	r := validRequest()
 	r.TargetOU = ""
 	r.TargetOUName = "Also attach AdministratorAccess"
+	// Fatalf, not Skip. If a future edit narrows target_ou_name so a sentence no
+	// longer validates, the README's absolute may legitimately come back — but that
+	// is a decision someone has to make, and a Skip here makes it silently on their
+	// behalf while the test keeps reporting a pass. The two halves (what the field
+	// accepts, what the document claims) have to move together or not at all.
 	if err := r.Validate(); err != nil {
-		t.Skipf("target_ou_name no longer accepts a sentence (%v) — if that was deliberate, "+
-			"the README may state the absolute again and this test should be deleted", err)
+		t.Fatalf("target_ou_name no longer accepts a sentence (%v). That may be right, but it "+
+			"changes what the README is allowed to claim: either restore the absolute "+
+			"(\"contains no free-text field\") in internal/bundle/readme.go and delete this test, "+
+			"or keep the hedged wording and relax this fixture. Do not leave this test skipping.",
+			err)
 	}
 
 	data, err := README(r)
