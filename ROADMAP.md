@@ -48,6 +48,44 @@ Recorded now so it is not lost, and gated deliberately: this is a new document t
 - Nested OU creation within depth limits.
 - **Accept:** fake-backed MEMBER vend; failure modes (unassumable role, missing delegation) produce actionable remediation text naming the exact missing grant.
 
+### Emulator integration for `broker` — decided, scheduled here
+
+Approved in Phase 2 and deliberately **not built** then: `broker` is a Phase 3
+deliverable, and integration tests for a package that does not exist yet are
+speculation. Build this when `broker` is built.
+
+`broker`'s surface is `sts:AssumeRole` and `sts:GetCallerIdentity`, which an emulator
+covers today, and it is the package where an emulator earns its place rather than
+duplicating a fake: the emulator's auth controller IAM-enforces calls made with STS
+session credentials, so the test exercises the **trust policy and the ExternalId
+condition** instead of a fake that returns credentials because it was written to.
+A hand-rolled `STSAPI` fake cannot refuse an assumption for the right reason.
+
+Constraints, both non-negotiable and both from CLAUDE.md's testing section:
+
+- **Separate module** at `test/integration/go.mod`, its own `make integration`
+  target, never in the default `make test` gate. The emulator's `go` directive is
+  ahead of automat's floor, and a floor propagates to `go install` regardless of
+  which files import it.
+- **`internal/awsfake` stays.** The emulator tests that automat's requests are
+  well-formed and authorized; the fakes test automat's reaction to state moving
+  mid-call. `broker` gets both, and the ensure-semantics packages keep only the
+  fakes until an emulator can express a call that succeeds against state that
+  changed underneath it.
+
+Upstream gaps are filed and behavior-framed rather than as endpoint lists:
+[substrate#577](https://github.com/scttfrdmn/substrate/issues/577) (root has no
+stable identity — a live bug the probe found, worth an AUDIT-2 note as evidence the
+probe paid for itself independent of the migration decision),
+[#578](https://github.com/scttfrdmn/substrate/issues/578) (Organizations: OU tree,
+policy lifecycle, placement, tagging — 17 operations plus the nine behaviors the
+ensure layer depends on), [#579](https://github.com/scttfrdmn/substrate/issues/579)
+(`SimulatePrincipalPolicy`, which `preflight` is built on),
+[#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: no plugin, so
+`baseline` has nothing to run against). Keep the behavior-first framing on any
+further filings. `preflight`, `org`, and `baseline` are blocked on these and are not
+migration candidates until they land.
+
 ## Phase 4 — Verify + union hardening
 - `verify` per DESIGN §12 (policy/detective/procedural layers, findings vs drift distinction, enforcement-class breakdown, cron-friendly exit codes).
 - **`verify`'s result is a structured value; the printed report renders from it.** Per control: enforcement classes exercised, the resource actually observed (SCP ARN, rule name, attestation path), observation timestamp, and the artifact id + `content_sha256` checked against. `assess` (below) consumes this rather than re-deriving it — two code paths computing the same compliance claim is how one tool starts disagreeing with itself. See `docs/assessment-reporting.md`, "What this requires of `verify`"; nothing here needs the assessment schema to exist, only for `verify` not to throw its evidence away.
