@@ -68,12 +68,19 @@ func newLoginCmd(g *globals) *cobra.Command {
 				// Printed as it arrives rather than returned at the end: the
 				// operator is the slow part of this flow, and a terminal that has
 				// told them nothing looks like a hang.
-				Prompt: func(p login.Prompt) { fmt.Fprint(out, p.String()) },
+				// The write error is dropped because there is nowhere to put it:
+				// this callback cannot fail the login, and the operator who cannot
+				// see the prompt will never approve, so the flow ends in the poll
+				// timeout with its own message. Recording it here rather than
+				// letting errcheck's silence imply nobody thought about it.
+				Prompt: func(p login.Prompt) { _, _ = fmt.Fprint(out, p.String()) },
 			})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(out)
+			if _, werr := fmt.Fprintln(out); werr != nil {
+				return fmt.Errorf("write to standard output: %w", werr)
+			}
 			_, err = res.WriteTo(out)
 			return err
 		},

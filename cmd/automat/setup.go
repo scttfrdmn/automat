@@ -115,8 +115,12 @@ func newSetupCmd(g *globals) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				fmt.Fprint(out, plan.String())
-				fmt.Fprintln(out, "\nNothing was written (--dry-run).")
+				if _, werr := fmt.Fprint(out, plan.String()); werr != nil {
+					return fmt.Errorf("write the plan: %w", werr)
+				}
+				if _, werr := fmt.Fprintln(out, "\nNothing was written (--dry-run)."); werr != nil {
+					return fmt.Errorf("write the plan: %w", werr)
+				}
 				return nil
 			}
 
@@ -124,8 +128,16 @@ func newSetupCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(out, res.String())
-			fmt.Fprint(out, nextSteps(req, res))
+			// Checked, because this is the only place the operator is told where the
+			// bundle went and what to do with it. Exiting 0 after failing to print
+			// that leaves a directory holding an ExternalId that nobody was told
+			// about — including the instruction not to commit it.
+			if _, werr := fmt.Fprint(out, res.String()); werr != nil {
+				return fmt.Errorf("write the result (the bundle was written to %s): %w", res.Dir, werr)
+			}
+			if _, werr := fmt.Fprint(out, nextSteps(req, res)); werr != nil {
+				return fmt.Errorf("write the next steps (the bundle was written to %s): %w", res.Dir, werr)
+			}
 			return nil
 		},
 	}

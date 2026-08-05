@@ -56,7 +56,15 @@ func newPreflightCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), rep.String())
+			// Checked, not ignored. The exit code below encodes the report's
+			// verdict, and a caller that gets code 0 while the report itself never
+			// reached the terminal — a closed pipe, a full disk — has been told
+			// "everything passed" by a command that failed to say anything. The
+			// write failing is the one case where the exit code must not be trusted
+			// to carry the answer.
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), rep.String()); werr != nil {
+				return fmt.Errorf("write the preflight report: %w", werr)
+			}
 
 			// A report is a successful run whatever it says, so the exit code
 			// carries the answer rather than an error. Codes are for cron and CI;
@@ -115,7 +123,12 @@ func (g *globals) preflightRunner(cmd *cobra.Command, orgCtx config.Context) (*p
 			// Reported, not returned: an unresolvable ExternalId means the vendor
 			// role check will fail, and preflight exists to say so with the
 			// reason attached.
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not resolve the ExternalId: %v\n"+
+			// Ignored deliberately, and the only Fprint here that is. This is a
+			// warning on the way to a report that will state the same thing: if
+			// stderr is unwritable the check still runs and still reports, so
+			// failing the command over the warning would lose the answer to protect
+			// the note about it.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not resolve the ExternalId: %v\n"+
 				"The vendor role check below will fail for that reason rather than a "+
 				"permission one.\n\n", err)
 		}
