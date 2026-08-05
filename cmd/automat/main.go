@@ -34,6 +34,17 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
+	return newRootCmdWith(&globals{})
+}
+
+// newRootCmdWith builds the root command around a caller-supplied globals.
+//
+// The seam exists for the same reason globals' client constructors are fields: a test
+// that cannot substitute fakes ends up either reaching AWS or not testing the command
+// at all, and CLAUDE.md rule 1 forbids the first. Registering the persistent flags
+// against a second globals from a test is not an alternative — pflag panics on a
+// redefined flag, which is how this function came to exist.
+func newRootCmdWith(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "automat",
 		Short: "Vend compliant AWS accounts from an org you already control",
@@ -53,10 +64,9 @@ func newRootCmd() *cobra.Command {
 	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	cmd.Version = version.Version
 
-	g := &globals{}
-	cmd.PersistentFlags().StringVar(&g.configPath, "config", "",
+	cmd.PersistentFlags().StringVar(&g.configPath, "config", g.configPath,
 		"config file (default ~/.config/automat/config.toml)")
-	cmd.PersistentFlags().StringVar(&g.contextName, "context", "",
+	cmd.PersistentFlags().StringVar(&g.contextName, "context", g.contextName,
 		"named context in the config file to use")
 
 	cmd.AddCommand(
