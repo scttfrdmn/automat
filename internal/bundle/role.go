@@ -105,7 +105,14 @@ func VendorRoleCFN(r *Request) ([]byte, error) {
 	w("  AutomatVendorRole:\n")
 	w("    Type: AWS::IAM::Role\n")
 	w("    Properties:\n")
-	w("      RoleName: %s\n", r.VendorRoleName)
+	// Quoted, because YAML 1.1 resolves plain scalars by content: an unquoted
+	// role name of "off", "no", "true", "null", or "0755" arrives at
+	// CloudFormation as a boolean, null, or integer rather than the string the
+	// operator typed. Every one of those is a legal IAM role name, so validation
+	// cannot reject them without rejecting reasonable input, and a denylist of one
+	// parser's type-resolution rules is not a defense. reRoleName admits no single
+	// quote, so quoting here cannot itself be escaped.
+	w("      RoleName: '%s'\n", r.VendorRoleName)
 	w("      Description: >-\n")
 	w("        Lets account %s vend member accounts into OU %s. Managed by automat.\n", r.MemberAccountID, ou)
 	w("      MaxSessionDuration: 3600\n")

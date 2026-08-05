@@ -11,7 +11,7 @@ Resources:
   AutomatVendorRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: automat-vendor
+      RoleName: 'automat-vendor'
       Description: >-
         Lets account 222222222222 vend member accounts into OU ou-exam-research1. Managed by automat.
       MaxSessionDuration: 3600

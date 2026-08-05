@@ -594,3 +594,115 @@ func TestTheRoleCanOnlyTagAccountsItVended(t *testing.T) {
 		}
 	}
 }
+
+// yamlCoercingValues are plain YAML scalars that a 1.1 parser resolves to a
+// non-string type. CloudFormation's parser is in this family, so an operator-supplied
+// value landing unquoted in a scalar position does not arrive as the string that was
+// validated.
+var yamlCoercingValues = []string{
+	"No", "no", "n", "N", "yes", "y", "on", "off", "Off", "OFF",
+	"true", "false", "null", "NULL",
+	"0755", "0x1F", "12345678", "1e5", "1.0", "0",
+	"2026-01-01",
+}
+
+// TestOperatorValuesSurviveTheYAMLParserAsStrings covers the gap between "the input
+// is safe" and "the input means what it said".
+//
+// Request.Validate is an allowlist, and it is doing its job: none of these values
+// can terminate a string or open a substitution. But every one of them is also a
+// legal role name AND a YAML 1.1 non-string literal, so `--vendor-role-name off`
+// written unquoted becomes the boolean false in the deployed template. The operator
+// then has a role named something other than what they asked for, automat's config
+// points at a role ARN that does not exist, and the failure surfaces later as a
+// permission error with no connection to its cause.
+//
+// Validation cannot fix this, and it should not try: "off" is a reasonable role
+// name, and a denylist of YAML's type-resolution rules is a list that grows with
+// every parser. The renderer quotes instead.
+func TestOperatorValuesSurviveTheYAMLParserAsStrings(t *testing.T) {
+	for _, v := range yamlCoercingValues {
+		r := validRequest()
+		r.VendorRoleName = v
+		data, err := VendorRoleCFN(r)
+		if err != nil {
+			t.Fatalf("VendorRoleCFN(%q): %v", v, err)
+		}
+		want := "RoleName: '" + v + "'"
+		if !strings.Contains(string(data), want) {
+			line := ""
+			for _, l := range strings.Split(string(data), "\n") {
+				if strings.Contains(l, "RoleName:") {
+					line = strings.TrimSpace(l)
+					break
+				}
+			}
+			t.Errorf("vendor role name %q renders as %q, want %q.\n"+
+				"Unquoted, a YAML 1.1 parser resolves this to a non-string and the deployed "+
+				"role is not the one that was requested.", v, line, want)
+		}
+	}
+}
+
+// TestNoOperatorValueLandsUnquotedInAStructuredField generalizes the previous test
+// from the one field that had the bug to every field that could.
+//
+// The concrete finding was RoleName rendered as a bare YAML scalar. The class is
+// broader: an operator-supplied value reaching a structured position — a YAML scalar,
+// an HCL attribute — must be quoted, or the document's parser gets to decide its
+// type. This walks every field with a distinctive marker value and checks that each
+// occurrence in a structured line is quoted, so a renderer added later cannot
+// reintroduce the same mistake in a new field.
+//
+// Prose lines are exempt: a role name in an English sentence in a comment is not
+// parsed as anything.
+func TestNoOperatorValueLandsUnquotedInAStructuredField(t *testing.T) {
+	// Markers are valid for their field and unlikely to occur incidentally.
+	fields := []struct {
+		name   string
+		marker string
+		set    func(*Request, string)
+	}{
+		{"vendor_role_name", "Zmarkerrole", func(r *Request, v string) { r.VendorRoleName = v }},
+		{"target_ou_name", "Zmarkerouname", func(r *Request, v string) {
+			r.TargetOU = ""
+			r.TargetOUName = v
+		}},
+	}
+	for _, f := range fields {
+		for name, render := range map[string]func(*Request) ([]byte, error){
+			FileRoleCFN: VendorRoleCFN,
+			FileRoleTF:  VendorRoleTF,
+		} {
+			r := validRequest()
+			f.set(r, f.marker)
+			data, err := render(r)
+			if err != nil {
+				t.Fatalf("%s/%s: %v", name, f.name, err)
+			}
+			for i, line := range strings.Split(string(data), "\n") {
+				if !strings.Contains(line, f.marker) {
+					continue
+				}
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "#") {
+					continue // a comment; not parsed
+				}
+				// A structured line assigns a value: "Key: v" or "key = v".
+				if !reStructuredAssign.MatchString(trimmed) {
+					continue // prose inside a description block
+				}
+				if !strings.Contains(line, "'"+f.marker) && !strings.Contains(line, `"`+f.marker) {
+					t.Errorf("%s line %d: %s lands unquoted in a structured field:\n  %s\n"+
+						"The document's parser decides the type of a bare scalar, so the "+
+						"deployed value is not necessarily the validated string.",
+						name, i+1, f.name, trimmed)
+				}
+			}
+		}
+	}
+}
+
+// reStructuredAssign matches a line that assigns a value in YAML or HCL, as opposed
+// to a line of prose that happens to contain one.
+var reStructuredAssign = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\s*(?::|=)\s*\S`)
