@@ -1,0 +1,119 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AutomatCreatePoliciesMarkedAsItsOwn",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::222222222222:role/automat-runner"
+      },
+      "Action": [
+        "organizations:CreatePolicy"
+      ],
+      "Resource": [
+        "arn:aws:organizations::111111111111:policy/o-exampleorgid/service_control_policy/*"
+      ],
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "aws:TagKeys": "automat:*"
+        },
+        "StringEquals": {
+          "aws:RequestTag/automat:managed-by": "automat"
+        }
+      }
+    },
+    {
+      "Sid": "AutomatModifyOnlyPoliciesItCreated",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::222222222222:role/automat-runner"
+      },
+      "Action": [
+        "organizations:UpdatePolicy",
+        "organizations:DeletePolicy"
+      ],
+      "Resource": [
+        "arn:aws:organizations::111111111111:policy/o-exampleorgid/service_control_policy/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/automat:managed-by": "automat"
+        }
+      }
+    },
+    {
+      "Sid": "AutomatTagOnlyItsOwnPoliciesAndOnlyInItsOwnNamespace",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::222222222222:role/automat-runner"
+      },
+      "Action": [
+        "organizations:TagResource",
+        "organizations:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:organizations::111111111111:policy/o-exampleorgid/service_control_policy/*"
+      ],
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "aws:TagKeys": "automat:*"
+        },
+        "StringEquals": {
+          "aws:ResourceTag/automat:managed-by": "automat"
+        }
+      }
+    },
+    {
+      "Sid": "AutomatAttachItsPoliciesWithinTheDelegatedSubtree",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::222222222222:role/automat-runner"
+      },
+      "Action": [
+        "organizations:AttachPolicy",
+        "organizations:DetachPolicy"
+      ],
+      "Resource": [
+        "arn:aws:organizations::111111111111:policy/o-exampleorgid/service_control_policy/*",
+        "arn:aws:organizations::111111111111:ou/o-exampleorgid/ou-exam-research1",
+        "arn:aws:organizations::111111111111:ou/o-exampleorgid/ou-exam-research1/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/automat:managed-by": "automat"
+        }
+      }
+    },
+    {
+      "Sid": "AutomatReadTheOrganizationItOperatesIn",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::222222222222:role/automat-runner"
+      },
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:DescribeOrganizationalUnit",
+        "organizations:DescribePolicy",
+        "organizations:DescribeAccount",
+        "organizations:DescribeEffectivePolicy",
+        "organizations:ListRoots",
+        "organizations:ListParents",
+        "organizations:ListChildren",
+        "organizations:ListOrganizationalUnitsForParent",
+        "organizations:ListAccounts",
+        "organizations:ListAccountsForParent",
+        "organizations:ListPolicies",
+        "organizations:ListPoliciesForTarget",
+        "organizations:ListTargetsForPolicy",
+        "organizations:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:organizations::111111111111:root/o-exampleorgid/*",
+        "arn:aws:organizations::111111111111:ou/o-exampleorgid/ou-exam-research1",
+        "arn:aws:organizations::111111111111:ou/o-exampleorgid/ou-exam-research1/*",
+        "arn:aws:organizations::111111111111:account/o-exampleorgid/*",
+        "arn:aws:organizations::111111111111:policy/o-exampleorgid/service_control_policy/*"
+      ]
+    }
+  ]
+}
