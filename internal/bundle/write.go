@@ -191,6 +191,9 @@ func write(r *Request, opts Options, apply bool) (*Result, error) {
 	if opts.Dir == "" {
 		return nil, errors.New("no output directory — pass --out with a directory to write the bundle into")
 	}
+	if err := checkOutputPath(opts.Dir); err != nil {
+		return nil, err
+	}
 	// Render everything before creating anything. A bundle is only useful whole:
 	// a directory holding a role template and no delegation policy is a request
 	// central IT would half-approve.
@@ -316,6 +319,39 @@ func partialBundleError(res *Result, failed string, cause error) error {
 		"--force to rewrite the whole directory: a plain re-run reports the stale files " +
 		"as unchanged and will not converge.")
 	return errors.New(b.String())
+}
+
+// checkOutputPath refuses a --out path containing a control character.
+//
+// Every other operator-supplied value in this package is quoted where it is rendered
+// (AUDIT-0 M1), and Result.Dir is the one that cannot be: the first line of Write's
+// output is documented as the bare path so `cd "$(automat setup --out X | head -1)"`
+// works, and putting it through %q would break the contract the Result.Dir comment
+// makes. Quoting is the wrong end of this anyway — a path is not a rejected value
+// being reported back, it is a path the operator is about to use.
+//
+// So the input is refused instead. A directory whose name contains a newline is
+// creatable on Linux and darwin (verified), which makes `--out $'out\n  CREATED
+// role.yaml  9999 bytes'` a plausible-looking extra line in automat's own file list,
+// and an ESC byte can erase the lines above it. That matters because the output this
+// forges is the output telling the operator which files hold a live ExternalId.
+//
+// Only control bytes are refused, not spaces or unusual characters: an operator with
+// a directory called "AWS Onboarding 2026" has done nothing wrong, and a charset
+// allowlist on a filesystem path would refuse legitimate non-ASCII paths for no
+// security gain. A control byte is the whole class that can move a cursor or start
+// a line.
+func checkOutputPath(dir string) error {
+	for i := 0; i < len(dir); i++ {
+		if b := dir[i]; b < 0x20 || b == 0x7f {
+			return fmt.Errorf("the output directory path contains a control character (byte %#02x at "+
+				"offset %d), and automat prints that path as the first line of its output so a script "+
+				"can use it — a newline or an escape byte there forges a line of automat's own file "+
+				"list, which is the list naming the file that holds the ExternalId. "+
+				"Pass --out with a path containing no control characters", b, i)
+		}
+	}
+	return nil
 }
 
 // openOutputDir creates the output directory and returns a root confined to it.

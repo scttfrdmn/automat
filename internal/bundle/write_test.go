@@ -806,3 +806,69 @@ func TestTheBundleIgnoresItselfInGit(t *testing.T) {
 		t.Errorf("%s is mode %s", fileGitignore, fi.Mode().Perm())
 	}
 }
+
+// TestARequestedOutputPathWithAControlCharacterIsRefused.
+//
+// Result.String prints res.Dir as its first line, unquoted, on purpose: the field is
+// documented as a path and nothing else so `cd "$(automat setup --out X | head -1)"`
+// works, and prose appended to it broke exactly that once already. Which makes it the
+// one operator-supplied value in this package that AUDIT-0 M1's %q rule cannot cover.
+//
+// A directory whose name contains a newline is creatable on Linux and darwin, so
+// `--out $'out\n  CREATED  vendor-role.yaml  9999 bytes'` would print a line that
+// reads as automat's own file list — in the output whose whole job is telling the
+// operator which file holds a live ExternalId. An ESC byte is worse: it erases the
+// lines above it.
+func TestARequestedOutputPathWithAControlCharacterIsRefused(t *testing.T) {
+	base := t.TempDir()
+	cases := map[string]string{
+		"newline forging a file-list line": "out\n  CREATED              vendor-role.yaml         9999 bytes",
+		"carriage return":                  "out\rowned",
+		"escape clearing the line":         "out\x1b[2Kowned",
+		"bell":                             "out\a",
+		"NUL":                              "out\x00",
+		"tab":                              "out\tCREATED",
+		"delete":                           "out\x7f",
+	}
+	for name, dir := range cases {
+		t.Run(name, func(t *testing.T) {
+			opts := Options{Dir: filepath.Join(base, dir), Force: true}
+			// Both halves of the plan/apply split: a plan that accepted this would
+			// print the forged line under --dry-run, which is the mode an operator
+			// runs precisely because they are being careful.
+			for what, fn := range map[string]func(*Request, Options) (*Result, error){
+				"Plan": Plan, "Write": Write,
+			} {
+				res, err := fn(validRequest(), opts)
+				if err == nil {
+					t.Errorf("%s accepted an output path containing a control character; its first "+
+						"output line would be %q", what, strings.SplitN(res.String(), "\n", 2)[0])
+					continue
+				}
+				if !strings.Contains(err.Error(), "control character") {
+					t.Errorf("%s: the error does not name the cause: %v", what, err)
+				}
+				// The refusal must not echo the path: printing it back is the same
+				// forged line, one layer down.
+				if strings.Contains(err.Error(), dir) {
+					t.Errorf("%s: the refusal reproduces the offending path: %q", what, err.Error())
+				}
+			}
+		})
+	}
+}
+
+// TestAnOrdinaryOutputPathWithSpacesIsStillAccepted is the counterweight: only control
+// bytes are refused. An operator with a directory called "AWS Onboarding 2026" has
+// done nothing wrong, and a charset allowlist on a filesystem path would refuse
+// legitimate non-ASCII paths for no security gain.
+func TestAnOrdinaryOutputPathWithSpacesIsStillAccepted(t *testing.T) {
+	for _, dir := range []string{"AWS Onboarding 2026", "bündel", "onboarding-2026"} {
+		t.Run(dir, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), dir)
+			if _, err := Write(validRequest(), Options{Dir: out, Force: true}); err != nil {
+				t.Errorf("an ordinary directory name was refused: %v", err)
+			}
+		})
+	}
+}

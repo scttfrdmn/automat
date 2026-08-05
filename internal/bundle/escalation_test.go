@@ -620,6 +620,18 @@ var yamlCoercingValues = []string{
 // Validation cannot fix this, and it should not try: "off" is a reasonable role
 // name, and a denylist of YAML's type-resolution rules is a list that grows with
 // every parser. The renderer quotes instead.
+//
+// # What this test does and does not prove
+//
+// It matches bytes; it does not run a YAML parser, because there is no YAML parser in
+// the dependency tree and adding one needs the human's approval (CLAUDE.md working
+// style). That is sound only because of a second fact, and the dependency is stated
+// here rather than left implicit: a single-quoted YAML scalar is unconditionally a
+// string in both 1.1 and 1.2, so the quoted form needs no parser to be checked — but
+// only if the value cannot contain a `'` and close the quote itself.
+// TestNoPatternAdmitsAStructuralCharacter is what establishes that, by brute force
+// over every byte. If either half is ever weakened, this test keeps passing while its
+// claim stops being true, which is why the two are cross-referenced.
 func TestOperatorValuesSurviveTheYAMLParserAsStrings(t *testing.T) {
 	for _, v := range yamlCoercingValues {
 		r := validRequest()
@@ -628,20 +640,30 @@ func TestOperatorValuesSurviveTheYAMLParserAsStrings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("VendorRoleCFN(%q): %v", v, err)
 		}
-		want := "RoleName: '" + v + "'"
-		if !strings.Contains(string(data), want) {
-			line := ""
-			for _, l := range strings.Split(string(data), "\n") {
-				if strings.Contains(l, "RoleName:") {
-					line = strings.TrimSpace(l)
-					break
-				}
-			}
+		// The RoleName line specifically, not a Contains over the whole document: the
+		// same value also appears in the template's description and in a resource
+		// name, so a document-wide match could be satisfied by an occurrence that is
+		// not the scalar CloudFormation reads as the role's name.
+		line, ok := findKeyLine(string(data), "RoleName:")
+		if !ok {
+			t.Fatalf("VendorRoleCFN(%q) rendered no RoleName line at all", v)
+		}
+		if want := "RoleName: '" + v + "'"; line != want {
 			t.Errorf("vendor role name %q renders as %q, want %q.\n"+
 				"Unquoted, a YAML 1.1 parser resolves this to a non-string and the deployed "+
 				"role is not the one that was requested.", v, line, want)
 		}
 	}
+}
+
+// findKeyLine returns the first line whose trimmed text starts with key.
+func findKeyLine(doc, key string) (string, bool) {
+	for _, l := range strings.Split(doc, "\n") {
+		if t := strings.TrimSpace(l); strings.HasPrefix(t, key) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // TestNoOperatorValueLandsUnquotedInAStructuredField generalizes the previous test
