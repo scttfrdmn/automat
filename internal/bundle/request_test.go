@@ -217,6 +217,69 @@ func TestExactlyOneOUForm(t *testing.T) {
 	}
 }
 
+// TestAnOUNameThatReviewsAsAnotherNameIsRefused.
+//
+// Neither of these is an injection — both values are inside reOUName's charset and
+// neither can alter a document's structure. Both are cases where the bundle a
+// reviewer reads and the OU the operator creates come apart, which is the same class
+// of problem one layer up: the approval is given for something other than what
+// happens.
+//
+// Doubled spaces: markdown collapses whitespace in prose, so the README's table cell
+// and ou.md's step-1 sentence render "Research  Prod" and "Research Prod"
+// identically, while the `--name` argument in ou.md's code fence — inside a fence,
+// where whitespace is preserved — differs. Two requests that review as the same
+// request create two differently-named OUs.
+//
+// Identifier-shaped names: in the placeholder case ou.md's job is to tell the
+// operator which strings are ids to substitute and which are not. A name of
+// "ou-REPLACE-WITH-THE-NEW-OU-ID" appears in the same instruction as the placeholder
+// it is teaching them to replace.
+func TestAnOUNameThatReviewsAsAnotherNameIsRefused(t *testing.T) {
+	refused := map[string]string{
+		"doubled space":       "Research  Prod",
+		"many spaces":         "Research     Prod",
+		"placeholder":         "ou-REPLACE-WITH-THE-NEW-OU-ID",
+		"an OU id":            "ou-abcd-12345678",
+		"an OU id upper":      "OU-abcd-12345678",
+		"an org id":           "o-exampleorgid",
+		"a root id":           "r-exam",
+		"an account number":   "222222222222",
+		"a bare digit string": "1",
+	}
+	for name, v := range refused {
+		t.Run(name, func(t *testing.T) {
+			r := validRequest()
+			r.TargetOU, r.TargetOUName = "", v
+			err := r.Validate()
+			if err == nil {
+				t.Fatalf("target_ou_name %q was accepted", v)
+			}
+			if !strings.Contains(err.Error(), "target_ou_name") {
+				t.Errorf("the error does not name the field: %v", err)
+			}
+		})
+	}
+
+	// The other half, and the one that makes the check worth having rather than
+	// merely strict: an OU is really called "Research Computing", and a name with a
+	// digit or a hyphen in it is ordinary. If any of these were refused the fix
+	// would be worse than the finding.
+	for _, v := range []string{
+		"Research Computing", "Research-Computing", "Research_Computing",
+		"Research Computing 2", "Sandbox", "CUI Enclave", "dept.research",
+		"Tier-2 Research", "Research 800-171",
+	} {
+		t.Run("accepted: "+v, func(t *testing.T) {
+			r := validRequest()
+			r.TargetOU, r.TargetOUName = "", v
+			if err := r.Validate(); err != nil {
+				t.Errorf("target_ou_name %q is an ordinary OU name and was refused: %v", v, err)
+			}
+		})
+	}
+}
+
 func TestManagementAndMemberMustDiffer(t *testing.T) {
 	r := validRequest()
 	r.ManagementAccountID = r.MemberAccountID

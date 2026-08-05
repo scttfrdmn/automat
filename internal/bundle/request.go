@@ -106,6 +106,13 @@ var (
 	// space is a name that reads as one thing in the bundle and matches a
 	// different string in a later comparison.
 	reOUName = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,62}[A-Za-z0-9._-])?$`)
+	// reIDShaped matches the identifier forms ou.md instructs the operator to tell
+	// apart from a name: an OU id, the substitution placeholder, an organization id,
+	// a root id, and a bare account number. A separate check rather than a narrower
+	// reOUName, because "Research-1" is a legitimate name and the two conditions are
+	// not the same shape. Case-insensitive: "OU-abcd-12345678" is the same
+	// confusion typed differently.
+	reIDShaped = regexp.MustCompile(`(?i)^(?:ou-|o-|r-)|^\d+$`)
 	// Stricter than AWS's ExternalId charset (which includes / and spaces) and
 	// with a 16-character floor: an ExternalId's only property is being
 	// unguessable, so one short enough to guess is worse than none, because it
@@ -272,6 +279,32 @@ func (r *Request) Validate() error {
 	case r.TargetOUName != "":
 		check("target_ou_name", r.TargetOUName, reOUName,
 			"use a short name of letters, digits, spaces, and ._-")
+		// A run of interior spaces. reOUName already refuses a *trailing* space for
+		// the reason this refuses a doubled one, and stopped one character short:
+		// markdown collapses whitespace in prose, so "Research  Prod" and
+		// "Research Prod" are the same three words in the README table and in ou.md's
+		// step 1, while the `--name` line inside the code fence preserves them. Two
+		// requests that review as identical would create two differently-named OUs,
+		// and the reviewer has no way to see the difference in the document they
+		// approved.
+		if strings.Contains(r.TargetOUName, "  ") {
+			problems = append(problems, fmt.Sprintf("target_ou_name: %s contains a run of spaces — "+
+				"markdown collapses those, so this name reads identically to the single-spaced "+
+				"version in the bundle a reviewer approves while producing a different OU; use "+
+				"single spaces", quote(r.TargetOUName)))
+		}
+		// A name shaped like an identifier. ou.md's whole job in the placeholder case
+		// is telling the operator which strings are ids to substitute and which are
+		// not, and a *name* of "ou-REPLACE-WITH-THE-NEW-OU-ID" or "ou-abcd-12345678"
+		// puts the two categories in the same sentence. The operator is the one who
+		// has to tell them apart, at the moment they are creating the OU.
+		if reIDShaped.MatchString(r.TargetOUName) {
+			problems = append(problems, fmt.Sprintf("target_ou_name: %s is shaped like an "+
+				"identifier rather than a name — ou.md asks central IT to tell an OU name from an "+
+				"OU id, an org id, and the placeholder, and a name in one of those forms puts both "+
+				"in the same instruction; give the OU's human name, e.g. \"Research Computing\"",
+				quote(r.TargetOUName)))
+		}
 	default:
 		problems = append(problems, "neither target_ou nor target_ou_name is set — the delegation policy "+
 			"and the role are both scoped to an OU, and a bundle without one would ask central IT to "+
