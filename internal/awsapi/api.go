@@ -47,6 +47,114 @@ type OrgAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.DescribeResourcePolicyOutput, error)
 }
 
+// The mutating half of Organizations is THREE interfaces, not one, and the split
+// is forced by DESIGN §5 rather than chosen for tidiness.
+//
+// In the MEMBER state a vend runs on two different credentials at once:
+// CreateAccount and CreateOrganizationalUnit cannot be delegated (DESIGN §3,
+// facts 1 and 2), so they are borrowed through an assumed role in the management
+// account, while policy management *is* delegable and runs as the caller's own
+// identity (fact 3). Those are two clients. A single OrgWriteAPI would be a type
+// no MEMBER-state caller could ever satisfy, so the code would either hold a
+// client with powers it does not have or paper over the difference — and the
+// difference is the entire security argument the onboarding bundle makes.
+//
+// A second reason to keep them apart: the interface is where a capability
+// automat does not need becomes a capability it cannot exercise. See the note on
+// what is deliberately absent, below.
+
+// OrgVendAPI is the account-and-OU half, carried by the brokered vendor role in
+// the MEMBER state and by the caller's own credentials in MANAGEMENT.
+//
+// The reads are here as well as on OrgAPI, deliberately: in the MEMBER state
+// these calls go through a *different client* than preflight's, and an ensure
+// operation that writes with one credential must read back with the same one or
+// it is asserting something about a view it does not have.
+type OrgVendAPI interface {
+	CreateAccount(ctx context.Context, in *organizations.CreateAccountInput,
+		optFns ...func(*organizations.Options)) (*organizations.CreateAccountOutput, error)
+	DescribeCreateAccountStatus(ctx context.Context, in *organizations.DescribeCreateAccountStatusInput,
+		optFns ...func(*organizations.Options)) (*organizations.DescribeCreateAccountStatusOutput, error)
+	MoveAccount(ctx context.Context, in *organizations.MoveAccountInput,
+		optFns ...func(*organizations.Options)) (*organizations.MoveAccountOutput, error)
+	CreateOrganizationalUnit(ctx context.Context, in *organizations.CreateOrganizationalUnitInput,
+		optFns ...func(*organizations.Options)) (*organizations.CreateOrganizationalUnitOutput, error)
+	TagResource(ctx context.Context, in *organizations.TagResourceInput,
+		optFns ...func(*organizations.Options)) (*organizations.TagResourceOutput, error)
+
+	DescribeAccount(ctx context.Context, in *organizations.DescribeAccountInput,
+		optFns ...func(*organizations.Options)) (*organizations.DescribeAccountOutput, error)
+	ListParents(ctx context.Context, in *organizations.ListParentsInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListParentsOutput, error)
+	ListOrganizationalUnitsForParent(ctx context.Context, in *organizations.ListOrganizationalUnitsForParentInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListOrganizationalUnitsForParentOutput, error)
+	ListAccountsForParent(ctx context.Context, in *organizations.ListAccountsForParentInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListAccountsForParentOutput, error)
+}
+
+// OrgPolicyAPI is the SCP half, carried by delegated permissions in the MEMBER
+// state (DESIGN §5, "policy half") and by the caller's own credentials in
+// MANAGEMENT.
+//
+// TagResource appears here and on OrgVendAPI. That is not an oversight and not
+// duplication to be factored out: the same action is granted twice by two
+// different instruments, on two different resource types, to two different
+// credentials — accounts by the vendor role, policies by the delegation policy —
+// and the tag conditions differ between them (internal/bundle's scpTagActions
+// gates on the *resource* tag; the account grant gates on the *request* tag).
+// Collapsing them into one interface would suggest one grant.
+type OrgPolicyAPI interface {
+	CreatePolicy(ctx context.Context, in *organizations.CreatePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.CreatePolicyOutput, error)
+	UpdatePolicy(ctx context.Context, in *organizations.UpdatePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.UpdatePolicyOutput, error)
+	AttachPolicy(ctx context.Context, in *organizations.AttachPolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.AttachPolicyOutput, error)
+	TagResource(ctx context.Context, in *organizations.TagResourceInput,
+		optFns ...func(*organizations.Options)) (*organizations.TagResourceOutput, error)
+
+	DescribePolicy(ctx context.Context, in *organizations.DescribePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.DescribePolicyOutput, error)
+	ListPolicies(ctx context.Context, in *organizations.ListPoliciesInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error)
+	ListPoliciesForTarget(ctx context.Context, in *organizations.ListPoliciesForTargetInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListPoliciesForTargetOutput, error)
+	ListTagsForResource(ctx context.Context, in *organizations.ListTagsForResourceInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListTagsForResourceOutput, error)
+}
+
+// OrgInitAPI is `automat init` from the STANDALONE state, and nothing else calls
+// it (DESIGN §3, fact 12; DESIGN §4).
+//
+// Separate because it is the only interface whose operations are meaningless
+// after the first successful call, and because EnablePolicyType is what makes
+// fact 8 true: SCPs require the ALL feature set, so an org created without it is
+// an org where every control automat attaches is silently unenforceable.
+type OrgInitAPI interface {
+	CreateOrganization(ctx context.Context, in *organizations.CreateOrganizationInput,
+		optFns ...func(*organizations.Options)) (*organizations.CreateOrganizationOutput, error)
+	EnablePolicyType(ctx context.Context, in *organizations.EnablePolicyTypeInput,
+		optFns ...func(*organizations.Options)) (*organizations.EnablePolicyTypeOutput, error)
+}
+
+// # What is deliberately absent from all three
+//
+// DetachPolicy, DeletePolicy, DeleteOrganizationalUnit, CloseAccount,
+// RemoveAccountFromOrganization, LeaveOrganization, DeleteOrganization.
+//
+// The onboarding bundle *does* request DetachPolicy and DeletePolicy — `verify`
+// and `reclaim` need them, and the bundle discloses that in its cover note. But a
+// granted action automat has no interface method for is an action no code path in
+// this repository can reach, which is a stronger guarantee than a code review.
+// The same reasoning made OrgAPI read-only through Phase 1; these are its Phase 5
+// counterpart. When `reclaim` is written, they land on their own interface behind
+// the plan/apply split and the `--yes` gate (CLAUDE.md rule 5) rather than being
+// appended here, so that "automat can close an account" is a visible change to
+// this file.
+//
+// TestNoWriteInterfaceCanDestroy holds this. Adding one of these methods to an
+// interface above fails the build rather than the review.
+
 // IAMAPI is permission simulation.
 //
 // One method, and a load-bearing caveat: SimulatePrincipalPolicy does **not**
@@ -89,9 +197,12 @@ type SSOOIDCAPI interface {
 // upgrade changes a signature, this fails at build time in one place rather than
 // wherever the interface happens to be used.
 var (
-	_ STSAPI     = (*sts.Client)(nil)
-	_ OrgAPI     = (*organizations.Client)(nil)
-	_ IAMAPI     = (*iam.Client)(nil)
-	_ QuotaAPI   = (*servicequotas.Client)(nil)
-	_ SSOOIDCAPI = (*ssooidc.Client)(nil)
+	_ STSAPI       = (*sts.Client)(nil)
+	_ OrgAPI       = (*organizations.Client)(nil)
+	_ OrgVendAPI   = (*organizations.Client)(nil)
+	_ OrgPolicyAPI = (*organizations.Client)(nil)
+	_ OrgInitAPI   = (*organizations.Client)(nil)
+	_ IAMAPI       = (*iam.Client)(nil)
+	_ QuotaAPI     = (*servicequotas.Client)(nil)
+	_ SSOOIDCAPI   = (*ssooidc.Client)(nil)
 )

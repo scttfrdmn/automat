@@ -81,8 +81,9 @@ restatement.
 | 1 | **Q9** — `MoveAccount` source parent | The denial text, or the success (above) |
 | 2 | **Q7** — `MoveAccount` timing after `CreateAccount` | Actual latency distribution, enough to set a retry policy rather than guess one |
 | 3 | **Q8** — does `MoveAccount` honor `aws:ResourceTag` on the account? | Whether the condition binds. This one does **not** fail closed: if the tag condition is ignored, the role can move *any* account in the organization into the delegated OU, and nothing announces it. Test it directly with a deliberately untagged account. |
-| 4 | **Q5** — what `preflight` can detect about delegation from the member side | Whether `DescribeResourcePolicy` is readable from the member account at all; if not, preflight must be told rather than detect, and the bundle must carry that fact |
-| 5 | **Q6** — SCP quota edges under real union output | How close a real `cmmc-l1` + `800-171r2` + campus-baseline union comes to 5 SCPs / 5120 characters per target |
+| 4 | **Q12** — `MoveAccount` into the parent the account already has | Success, or the exact exception. Immediately after order 1 succeeds, re-run the same move: it costs one API call and it is the behavior every `vend --resume` depends on |
+| 5 | **Q5** — what `preflight` can detect about delegation from the member side | Whether `DescribeResourcePolicy` is readable from the member account at all; if not, preflight must be told rather than detect, and the bundle must carry that fact |
+| 6 | **Q6** — SCP quota edges under real union output | How close a real `cmmc-l1` + `800-171r2` + campus-baseline union comes to 5 SCPs / 5120 characters per target |
 
 Q8 deserves the emphasis it has above: it is the one on this list whose bad case is
 silent. Q9 fails visibly, Q7 fails visibly, Q5 and Q6 are questions about capability

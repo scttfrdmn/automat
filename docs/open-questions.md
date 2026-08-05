@@ -188,6 +188,38 @@ keys, which is itself part of the question). If it does not, the honest resoluti
 `DestinationParentId`-only grant plus documenting that the delegate can move an account it
 created back to the root, and saying so in the README's blast-radius section.
 
+### Q12 — Does `MoveAccount` into the account's *current* parent succeed or return `DuplicateAccountException`?
+
+Q9's neighbour again, and the one `vend --resume` turns on. A resumed vend re-runs the move
+against an account that is already exactly where it belongs, which is the *success* path of
+resumption, not an edge case: it happens every time an operator re-runs a `vend` that got as
+far as the move.
+
+The AWS documentation does not say. `DuplicateAccountException` is defined as "that account is
+already present in the specified destination", which reads like the answer, but the same
+exception is listed on operations where "already present" means something else, and a no-op
+move is plausibly treated as a no-op.
+
+It is not resolvable from fakes, so **both readings are producible**:
+`awsfake.OrgState.MoveToSamePlaceErrors` switches between them and
+`TestBothReadingsOfAMoveToWhereTheAccountAlreadyIsAreReachable` exercises both. That test
+deliberately asserts the knob works rather than which reading is right — asserting the latter
+would be claiming an answer only a live org has, and CLAUDE.md rule 2 makes that a finding.
+
+The consequence for `internal/org` is that ensure-semantics must pass **either way**, which
+means: read the parent first (`ListParents`), skip the move when it already matches, and
+*also* treat `DuplicateAccountException` as success if the move is attempted anyway. Both, not
+one — the read-first path is the correct one, and the exception tolerance is what covers the
+TOCTOU window between the read and the move. Neither alone is enough, and code written against
+only one reading of this question would have exactly one of them.
+
+Note the secondary wrinkle the fake also reproduces: `SourceParentId` is mandatory, so a
+resumed vend cannot replay the call it made the first time — the source it recorded is stale
+precisely because the move succeeded.
+
+**Phase 5 smoke runbook, alongside Q9:** after the first successful vend, re-run the move with
+the destination equal to the current parent and record the exact result.
+
 ---
 
 ## Decided by the maintainer
