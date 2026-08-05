@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -567,4 +568,90 @@ func TestNoProductReferences(t *testing.T) {
 			}
 		}
 	}
+}
+
+// docsProductAllowlist names the only docs pages permitted to name a product
+// other than AWS.
+//
+// DESIGN §15 caps the comparison surface rather than banning the subject: a page
+// that answers "how does this relate to X" is legitimate, and a scattering of
+// asides across the docs tree is not. Both entries earn their place — one is the
+// positioning page §15's own text contemplates, the other describes a technical
+// interaction with a system a delegate does not control. Adding a third means
+// arguing for it, which is the point of the list being here rather than a
+// convention.
+var docsProductAllowlist = map[string]bool{
+	"vs-control-tower.md":     true,
+	"future/control-tower.md": true,
+}
+
+// TestDocsNameNoProductsOutsideTheAllowlist extends the branding rule to docs/.
+//
+// The two existing branding tests scan generated bundle output and the
+// schema/catalog surface. Nothing scanned docs/, so §15's "at most one neutral
+// page" cap was a convention, and a convention is what erodes: the natural place
+// for a comparison to leak is prose written to explain, which is most of docs/.
+// Committing docs/future/control-tower.md is what made the gap worth closing,
+// since it is the second such page and therefore the first time the cap has been
+// tested at all.
+func TestDocsNameNoProductsOutsideTheAllowlist(t *testing.T) {
+	// Two kinds of entry: product names automat is not permitted to position
+	// against, and the phrasings that smuggle a comparison in without naming
+	// anything.
+	//
+	// Note what is absent. This list does NOT forbid every AWS product name, and
+	// deliberately not "audit manager": rule 3 excepts AWS, and
+	// docs/open-questions.md names AWS Audit Manager as a *data source* for the
+	// 800-171r2 compile, which is automat consuming an AWS service rather than
+	// comparing itself to one. The line the branding rule actually draws is
+	// between naming a system as an alternative and naming one as an input — the
+	// schema/catalog list above can be blunter because a catalog file has no
+	// business naming either.
+	forbidden := []string{
+		"control tower", "controltower", "landing zone", "account factory",
+		"terraform cloud", "hashicorp",
+		"competitor", "instead of using",
+	}
+	root := "../../docs"
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return rerr
+		}
+		if docsProductAllowlist[filepath.ToSlash(rel)] {
+			return nil
+		}
+		data, rerr := os.ReadFile(path) //nolint:gosec // test-local path, walked from a fixed root
+		if rerr != nil {
+			return rerr
+		}
+		lower := strings.ToLower(string(data))
+		for _, bad := range forbidden {
+			if strings.Contains(lower, bad) {
+				t.Errorf("docs/%s mentions %q; DESIGN §15 permits that only in %v",
+					filepath.ToSlash(rel), bad, allowlistNames())
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
+// allowlistNames renders the allowlist in sorted order, so the failure message a
+// contributor reads names the pages rather than telling them to go find the map.
+func allowlistNames() []string {
+	out := make([]string, 0, len(docsProductAllowlist))
+	for name := range docsProductAllowlist {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
