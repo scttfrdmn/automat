@@ -77,11 +77,34 @@ This is the section worth your ten minutes.
   principal and requires an `sts:ExternalId`. Knowing the role ARN is not enough.
 - **It cannot close, suspend, or remove an account** — none of those actions appear
   in either file. Nor can it enable or disable an AWS service, change billing, or
-  read anything in any account.
+  read anything *inside* any account: no S3 object, no database, no log. What it
+  can read about your accounts is the next bullet, and it is not nothing.
+- **What it can read is organization-wide, and that is worth a paragraph rather
+  than a footnote.** Every other grant in these files is confined to OU ou-exam-research1. The
+  read statement is not, because it cannot be: naming an OU means resolving its
+  parents, so the delegate must be able to walk the tree above itself. Concretely,
+  account 222222222222 will be able to list and describe:
+  - **every account in the organization, including its root-user email address**
+    and account name. `organizations:DescribeAccount` and `ListAccounts` return
+    those, and their resource ARNs cover the whole organization — an Organizations
+    account ARN does not encode which OU the account is in, so there is no way to
+    narrow this by resource. If those addresses are individual staff mailboxes
+    rather than a shared alias, that is a directory of them.
+  - **the full text of every service control policy in the organization**, yours
+    included, via `DescribePolicy` and `DescribeEffectivePolicy`. Reading a policy
+    is not modifying it — the modification grants are tag-conditioned, which is the
+    bullet above — but a policy is a map of what your controls do and do not cover.
+  - the whole OU tree and which accounts and policies sit where.
+  None of this is a write and none of it reaches into an account. It is disclosure,
+  and whether it is acceptable is your call and not automat's: if the member
+  account is run by a different group than yours, decide about it deliberately
+  rather than discovering it later. There is no narrower version of this grant that
+  leaves the tool able to report on what it did.
 
 What it *can* do, stated plainly: create AWS accounts (which cost money and count
-against your organization's account quota), place them in one OU, and attach
-further restrictions to that OU.
+against your organization's account quota), place them in one OU, attach further
+restrictions to that OU, and read the organization's structure — including every
+account's root-user email and every SCP's contents, as above.
 
 ## What to check before approving
 
@@ -91,7 +114,11 @@ realistic ask, which is the point of scoping it this way.
 
 1. `delegation-policy.json`: confirm the `Principal` is the account you expect, and
    that every `Resource` names organization o-exampleorgid. Only the last statement —
-   `AutomatReadTheOrganization...`, which is reads only — should reach past OU ou-exam-research1.
+   `AutomatReadTheOrganization...` — should reach past OU ou-exam-research1. That one is
+   organization-wide on purpose and grants reads only; the blast-radius section
+   above says exactly what those reads expose, which includes every account's
+   root-user email and every SCP's text. Confirm you are content with that, and
+   confirm no *other* statement's `Resource` list reaches past the OU.
 2. **Both `TagResource` statements — one per file — and check them together.**
    This is where the difference is least obvious and the consequence is total,
    because the tags in these documents are what authorization rests on.
@@ -116,17 +143,27 @@ realistic ask, which is the point of scoping it this way.
 
 ## Applying it
 
-1. Attach the delegation policy to the organization, from the management account:
+1. Attach the delegation policy to the organization, from the management account.
+   **Check for an existing policy first — this is a destructive step if you skip
+   it.** An organization has exactly one resource policy and
+   `put-resource-policy` replaces it wholesale; there is no merge mode and no
+   confirmation prompt. If something else already delegates through it, running the
+   second command below without reading the first's output silently revokes that.
 
    ```
+   # 1a. What is there now? "ResourcePolicyNotFoundException" means nothing is,
+   #     and you can go straight to 1b.
+   aws organizations describe-resource-policy
+
+   # 1b. Only if 1a found no existing policy:
    aws organizations put-resource-policy \
      --content file://delegation-policy.json
    ```
 
-   If the organization already has a resource policy, **merge** these statements
-   into it rather than replacing it: `put-resource-policy` overwrites, and an
-   organization has exactly one resource policy. Run
-   `aws organizations describe-resource-policy` first.
+   If 1a *did* return a policy, do not run 1b. Merge these statements into the
+   existing document by hand and put the combined result instead — the `Sid`s in
+   `delegation-policy.json` are all prefixed `Automat` so they cannot collide with
+   yours.
 2. Create the role, from the management account:
 
    ```

@@ -4,6 +4,7 @@
 package bundle
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -796,5 +797,44 @@ func TestGeneratedExternalIDHasRealEntropy(t *testing.T) {
 	}
 	if len(distinct) < 8 {
 		t.Errorf("the ExternalId body %q has only %d distinct characters", body, len(distinct))
+	}
+}
+
+// TestEveryDelegationPolicySidIsPrefixed backs a claim the README makes in its
+// applying-it section, which is the only place in the bundle that tells a reader to
+// edit a document by hand.
+//
+// An organization has exactly one resource policy and put-resource-policy replaces it
+// wholesale, so central IT with an existing delegation must merge these statements
+// into theirs rather than run the command. The README says the Sids cannot collide
+// with theirs because they are all prefixed `Automat`. That is an instruction someone
+// will follow without checking, and a Sid collision in a merged resource policy is
+// either a rejected document or a silently replaced statement of theirs.
+func TestEveryDelegationPolicySidIsPrefixed(t *testing.T) {
+	data, err := DelegationPolicy(validRequest())
+	if err != nil {
+		t.Fatalf("DelegationPolicy: %v", err)
+	}
+	var doc struct {
+		Statement []struct {
+			Sid string
+		}
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("the delegation policy is not valid JSON: %v", err)
+	}
+	if len(doc.Statement) == 0 {
+		t.Fatal("no statements — this test would pass vacuously")
+	}
+	seen := map[string]bool{}
+	for _, st := range doc.Statement {
+		if !strings.HasPrefix(st.Sid, "Automat") {
+			t.Errorf("statement Sid %q is not prefixed `Automat`, and the README tells central IT "+
+				"they cannot collide when merging this into an existing resource policy", st.Sid)
+		}
+		if seen[st.Sid] {
+			t.Errorf("Sid %q appears twice; a resource policy with duplicate Sids is rejected", st.Sid)
+		}
+		seen[st.Sid] = true
 	}
 }
