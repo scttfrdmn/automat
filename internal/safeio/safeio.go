@@ -86,12 +86,57 @@ func ReadSecret(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// ReadConfig reads a configuration file: the structural checks of ReadSecret
+// without the ownership and mode requirements.
+//
+// The distinction is deliberate and it is not laziness about the mode. A config file
+// is meant to be readable — an operator may well keep it group-readable so a
+// colleague can see which org a context points at — so requiring 0600 would refuse
+// a legitimate setup. What must still hold is that the path names an ordinary file
+// nobody else can substitute: automat's config carries external_id_ref, and whoever
+// chooses that reference chooses the ExternalId, which is the confused-deputy
+// defense. A symlink or a FIFO at the config path is that substitution, and a
+// world-writable containing directory means anyone can perform it whatever the
+// file's own mode says.
+//
+// So: same refusals for a symlink, a non-regular file, a swapped inode, and an
+// unsticky world-writable parent; no check on the file's own permission bits or
+// owner.
+func ReadConfig(path string, limit int64) ([]byte, error) {
+	f, fi, err := openChecked(path, false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d bytes (mode %s), so it is not the "+
+			"configuration automat expected — check that the path points at a config file",
+			path, limit, fi.Mode().Perm())
+	}
+	return data, nil
+}
+
 // OpenSecret opens path and returns the descriptor together with the FileInfo the
 // checks were made against. Callers that only want the bytes should use ReadSecret.
 //
 // Every check below is made against the descriptor or against an identity
 // comparison with it, never against the path a second time.
 func OpenSecret(path string) (*os.File, fs.FileInfo, error) {
+	return openChecked(path, true)
+}
+
+// openChecked is the shared body of OpenSecret and ReadConfig. secret selects the
+// checks that only make sense for a file whose contents are a credential: its own
+// permission bits and its owner. Everything else -- the writable-directory refusal,
+// the symlink refusal, O_NONBLOCK, and the SameFile identity tie -- applies to both,
+// because both answer the question "is this the file the operator named, and can
+// anyone else substitute it".
+func openChecked(path string, secret bool) (*os.File, fs.FileInfo, error) {
 	dir, base := filepath.Dir(path), filepath.Base(path)
 	if base == "." || base == string(filepath.Separator) {
 		return nil, nil, fmt.Errorf("%s does not name a file", path)
@@ -123,6 +168,11 @@ func OpenSecret(path string) (*os.File, fs.FileInfo, error) {
 	// this file must still have when the descriptor is checked below.
 	li, err := root.Lstat(base)
 	if errors.Is(err, fs.ErrNotExist) {
+		if !secret {
+			// Returned unwrapped so a caller can use errors.Is: config.Load treats a
+			// missing file as "no configuration", which is not an error.
+			return nil, nil, err
+		}
 		return nil, nil, fmt.Errorf("no file at %s — create it containing only the value, "+
 			"readable by you alone: touch %s && chmod 600 %s", path, path, path)
 	}
@@ -130,13 +180,14 @@ func OpenSecret(path string) (*os.File, fs.FileInfo, error) {
 		return nil, nil, fmt.Errorf("inspect %s: %w", path, err)
 	}
 	if li.Mode()&fs.ModeSymlink != 0 {
-		return nil, nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not read a "+
-			"secret through one: whoever controls the link controls the value. Replace it with the "+
-			"file itself, or point the reference at the target directly", path, LinkTarget(dir, base))
+		return nil, nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not read %s "+
+			"through one: whoever controls the link controls the value. Replace it with the "+
+			"file itself, or point the reference at the target directly",
+			path, LinkTarget(dir, base), subject(secret))
 	}
 	if !li.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("%s is not a regular file (mode %s) — a secret comes from a "+
-			"file, not from a device, socket, or pipe", path, li.Mode())
+		return nil, nil, fmt.Errorf("%s is not a regular file (mode %s) — %s comes from a "+
+			"file, not from a device, socket, or pipe", path, li.Mode(), subject(secret))
 	}
 
 	// O_NONBLOCK so that a FIFO swapped in after the check above cannot hang this
@@ -151,19 +202,19 @@ func OpenSecret(path string) (*os.File, fs.FileInfo, error) {
 		return nil, nil, fmt.Errorf("inspect the open %s: %w", path, err)
 	}
 
-	if err := checkOpenSecret(path, li, fi); err != nil {
+	if err := checkOpen(path, li, fi, secret); err != nil {
 		_ = f.Close()
 		return nil, nil, err
 	}
 	return f, fi, nil
 }
 
-// checkOpenSecret holds the checks that must be made against the descriptor rather
-// than the name. Split out so a test can state each one independently.
-func checkOpenSecret(path string, li, fi fs.FileInfo) error {
+// checkOpen holds the checks that must be made against the descriptor rather than
+// the name. Split out so a test can state each one independently.
+func checkOpen(path string, li, fi fs.FileInfo, secret bool) error {
 	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file (mode %s) — a secret comes from a file, not "+
-			"from a device, socket, or pipe", path, fi.Mode())
+		return fmt.Errorf("%s is not a regular file (mode %s) — %s comes from a file, not "+
+			"from a device, socket, or pipe", path, fi.Mode(), subject(secret))
 	}
 	// The identity check. If the name refers to a different object now than it did
 	// a moment ago, someone is choosing which file automat reads.
@@ -176,6 +227,10 @@ func checkOpenSecret(path string, li, fi fs.FileInfo) error {
 	// property is being unguessable is advice nobody acts on, and the fix is one
 	// command. Note this reads the *descriptor's* mode, so a chmod racing the open
 	// cannot present a tight mode to the check and a loose one to the read.
+	// A config file is meant to be readable; only a secret's own mode is checked.
+	if !secret {
+		return nil
+	}
 	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
 		return fmt.Errorf("%s is mode %#o, readable beyond its owner — run: chmod 600 %s",
 			path, perm, path)
@@ -294,4 +349,13 @@ func quoteTarget(target string) string {
 		return fmt.Sprintf("%q (truncated)", target[:max])
 	}
 	return fmt.Sprintf("%q", target)
+}
+
+// subject names what is being read, so one set of refusals can explain itself in
+// either context without a caller passing message text around.
+func subject(secret bool) string {
+	if secret {
+		return "a secret"
+	}
+	return "configuration"
 }

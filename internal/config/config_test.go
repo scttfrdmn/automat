@@ -4,12 +4,14 @@
 package config
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const goodConfig = `
@@ -403,5 +405,170 @@ func TestRegionMustLookLikeARegion(t *testing.T) {
 				t.Errorf("Decode rejected %s = %q, which is a real region: %v", key, good, err)
 			}
 		}
+	}
+}
+
+// The tests below cover safeio.ReadConfig's structural refusals as reached through
+// Load. They are here rather than only in internal/safeio because the reason they
+// matter is a property of *this* file: it carries external_id_ref, and whoever
+// chooses that reference chooses the ExternalId that the vendor role's trust policy
+// requires. A symlink or a FIFO at the config path is that choice being made by
+// someone else, and it does not touch the config file's own mode, so no permission
+// check would notice.
+
+// TestLoadRefusesAConfigThroughASymlink. os.Root follows a symlink whose target is
+// inside the root and ignores O_NOFOLLOW, so nothing about resolving the directory
+// safely refuses this on its own — the Lstat does. The target here is inside the same
+// directory precisely because the escaping case is the easy one.
+func TestLoadRefusesAConfigThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "attacker.toml")
+	if err := os.WriteFile(target, []byte(goodConfig), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	path := filepath.Join(dir, "config.toml")
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, found, err := Load(path)
+	if err == nil {
+		t.Fatal("a config read through a symlink was accepted; whoever controls the link " +
+			"controls external_id_ref, and therefore the ExternalId")
+	}
+	if !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("the error does not name the cause: %v", err)
+	}
+	// found must not be true: a symlink is a failure to read the config, not a
+	// config that was found and rejected for its contents.
+	if found {
+		t.Error("found = true for a config that was never read")
+	}
+}
+
+// TestLoadRefusesAFIFOConfigWithoutHanging. Opening a FIFO for reading blocks until a
+// writer arrives, so a mode-0600 pipe the operator owns passes every permission check
+// and hangs every automat command before it prints anything. The timeout is the
+// assertion: a test that only checked the error would hang rather than fail if the
+// refusal were dropped.
+//
+// Jam-checked, and the result is worth stating precisely rather than claiming more
+// than it shows. Removing safeio.OpenNonBlock leaves this test passing: the FIFO is
+// present before Load runs, so the pre-open Lstat's regular-file check refuses it and
+// no open is ever attempted. Replacing the whole call with os.ReadFile fails it, after
+// hanging the full 15 seconds — which is the behavior this covers. What O_NONBLOCK
+// protects is the narrower case a static test cannot stage: a FIFO swapped in *after*
+// the Lstat, where the open is the thing that blocks. Both checks are kept; only the
+// first is what this test exercises.
+func TestLoadRefusesAFIFOConfigWithoutHanging(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := mkfifo(path, 0o600); err != nil {
+		t.Skipf("mkfifo unsupported: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := Load(path)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a FIFO was accepted as a config file")
+		}
+		if !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("the error does not name the cause: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Load blocked on a FIFO at the config path — opening a pipe waits for the " +
+			"other end, so every automat command hangs before printing anything")
+	}
+}
+
+// TestLoadRefusesAConfigInAWorldWritableDirectory. The file's own mode proves nothing
+// when anyone can replace the file: a 0600 config in a 0777 directory is a 0600 config
+// that someone else can swap for theirs. Sticky is exempt, which is what keeps /tmp
+// usable, and the second half of this test asserts that exemption rather than leaving
+// it to be discovered by whoever finds automat refusing to run.
+func TestLoadRefusesAConfigInAWorldWritableDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root: the mode is advisory")
+	}
+	dir := filepath.Join(t.TempDir(), "loose")
+	if err := os.Mkdir(dir, 0o777); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Explicit chmod: Mkdir's mode is filtered by umask, and a test that depends on
+	// the umask it happens to run under is a test that passes on one machine.
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Skipf("chmod unsupported: %v", err)
+	}
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(goodConfig), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, _, err := Load(path); err == nil {
+		t.Error("a config in a world-writable directory was accepted; anyone who can write " +
+			"that directory can choose external_id_ref")
+	} else if !strings.Contains(err.Error(), "writable beyond its owner") {
+		t.Errorf("the error does not name the cause: %v", err)
+	}
+
+	// Sticky: /tmp is world-writable and legitimate, because sticky stops one user
+	// removing or renaming another's entry.
+	//
+	// fs.ModeSticky, not 0o1777. os.Chmod takes an fs.FileMode, where the sticky bit
+	// is a named flag well above the permission bits; the raw 0o1000 an operator
+	// would type at a shell is silently dropped. Writing it the wrong way here made
+	// this test assert the opposite of its own comment — it chmodded 0777 twice and
+	// then reported that a sticky directory was refused.
+	if err := os.Chmod(dir, 0o777|fs.ModeSticky); err != nil {
+		t.Skipf("chmod sticky unsupported: %v", err)
+	}
+	if _, found, err := Load(path); err != nil || !found {
+		t.Errorf("a config in a sticky world-writable directory was refused: %v", err)
+	}
+}
+
+// TestLoadAcceptsAGroupReadableConfig is the counterweight to the tests above, and it
+// is the reason ReadConfig exists as a sibling of ReadSecret rather than a call to it.
+// This file is not a secret: it holds a *reference* to the ExternalId, not the value
+// (DESIGN §13). An operator who keeps it group-readable so a colleague can see which
+// org a context points at is doing something reasonable, and refusing it would push
+// them toward keeping the real value somewhere worse.
+func TestLoadAcceptsAGroupReadableConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(goodConfig), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, found, err := Load(path)
+	if err != nil {
+		t.Fatalf("a group- and world-readable config was refused, which would be the wrong "+
+			"rule for a file that holds a reference and not a value: %v", err)
+	}
+	if !found || cfg.DefaultContext != "research" {
+		t.Errorf("found = %v, DefaultContext = %q", found, cfg.DefaultContext)
+	}
+}
+
+// TestLoadRefusesAnOversizeConfig. The bound is not about a plausible config; it is
+// that Load reads a path something else may control, and an unbounded read lets
+// whatever writes that path decide how much memory automat uses. A refusal names the
+// limit, because a truncated TOML file would fail to parse for a reason nobody
+// would guess.
+func TestLoadRefusesAnOversizeConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	big := goodConfig + "\n# " + strings.Repeat("x", maxConfigBytes)
+	if err := os.WriteFile(path, []byte(big), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("a config larger than the limit was read in full")
+	}
+	if !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("the error does not name the cause: %v", err)
 	}
 }

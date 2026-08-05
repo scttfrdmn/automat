@@ -220,12 +220,12 @@ func TestReadSecretBoundsTheRead(t *testing.T) {
 	})
 }
 
-// TestCheckOpenSecretRefusesAnInodeSwap states the identity check directly, because
+// TestCheckOpenRefusesAnInodeSwap states the identity check directly, because
 // winning the race from a test is inherently flaky. os.Root resolves the directory
 // once, so the reachable window is small — but "small" is not "closed", and the
 // consequence of losing is that an attacker chooses the ExternalId, which means
 // they choose the confused-deputy defense.
-func TestCheckOpenSecretRefusesAnInodeSwap(t *testing.T) {
+func TestCheckOpenRefusesAnInodeSwap(t *testing.T) {
 	dir := tightDir(t)
 	a := filepath.Join(dir, "a")
 	b := filepath.Join(dir, "b")
@@ -242,11 +242,11 @@ func TestCheckOpenSecretRefusesAnInodeSwap(t *testing.T) {
 	}
 
 	// Same file: accepted.
-	if sameErr := checkOpenSecret(a, ai, ai); sameErr != nil {
+	if sameErr := checkOpen(a, ai, ai, true); sameErr != nil {
 		t.Errorf("the same file was refused: %v", sameErr)
 	}
 	// Checked one file, opened another: refused.
-	err = checkOpenSecret(a, ai, bi)
+	err = checkOpen(a, ai, bi, true)
 	if err == nil {
 		t.Fatal("checked one inode and opened another without complaint")
 	}

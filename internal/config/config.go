@@ -35,6 +35,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/scttfrdmn/automat/internal/safeio"
 )
 
 // Config is the parsed configuration file.
@@ -96,6 +98,12 @@ func DefaultPath() (string, error) {
 	return filepath.Join(home, ".config", "automat", "config.toml"), nil
 }
 
+// maxConfigBytes bounds the config read. A context is a handful of short strings and
+// a realistic file holds a few dozen contexts; anything past this is not a config
+// file, and reading it unbounded would let whatever can write that path decide how
+// much memory automat uses.
+const maxConfigBytes = 1 << 20
+
 // Load reads and validates the config file at path.
 //
 // A missing file is not an error: automat runs without configuration in
@@ -103,7 +111,17 @@ func DefaultPath() (string, error) {
 // The returned bool reports whether a file was found, so a caller can tell
 // "no config" from "empty config" when explaining a missing setting.
 func Load(path string) (*Config, bool, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // the operator's own config path
+	// safeio.ReadConfig, not os.ReadFile. The path is the operator's own, which is
+	// why the gosec suppression here was defensible -- but "the operator named it" and
+	// "nobody else can substitute it" are different claims, and this file carries
+	// external_id_ref. Whoever chooses that reference chooses the ExternalId, so a
+	// symlink at ~/.config/automat/config.toml, or a world-writable directory holding
+	// it, hands over the confused-deputy defense without touching the file's own mode.
+	//
+	// ReadConfig rather than ReadSecret: a config file is meant to be readable, and
+	// requiring 0600 would refuse a legitimate group-readable setup. The structural
+	// checks are the same.
+	data, err := safeio.ReadConfig(path, maxConfigBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		return &Config{Contexts: map[string]Context{}}, false, nil
 	}
