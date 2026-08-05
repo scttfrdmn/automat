@@ -145,3 +145,77 @@ Initial definition per DESIGN.md §11. No migration.
 - `error.remediation` exists because permission failures must state which action,
   which resource, and what grant would fix it (CLAUDE.md rule 7) — that text is
   part of the evidence record, not just log output.
+
+### Pre-publication change to 1.0.0: the `custody-transfer` terminal record
+
+Landed at the Phase 1 review's request (item 9a), before publication and before
+any Go implementation, so there is **no version bump**: nothing has emitted or
+consumed a 1.0.0 manifest. Added now rather than in Phase 2 for one reason —
+after publication this would be a **major** bump, because it changes what a
+complete chain looks like. A consumer written against a schema with no terminal
+record has no way to distinguish a chain that ended deliberately from one that
+was truncated, and would be right to treat the new form as corrupt.
+
+**What it is.** `operation` gains `custody-transfer`, and a record with that
+operation must carry a `custody_transfer` object: `transferee`,
+`effective_date`, `reason`, `final_artifact` (id + `content_sha256`), plus an
+optional `successor_manifest_id`.
+
+**Why a chain needs a way to end.** The manifest is the chain of custody behind
+a "born compliant" claim, and it is append-only. Without a terminal record,
+every chain that stops — the account is handed to central IT, the grant is
+revoked, the project ends, automat stops being the tool — stops in the same way
+a tampered chain stops: at a record, with nothing after it. The reader cannot
+tell those apart, so *no* silent ending can be trusted, which weakens every
+chain rather than just the abandoned ones. A terminal record makes the ordinary
+case say so, and thereby restores the meaning of a chain that ends without one:
+a chain with records missing from the end and no `custody-transfer` is now
+positively suspicious, which is the property that makes the evidence worth
+keeping.
+
+**Why each field.** `transferee` and `reason` are what a successor auditor needs
+and what nothing else in the chain records; a chain that ends with no stated
+recipient or reason is not meaningfully different from one that just stops.
+`effective_date` is a **date, not a timestamp**, and deliberately distinct from
+the record's `timestamp`: custody passing is a policy fact usually agreed before
+or recorded after the moment it takes effect, and collapsing the two would make
+the record claim the transfer happened when the command ran. `final_artifact`
+gives the successor a stated baseline to inherit instead of one they must infer
+by replaying the whole chain — the same id-plus-content-hash pair the rest of
+the manifest uses, so it is verifiable against a catalog rather than a
+description. `successor_manifest_id` is optional on purpose: a transfer out of
+automat's scope entirely has no successor manifest, and requiring the field
+would force an operator to invent a false claim of continuity.
+
+**Constraints, and which of them the schema can actually enforce.**
+
+- `custody_transfer` is **required on** a `custody-transfer` record and
+  **forbidden on** every other kind. The negative half matters as much as the
+  positive: without it, a transfer could ride along on an ordinary
+  `account-move` record, ending the chain in a place no reader looks for an
+  ending.
+- A `custody-transfer` record may not also carry `artifact` or `enforcement`. A
+  transfer enforces nothing, and two artifact references in one record leave the
+  reader to guess which is the baseline being handed over.
+- `outcome` must be `success`. A transfer that failed did not transfer anything,
+  so it cannot be what a chain ends on; record the failure as the operation that
+  failed and let the chain continue.
+- **At most one** `custody-transfer` record per manifest. A second one means
+  either the first was false or the chain was reopened after it closed.
+- `transferee` and `reason` are prose fields, so they forbid control characters:
+  they are printed back in reports, and a newline in either can forge a line of
+  one.
+
+The one thing the schema **cannot** say is that a `custody-transfer` record is
+the *last* record: JSON Schema cannot refer to an array's final position. The
+"at most one" rule is the half that is expressible; terminality is a chain-level
+invariant the Phase 2 chain validator must enforce alongside the hash links.
+That gap is recorded in the schema's own `records` description and pinned by
+`TestTheSchemaCannotSayCustodyTransferIsLast`, which asserts the document the
+schema lets through so the Go-side obligation cannot be quietly dropped.
+
+No Go types were added: the review asked for the schema and the reasoning while
+schemas are still soft, explicitly without implementation. The constraints are
+tested against the published schema from raw JSON
+(`internal/artifact/evidence_schema_test.go`), each one verified to fire by
+deleting it and confirming the covering case fails.

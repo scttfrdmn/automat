@@ -30,10 +30,14 @@
     },
 
     "records": {
-      "description": "Append-only. records[0].previous_sha256 is 64 zeros; every later record chains to its predecessor's record_sha256.",
+      "description": "Append-only. records[0].previous_sha256 is 64 zeros; every later record chains to its predecessor's record_sha256. A custody-transfer record ends the chain: at most one may appear, and nothing may follow it. This schema can express the 'at most one' half; that it is the LAST record is a chain-level invariant a validator must enforce, because JSON Schema cannot refer to an array's final position.",
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/record" }
+      "items": { "$ref": "#/$defs/record" },
+      "not": {
+        "contains": { "$ref": "#/$defs/is_custody_transfer" },
+        "minContains": 2
+      }
     }
   },
 
@@ -46,7 +50,65 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
 
+    "date": {
+      "description": "Calendar date, YYYY-MM-DD. Used only for effective dates, which are policy facts rather than event times.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+
+    "prose": {
+      "description": "Human-supplied text. Control characters are forbidden: manifest fields are printed back in reports, and a newline in one of them can forge a line of that report. Written with \\xNN rather than \\uNNNN escapes, which are ECMA-262-legal but not accepted by every regex engine a consumer may validate with.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+
     "account_id": { "type": "string", "pattern": "^[0-9]{12}$" },
+
+    "is_custody_transfer": {
+      "description": "Matches a record whose operation is custody-transfer. Used only by the records[] uniqueness constraint; a chain may end once.",
+      "type": "object",
+      "required": ["operation"],
+      "properties": { "operation": { "const": "custody-transfer" } }
+    },
+
+    "custody_transfer": {
+      "description": "Why and to whom custody of this manifest passed, and the artifact state at the moment it did. Required on a custody-transfer record and forbidden on every other kind, so a transfer cannot be smuggled onto an ordinary operation.",
+      "type": "object",
+      "required": ["transferee", "effective_date", "reason", "final_artifact"],
+      "additionalProperties": false,
+      "properties": {
+        "transferee": {
+          "description": "Who holds the chain from the effective date onward. Free text because the successor is often an organization or a role rather than an AWS principal — the transferring operator is already recorded in operator.arn.",
+          "$ref": "#/$defs/prose"
+        },
+        "effective_date": {
+          "description": "The date custody passes, which is a policy fact and may differ from the record's timestamp: the transfer is often agreed before, or recorded after, the moment it takes effect.",
+          "$ref": "#/$defs/date"
+        },
+        "reason": {
+          "description": "Why the chain ends here. A chain that stops without a reason is indistinguishable from one that was truncated.",
+          "$ref": "#/$defs/prose"
+        },
+        "final_artifact": {
+          "description": "The control artifact in force at the moment of transfer, so the successor inherits a stated baseline rather than having to infer one from the whole chain.",
+          "type": "object",
+          "required": ["id", "content_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
+            "content_sha256": { "$ref": "#/$defs/sha256" },
+            "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+          }
+        },
+        "successor_manifest_id": {
+          "description": "Identity of the manifest that continues the record, when the successor keeps one. Optional: a transfer out of automat's scope entirely has no successor manifest, and inventing one would be a false claim of continuity.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
 
     "record": {
       "type": "object",
@@ -79,7 +141,8 @@
             "baseline-apply",
             "attestation-write",
             "verify",
-            "reclaim"
+            "reclaim",
+            "custody-transfer"
           ]
         },
         "outcome": {
@@ -182,6 +245,7 @@
             }
           }
         },
+        "custody_transfer": { "$ref": "#/$defs/custody_transfer" },
         "tool_version": { "type": "string", "minLength": 1 },
         "previous_sha256": {
           "description": "record_sha256 of the preceding record; 64 zeros for the first.",
@@ -209,7 +273,24 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "description": "custody_transfer belongs to a custody-transfer record and to nothing else. Without the negative half, a transfer could ride along on an ordinary account-move record, where no reader would look for it.",
+          "if": { "$ref": "#/$defs/is_custody_transfer" },
+          "then": {
+            "required": ["custody_transfer"],
+            "not": { "anyOf": [{ "required": ["artifact"] }, { "required": ["enforcement"] }] },
+            "properties": {
+              "outcome": {
+                "description": "A transfer that did not happen does not end a chain. Record the failure as the operation that failed; the chain continues.",
+                "const": "success"
+              }
+            }
+          },
+          "else": { "not": { "required": ["custody_transfer"] } }
+        }
+      ]
     }
   }
 }
