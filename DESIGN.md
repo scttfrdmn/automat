@@ -120,12 +120,14 @@ Sketch (Claude Code: formalize as JSON Schema + Go types with round-trip tests):
   },
   "controls": [
     {
-      "id": "AC.L1-3.1.1",
+      "id": "AC.L1-b.1.i",         // final-rule id per 32 CFR 170.14(c)(1)
       "title": "…",
       "crosswalk": { "far": "52.204-21(b)(1)(i)", "800-171r2": "3.1.1", "800-171r3": "03.01.01" },
       "enforcement": "scp | config-rule | procedural | baseline-protection",
       "scp": { /* statement fragment(s), deny-style preferred */ },
-      "config_rules": [ { "identifier": "…", "parameters": { "k": {"value": "v", "order": "min|max|exact"} } } ],
+      "config_rules": [ { "identifier": "…", "provenance": "aws-mapping | curated",
+                          "parameters": { "k": {"value": "v",
+                                                "order": "min|max|exact|set-union|set-intersect"} } } ],
       "attestation": { "template": "…md", "frequency": "annual" }
     }
   ]
@@ -134,7 +136,8 @@ Sketch (Claude Code: formalize as JSON Schema + Go types with round-trip tests):
 
 Notes:
 - `enforcement` may be a list (a control can have both an SCP fragment and config rules).
-- `order` on parameters encodes the per-parameter partial order used by union (§9).
+- `order` on parameters encodes the per-parameter partial order used by union (§9). Set-valued parameters (comma-joined port and action lists) take `set-union` when the members are *prohibited* and `set-intersect` when they are *permitted*; both directions are the stricter one, which is what monotonicity requires. A `set_separator` field overrides the default `,`.
+- `provenance` on each config-rule binding records who asserts it. `aws-mapping` bindings come from a published AWS mapping recorded in `artifact.sources` and are mechanically generated — never hand-edited. `curated` bindings are automat's own judgment and must carry a `rationale`. The split exists so a reviewer can audit automat's claims separately from AWS's, and so regenerating a catalog cannot silently overwrite a reviewed binding.
 - `crosswalk` is what lets union dedupe the same practice across frameworks.
 
 **Catalog generation** (`gen/` tooling, run by maintainers, output vendored into `catalogs/`):
