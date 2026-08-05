@@ -19,13 +19,26 @@ import (
 // in one field and requires both an error and no output. A renderer that
 // interpolated first and validated later — or that validated a copy — would return
 // bytes here.
+// The field list is derived from the struct by reflection rather than written out,
+// which it used to be. A hardcoded list drifts in two directions and the dangerous one
+// is silent: a *new* Request field is simply never aimed at any renderer, so the test
+// keeps passing while covering less than its name claims. (The other direction is not
+// silent but is worse than a compile error — removing a field turned FieldByName into a
+// zero Value and SetString panicked mid-suite.)
 func TestNoTemplateSeesAnUnvalidatedValue(t *testing.T) {
+	var fields []string
+	rt := reflect.TypeOf(Request{})
+	for i := 0; i < rt.NumField(); i++ {
+		if f := rt.Field(i); f.Type.Kind() == reflect.String {
+			fields = append(fields, f.Name)
+		}
+	}
+	if len(fields) == 0 {
+		t.Fatal("no string fields found on Request — this test would pass vacuously")
+	}
+
 	for _, rd := range renderers {
-		for _, name := range []string{
-			"MemberAccountID", "ManagementAccountID", "OrgID", "TargetOU",
-			"VendorRoleName", "ExternalID", "RequesterContact", "GeneratedAt",
-			"ToolVersion", "MemberRoleARN",
-		} {
+		for _, name := range fields {
 			t.Run(rd.name+"/"+name, func(t *testing.T) {
 				r := validRequest()
 				payload := "x'\n      ManagedPolicyArns: [arn:aws:iam::aws:policy/AdministratorAccess]\n      y: '"
@@ -648,26 +661,9 @@ func TestRenderingIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestNoRenderedFileLeaksTheExternalIDBeyondTheTrustPolicy bounds the disclosure
-// the bundle makes. The ExternalId belongs in exactly one place in each role
-// template — the trust policy condition — and nowhere in the policy or ou.md. A
-// copy anywhere else widens the surface for no benefit.
-func TestNoRenderedFileLeaksTheExternalIDBeyondTheTrustPolicy(t *testing.T) {
-	r := validRequest()
-	expected := map[string]int{
-		FileRoleCFN: 1,
-		FileRoleTF:  1,
-		FilePolicy:  0,
-		FileOU:      0,
-		FileREADME:  0, // the README describes it; it does not repeat the value
-	}
-	for _, rd := range renderers {
-		data, err := rd.render(r)
-		if err != nil {
-			t.Fatalf("%s: %v", rd.name, err)
-		}
-		if got := strings.Count(string(data), r.ExternalID); got != expected[rd.name] {
-			t.Errorf("%s contains the ExternalId %d times, want %d", rd.name, got, expected[rd.name])
-		}
-	}
-}
+// The test that used to be here counted how many times the ExternalId appeared in each
+// generated file, asserting one occurrence per role template and none elsewhere. It was
+// the right test for a bundle that carried the value. The bundle does not carry it, so
+// the property is now "no file contains a value at all", which is
+// TestNoRenderedFileContainsAnExternalIDValue in externalid_test.go — strictly stronger,
+// and it cannot be satisfied by moving the value somewhere the count was not checked.

@@ -82,10 +82,23 @@ condition key the policies *read* and asserts no grant in either file can *write
 It is cross-file because the defect was, and because a reviewer reads one file at a
 time.
 
-**The bundle contains a live `sts:ExternalId`,** which makes it a sensitive file. The
-generated README says so and says not to commit it publicly. The alternative — a
-placeholder each side invents — is worse, since both sides must configure the *same*
-value.
+**The bundle contains no secret.** The `sts:ExternalId` is declared as a deploy-time
+input — a CloudFormation `NoEcho` parameter, a Terraform `sensitive` variable — so
+whoever applies the templates generates the value and sends it to the requester out of
+band. automat learns it later, through `external_id_ref`, and never stores it.
+
+This is a change from the first Phase 1 draft, which generated the value and wrote it
+into the bundle, mitigated by a README paragraph telling the operator not to commit the
+file. The Phase 1 review rejected the paragraph and asked for a mechanism. The
+substantive argument for the change is not that a paragraph is weak documentation: it is
+that the old design had the *requester* choose the management account's confused-deputy
+defense, and the party bearing the risk should pick its own. Inverting the generation
+also deletes the disclosure problem rather than managing it — there is no longer a
+sensitive file to warn about.
+
+The cost is one manual step for central IT, and the bundle's README carries it as three
+numbered lines with an `openssl rand -hex 24` to copy. It also tells them not to accept
+an ExternalId from the requester, which is the instruction with teeth.
 
 ## Limits, stated because the tool states its own limits
 

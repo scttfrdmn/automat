@@ -165,7 +165,7 @@ func TestResolveRefusesAValueThatIsNotAnExternalID(t *testing.T) {
 		{"an interior newline", "first-line-value\nsecond-line", "AWS accepts"},
 		{"an interior space", "value with spaces in it", "AWS accepts"},
 		{"a tab", good + "\tmore", "AWS accepts"},
-		{"over AWS's length limit", strings.Repeat("a", maxExternalIDChars+1), "AWS accepts"},
+		{"over AWS's length limit", strings.Repeat("a", MaxExternalIDChars+1), "AWS accepts"},
 		{"a shell metacharacter", good + ";rm -rf /", "AWS accepts"},
 	}
 	for _, tc := range cases {

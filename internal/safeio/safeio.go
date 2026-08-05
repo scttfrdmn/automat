@@ -7,9 +7,14 @@
 //
 // A check on a *name* followed by an action on the same *name* is two operations
 // on two potentially different objects, however narrow the window looks. automat
-// hits that pattern at three points, each involving a secret:
+// hits that pattern at three points, each handling something an attacker would want
+// to substitute:
 //
-//   - internal/bundle writes an onboarding bundle containing a live sts:ExternalId.
+//   - internal/bundle writes the onboarding bundle — five files that are an IAM grant
+//     a management account is about to review and apply. Not a secret: the
+//     sts:ExternalId is supplied at deploy time by whoever applies the templates.
+//     What is at stake is the *integrity* of a policy someone else will deploy, which
+//     is why this one is in the list despite carrying nothing confidential.
 //   - internal/login writes an SSO bearer token to ~/.aws/sso/cache.
 //   - internal/config reads the ExternalId back at assume time.
 //

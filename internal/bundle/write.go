@@ -29,11 +29,38 @@ import (
 //
 // The bundle's five filenames are constants in this file, so a traversal through
 // one of them is not the threat. The threat is the directory: automat is asked to
-// write five files, one of which carries an `sts:ExternalId`, into a path the
-// operator named, and a component of that path — or an entry inside it — can be a
-// symlink. `os.Root` closes the escape: the root is held as an open directory
-// handle, so a symlink leading out of it fails with "path escapes from parent"
-// instead of writing the ExternalId somewhere else.
+// write five files into a path the operator named, and a component of that path — or
+// an entry inside it — can be a symlink. `os.Root` closes the escape: the root is
+// held as an open directory handle, so a symlink leading out of it fails with "path
+// escapes from parent" instead of writing somewhere else.
+//
+// # What is actually at stake here, since it is not confidentiality
+//
+// Every protection below was originally justified by one sentence: the bundle
+// contains a live `sts:ExternalId`. It no longer does — the templates declare the
+// value as a deploy-time input and central IT generates it (see externalid.go), so
+// there is no secret in this directory at all. That change removed the reason this
+// file gave for everything it does, and the reason it gives now is a better one that
+// was true the whole time.
+//
+// These five files are a grant. Central IT reads them and applies them, and what
+// comes out is an IAM role in a management account trusting another account. So the
+// property that matters is the *integrity* of the file at the moment a human reviews
+// it and at the moment Terraform or CloudFormation consumes it. Anyone who can
+// redirect or substitute one of these writes does not learn a secret; they choose the
+// policy someone else is about to deploy — widen the trust principal, drop the
+// ExternalId condition, add an action. That is strictly worse than the leak this file
+// used to be organized around, and every mechanism here (write through a descriptor
+// that was inspected, refuse a symlink, refuse a hardlink, refuse a non-regular file)
+// defends it unchanged.
+//
+// What genuinely did weaken is the confidentiality argument for the 0600 file mode,
+// the 0700 directory, and the generated .gitignore. The bundle still holds account
+// ids, an organization id, and the requester's address — organizational detail worth
+// not scattering, but not a credential, and an operator who commits one has not
+// leaked a secret. Those three are kept as a conservative default for a tool's own
+// output rather than as a defense, and they are labelled that way below instead of
+// borrowing urgency from a threat that is gone.
 //
 // What `os.Root` does NOT do is make the surrounding code safe, and an earlier
 // version of this comment claimed it did. `os.Root` guarantees that operations stay
@@ -47,8 +74,9 @@ import (
 //   - Deciding what to do with a file by name (statusOf) and then writing to that
 //     name (writeFile) resolves it twice, so the write can be redirected to a
 //     different entry. It cannot leave the root, which bounds the damage to one
-//     bundle file overwriting another — but it still carries the secret to a name
-//     nobody chose. Both now share a single descriptor.
+//     bundle file overwriting another — but automat then reports having written a
+//     file whose name now holds something else, which is a false report about a
+//     grant. Both now share a single descriptor.
 //
 // The rule this package follows: resolve a path once, then operate on the
 // descriptor. A check on a name followed by an action on the same name is two
@@ -65,12 +93,12 @@ const (
 	FilePolicy  = "delegation-policy.json"
 	FileRoleCFN = "vendor-role.cfn.yaml"
 	FileRoleTF  = "vendor-role.tf"
-	// fileGitignore is written into the bundle directory, not read from it. The
-	// generated README tells the operator not to commit the bundle, which is advice
-	// printed inside the file being committed -- an operator running
-	// `automat setup --out ./bundle` inside a checkout, which is the obvious thing
-	// to do, commits an ExternalId and can only undo it by rewriting history. Two
-	// lines of generated file make the accident impossible instead of discouraged.
+	// fileGitignore is written into the bundle directory, not read from it. An
+	// operator running `automat setup --out ./bundle` inside a checkout -- the
+	// obvious thing to do -- otherwise commits the accounts, the organization id,
+	// and the requester's address into a repository that may be public. Not a
+	// credential (see gitignoreContents), and cheap enough to prevent rather than
+	// mention.
 	fileGitignore  = ".gitignore"
 	dirMode        = fs.FileMode(0o700)
 	fileMode       = fs.FileMode(0o600)
@@ -100,9 +128,8 @@ type Status int
 //
 // Tightened is the case that would otherwise hide inside Unchanged: the contents
 // already match but the mode did not, so automat changed the operator's filesystem.
-// Rolling that into "unchanged" would report a permission repair as a no-op, and the
-// mode of a file holding an ExternalId is exactly the thing an operator should be
-// told about.
+// Rolling that into "unchanged" would report a permission repair as a no-op, and a
+// tool that silently adjusts modes is one an operator cannot reason about.
 const (
 	Created Status = iota
 	Unchanged
@@ -246,9 +273,9 @@ func write(r *Request, opts Options, apply bool) (*Result, error) {
 		st, werr := ensureFile(root, rd.name, data, opts.Force)
 		if werr != nil {
 			// A partial bundle is worse than none: the header above says a bundle is
-			// only useful whole, and two templates disagreeing about the ExternalId
-			// is a failure central IT discovers as an opaque AccessDenied at assume
-			// time. Say exactly which files exist so the operator is not guessing.
+			// only useful whole, and a directory holding a role template from this run
+			// beside a delegation policy from the last one is a grant nobody composed.
+			// Say exactly which files exist so the operator is not guessing.
 			return nil, partialBundleError(res, rd.name, werr)
 		}
 		res.Files = append(res.Files, WrittenFile{rd.name, st, len(data)})
@@ -265,12 +292,25 @@ func write(r *Request, opts Options, apply bool) (*Result, error) {
 	return res, nil
 }
 
-// gitignoreContents ignores everything, including itself. A bundle directory has no
-// file that belongs in version control: four of the five are regenerable from the
-// config, and the fifth carries a credential.
-var gitignoreContents = []byte(`# Written by automat. This directory contains an sts:ExternalId, which is a
-# shared secret between your account and the role in the management account.
-# It does not belong in version control.
+// gitignoreContents ignores everything, including itself.
+//
+// The text is generated output, so a stale claim in it is not a stale comment — it is
+// automat telling an operator something false in a file automat wrote. This used to
+// say the directory contained a shared secret. It does not: every file here is
+// regenerable from the config, and the ExternalId is supplied at deploy time by
+// whoever applies the templates.
+//
+// The file stays, with the honest reason. A bundle names accounts, an organization,
+// and a person, and none of that belongs in a research group's public repository — but
+// committing one is an untidiness, not an incident, and the note says so rather than
+// implying a credential is at stake. Overstating it is not a harmless exaggeration: an
+// operator who checks the claim, finds no secret, and concludes automat's warnings are
+// inflated will discount the next one, which may be about the grant.
+var gitignoreContents = []byte(`# Written by automat. These files are generated from your configuration and can be
+# regenerated at any time, so there is nothing here worth committing -- and they name
+# your accounts, your organization, and a contact, which is detail a public repository
+# does not need. No secret is in this directory: the sts:ExternalId is generated by
+# whoever deploys the role, not by automat.
 *
 `)
 
@@ -298,11 +338,11 @@ func ensureFile(root *os.Root, name string, data []byte, force bool) (Status, er
 // holds.
 //
 // Rendering happens before any write, so a bad request cannot produce a partial
-// bundle — but a write failure partway through can, and an operator rotating an
-// ExternalId would otherwise be left with a directory where the CloudFormation and
-// Terraform templates require different values, both mode 0600, with nothing marking
-// which is which. A later run reports the stale files as unchanged, so re-running
-// does not converge on its own.
+// bundle — but a write failure partway through can, and an operator who changed the
+// trust principal would otherwise be left with a directory where the CloudFormation
+// template grants one thing and the Terraform beside it grants another, with nothing
+// marking which is which. Central IT reviews whichever one they open. A later run
+// reports the stale files as unchanged, so re-running does not converge on its own.
 func partialBundleError(res *Result, failed string, cause error) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%v", cause)
@@ -315,9 +355,9 @@ func partialBundleError(res *Result, failed string, cause error) error {
 	}
 	fmt.Fprintf(&b, "\n  %s and any files after it were not.", failed)
 	b.WriteString("\nA bundle is only useful whole, and the files above may disagree with the " +
-		"older ones beside them about the ExternalId. Fix the cause, then re-run with " +
-		"--force to rewrite the whole directory: a plain re-run reports the stale files " +
-		"as unchanged and will not converge.")
+		"older ones beside them about what is being granted. Fix the cause, then " +
+		"re-run with --force to rewrite the whole directory: a plain re-run reports " +
+		"the stale files as unchanged and will not converge.")
 	return errors.New(b.String())
 }
 
@@ -333,8 +373,9 @@ func partialBundleError(res *Result, failed string, cause error) error {
 // So the input is refused instead. A directory whose name contains a newline is
 // creatable on Linux and darwin (verified), which makes `--out $'out\n  CREATED
 // role.yaml  9999 bytes'` a plausible-looking extra line in automat's own file list,
-// and an ESC byte can erase the lines above it. That matters because the output this
-// forges is the output telling the operator which files hold a live ExternalId.
+// and an ESC byte can erase the lines above it. That matters because the forged
+// output is the report of what automat wrote: a line claiming a file was created,
+// or an ESC hiding one that was, is how an operator sends a bundle they never saw.
 //
 // Only control bytes are refused, not spaces or unusual characters: an operator with
 // a directory called "AWS Onboarding 2026" has done nothing wrong, and a charset
@@ -346,8 +387,8 @@ func checkOutputPath(dir string) error {
 		if b := dir[i]; b < 0x20 || b == 0x7f {
 			return fmt.Errorf("the output directory path contains a control character (byte %#02x at "+
 				"offset %d), and automat prints that path as the first line of its output so a script "+
-				"can use it — a newline or an escape byte there forges a line of automat's own file "+
-				"list, which is the list naming the file that holds the ExternalId. "+
+				"can use it — a newline or an escape byte there forges a line of automat's own "+
+				"report of which files it wrote. "+
 				"Pass --out with a path containing no control characters", b, i)
 		}
 	}
@@ -360,8 +401,10 @@ func checkOutputPath(dir string) error {
 // wrong in exactly the way this package's note claims to defend against. Both calls
 // resolve the *name*, so between them an attacker who can write the parent replaces
 // the new directory with a symlink and os.OpenRoot roots itself wherever the link
-// points. Every "confined" write then lands there, ExternalId included. os.Root
-// prevents escaping a root; it cannot help if the root itself is the attacker's.
+// points. Every "confined" write then lands there — and, worse, the operator then
+// reviews and sends whatever is at the name they typed, which is now someone else's
+// directory holding someone else's policy. os.Root prevents escaping a root; it
+// cannot help if the root itself is the attacker's.
 //
 // A planted symlink needs no race at all: filepath.Abs does not resolve symlinks,
 // so MkdirAll on an existing link succeeds silently and OpenRoot follows it.
@@ -387,9 +430,11 @@ func openOutputDir(abs string) (*os.Root, error) {
 	}
 	defer func() { _ = proot.Close() }()
 
-	// 0700, not 0755: one of these files carries the ExternalId, and a bundle in a
-	// world-readable directory hands it to every account on a shared login host —
-	// which is exactly where a research-computing operator runs this.
+	// 0700, not 0755. Not a confidentiality defense -- there is no secret here --
+	// but a research-computing operator runs this on a shared login host, and a
+	// bundle directory every account can read is one every account can also
+	// enumerate for account ids and contacts. Conservative default for a tool's
+	// own output.
 	switch mkerr := proot.Mkdir(base, dirMode); {
 	case mkerr == nil:
 	case errors.Is(mkerr, fs.ErrExist):
@@ -404,9 +449,10 @@ func openOutputDir(abs string) (*os.Root, error) {
 		switch {
 		case fi.Mode()&fs.ModeSymlink != 0:
 			return nil, fmt.Errorf("the output directory %s is a symbolic link (to %s) — "+
-				"automat will not write an ExternalId through a link it did not create, "+
-				"because the name you passed and the directory it resolves to are not the "+
-				"same choice; pass --out with a real directory, or remove the link",
+				"automat will not write a grant through a link it did not create, because "+
+				"the name you passed and the directory it resolves to are not the same "+
+				"choice, and you would review whichever one the name points at when you "+
+				"send it; pass --out with a real directory, or remove the link",
 				quote(abs), safeio.LinkTarget(parent, base))
 		case !fi.IsDir():
 			return nil, fmt.Errorf("the output directory %s exists and is not a directory "+
@@ -549,10 +595,9 @@ func inspectForWrite(root *os.Root, name string, want []byte, force bool) (*os.F
 	if n, ok := safeio.LinkCount(st); ok && n > 1 {
 		// A hardlink is a regular file by every mode check, and Lstat cannot tell
 		// one from an ordinary file. Writing through it truncates whatever else
-		// shares the inode and copies the ExternalId into it, so the target's
-		// contents are destroyed and replaced with a secret-bearing document.
+		// shares the inode, destroying a file automat was never pointed at.
 		return f, Created, fmt.Errorf("%s has %d hard links — writing it would overwrite "+
-			"whatever else shares that file, and would copy the ExternalId into it; "+
+			"whatever else shares that file; "+
 			"remove %s or choose another --out directory", name, n, name)
 	}
 
@@ -562,14 +607,13 @@ func inspectForWrite(root *os.Root, name string, want []byte, force bool) (*os.F
 	}
 	if bytes.Equal(got, want) {
 		// Unchanged in content is not unchanged in mode. A bundle copied with
-		// `cp` or unpacked from a tar arrives 0644, and reporting "unchanged"
-		// while leaving the ExternalId world-readable is worse than reporting
-		// nothing: it actively reassures. Ensure semantics (CLAUDE.md rule 4)
-		// cover the mode, not just the bytes.
+		// `cp` or unpacked from a tar arrives 0644; ensure semantics (CLAUDE.md
+		// rule 4) cover the mode, not just the bytes, so a re-run converges on
+		// both.
 		if st.Mode().Perm()&0o077 != 0 {
 			if cerr := f.Chmod(fileMode); cerr != nil {
-				return f, Unchanged, fmt.Errorf("restrict permissions on %s (it is mode %s "+
-					"and contains an ExternalId): %w", name, st.Mode().Perm(), cerr)
+				return f, Unchanged, fmt.Errorf("restrict permissions on %s (it is mode %s, "+
+					"readable beyond you): %w", name, st.Mode().Perm(), cerr)
 			}
 			return f, Tightened, nil
 		}
@@ -609,8 +653,9 @@ func readFile(root *os.Root, name string) ([]byte, error) {
 // It takes the *os.File rather than a name because the caller has already inspected
 // that file, and re-resolving the name would inspect one object and write to
 // another. os.Root bounds where a redirected write can land — inside the root — but
-// "one bundle file silently overwritten by another, carrying the ExternalId to a
-// name nobody chose" is not an outcome worth allowing because it is bounded.
+// "the delegation policy silently overwritten by a role template, so the reviewer
+// approves a file that is not the one automat reported writing" is not an outcome
+// worth allowing because it is bounded.
 //
 // O_TRUNC rather than write-to-temp-and-rename: os.Root.Rename is Go 1.25 and the
 // module floor is 1.24. The failure mode a rename protects against — a half-written
@@ -619,18 +664,18 @@ func readFile(root *os.Root, name string) ([]byte, error) {
 // rather than deploying something partial.
 //
 // The mode is fixed on the descriptor rather than trusted from O_CREATE, for two
-// reasons that both end with the ExternalId being readable: O_CREATE's mode is
+// reasons that both end with the file being wider than intended: O_CREATE's mode is
 // masked by the process umask, and it is ignored entirely for a file that already
 // exists — which may be 0644 from a copy. fchmod on the open file has no window and
 // no second name resolution, and it is stronger than os.Root.Chmod, whose own
 // documentation notes a race if the target becomes a symlink mid-operation.
 //
-// Chmod precedes Write so a failure to restrict the mode aborts before any secret is
-// written. That ordering is also what makes a write to an inode automat's user does
-// not own fail closed: fchmod returns EPERM for a non-owner.
+// Chmod precedes Write, which is what makes a write to an inode automat's user does
+// not own fail closed: fchmod returns EPERM for a non-owner, so a file automat
+// cannot control the mode of is a file it does not write.
 func writeThrough(f *os.File, name string, data []byte) error {
 	if err := f.Chmod(fileMode); err != nil {
-		return fmt.Errorf("set permissions on %s (the bundle contains an ExternalId): %w", name, err)
+		return fmt.Errorf("set permissions on %s: %w", name, err)
 	}
 	if err := f.Truncate(0); err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
@@ -681,17 +726,17 @@ func tighten(root *os.Root, res *Result) error {
 	}
 	if len(foreign) > 0 {
 		return fmt.Errorf("the output directory %s is mode %s and holds files that are not "+
-			"part of a bundle (%s) — the bundle contains an ExternalId and needs a directory "+
-			"only you can read, but automat will not narrow the permissions of a directory "+
-			"holding other content; pass --out with a new or empty directory",
+			"part of a bundle (%s) — automat writes its own output mode 0700 and would have "+
+			"to narrow this directory to do so, which it will not do to a directory holding "+
+			"other content; pass --out with a new or empty directory",
 			quote(res.Dir), fi.Mode().Perm(), strings.Join(foreign, ", "))
 	}
 
 	// Preserve setgid, setuid, and sticky; clear only group and other.
 	want := fi.Mode().Perm()&^0o077 | 0o700
 	if err := d.Chmod(want); err != nil {
-		return fmt.Errorf("restrict permissions on %s (it is mode %s, and the bundle contains an "+
-			"ExternalId): %w", quote(res.Dir), fi.Mode().Perm(), err)
+		return fmt.Errorf("restrict permissions on %s (it is mode %s, readable beyond "+
+			"you): %w", quote(res.Dir), fi.Mode().Perm(), err)
 	}
 	res.Notes = append(res.Notes, fmt.Sprintf("permissions on %s narrowed from %s to %s",
 		quote(res.Dir), fi.Mode().Perm(), want))

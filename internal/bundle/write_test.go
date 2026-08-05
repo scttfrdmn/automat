@@ -22,7 +22,7 @@ func TestWriteProducesTheWholeBundle(t *testing.T) {
 	}
 	// The five rendered files plus the generated .gitignore, which is part of the
 	// bundle rather than an extra: it is what stops an operator committing the
-	// ExternalId when they run this inside a checkout.
+	// accounts and contacts when they run this inside a checkout.
 	if len(res.Files) != renderersCount+1 {
 		t.Fatalf("wrote %d files, want %d", len(res.Files), renderersCount+1)
 	}
@@ -48,9 +48,12 @@ func TestWriteProducesTheWholeBundle(t *testing.T) {
 	}
 }
 
-// TestWrittenFilesAreOwnerOnly is the ExternalId's only filesystem defense: the
-// bundle is generated on a shared login host as often as not, and a 0644
-// delegation bundle hands the ExternalId to every account on the machine.
+// TestWrittenFilesAreOwnerOnly. A bundle is generated on a shared login host as often
+// as not — that is where research-computing operators work — and a mode-0644 bundle
+// lets every account on the machine read the accounts, the organization id, and the
+// requester's address. Not a credential, so this is a conservative default for
+// automat's own output rather than a defense; it is asserted because the code claims
+// it, and an unasserted claim about a file mode is one that drifts.
 func TestWrittenFilesAreOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes")
@@ -137,7 +140,7 @@ func TestWriteOverwritesALooseExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := fi.Mode().Perm(); got != 0o600 {
-		t.Errorf("%s mode %s after overwrite, want 0600 — the ExternalId is in this file",
+		t.Errorf("%s mode %s after overwrite, want 0600 — automat's output is owner-only",
 			FileRoleCFN, got)
 	}
 }
@@ -216,7 +219,7 @@ func TestWriteRefusesToDiscardAHandEditWithoutForce(t *testing.T) {
 }
 
 // TestWriteRefusesASymlink is the A1 finding's direct test. A bundle file that is
-// a symlink is a request to write the ExternalId somewhere the operator did not
+// a symlink is a request to write the grant somewhere the operator did not
 // name — the classic form being a link planted in a shared or predictable output
 // directory before the operator runs the command.
 func TestWriteRefusesASymlink(t *testing.T) {
@@ -280,7 +283,7 @@ func TestWriteRefusesADirectoryInAFilesPlace(t *testing.T) {
 // it". That reasoning does not hold: the operator named a *name*, and on a shared
 // login host — the environment this tool is built for — they did not choose what that
 // name resolves to. An attacker who can write the parent directory pre-plants the
-// link and receives the ExternalId, with no race required, because filepath.Abs does
+// link and receives the bundle, with no race required, because filepath.Abs does
 // not resolve symlinks and MkdirAll on an existing link succeeds silently.
 //
 // Only the final component is refused. Symlinks *above* it are resolved normally and
@@ -305,7 +308,7 @@ func TestWriteRefusesASymlinkedOutputDirectory(t *testing.T) {
 	}
 	_, err := Write(validRequest(), Options{Dir: link})
 	if err == nil {
-		t.Fatal("Write wrote the ExternalId through a symlinked output directory")
+		t.Fatal("Write wrote the bundle through a symlinked output directory")
 	}
 	if !strings.Contains(err.Error(), "symbolic link") {
 		t.Errorf("the error does not say the path is a link, so the operator cannot tell "+
@@ -356,7 +359,10 @@ func TestWriteFollowsSymlinksAboveTheOutputDirectory(t *testing.T) {
 func TestWriteIsAllOrNothingOnAnInvalidRequest(t *testing.T) {
 	dir := t.TempDir()
 	r := validRequest()
-	r.ExternalID = "short"
+	// Any field Validate refuses will do; a malformed OU id is the one an operator
+	// realistically mistypes. (This used to set a too-short ExternalId, which is no
+	// longer a field -- the templates take the value as a deploy-time input.)
+	r.TargetOU = "ou-nope"
 	if _, err := Write(r, Options{Dir: dir}); err == nil {
 		t.Fatal("Write accepted an invalid request")
 	}
@@ -467,11 +473,10 @@ func TestResultStringNamesEveryFile(t *testing.T) {
 	if !strings.Contains(out, dir) {
 		t.Errorf("the output does not say where it wrote:\n%s", out)
 	}
-	// The ExternalId is in the bundle, not in the terminal: an operator pasting
-	// this into a ticket should not paste a credential-shaped value with it.
-	if strings.Contains(out, testExternalID) {
-		t.Error("the CLI output echoes the ExternalId")
-	}
+	// There is no ExternalId to echo any more -- the assertion that used to be here
+	// went away with the field. What remains worth checking is that the output is the
+	// path and the file list and nothing else, since an operator pastes this into a
+	// ticket: see the Result.Dir contract in write.go.
 }
 
 func TestStatusStringsAreDistinct(t *testing.T) {
@@ -523,7 +528,7 @@ func equalSnapshots(a, b map[string]string) bool {
 // chmod — so a bundle whose mode was loosened by anything that does not preserve
 // permissions (cp without -p, tar -x, a git checkout, chmod -R) stayed
 // world-readable forever, and automat reported "unchanged" every time. The
-// ExternalId sat readable by every account on the host while the tool said
+// bundle sat readable by every account on the host while the tool said
 // everything was fine.
 //
 // TestWrittenFilesAreOwnerOnly did not catch this because it only ever ran a first
@@ -554,8 +559,8 @@ func TestARerunTightensAFileThatWasLoosened(t *testing.T) {
 			t.Fatal(serr)
 		}
 		if fi.Mode().Perm()&0o077 != 0 {
-			t.Errorf("%s is mode %s after a re-run — it holds an ExternalId and the run "+
-				"reported success", name, fi.Mode().Perm())
+			t.Errorf("%s is mode %s after a re-run — ensure semantics cover the mode and "+
+				"the run reported success", name, fi.Mode().Perm())
 		}
 	}
 	// And it must say so. Repairing an operator's filesystem silently is its own
@@ -578,7 +583,7 @@ func TestARerunTightensAFileThatWasLoosened(t *testing.T) {
 // fails. Lstat reports a regular file, the mode is whatever the link target's is, and
 // os.Root has nothing to refuse because no path is escaped. Writing through it
 // truncates the other name's contents and replaces them with a document containing
-// the ExternalId — data destruction plus secret propagation, in one write.
+// bundle — destroying a file automat was never pointed at.
 func TestWriteRefusesAHardlinkedBundleFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("hardlink semantics")
@@ -617,16 +622,17 @@ func TestWriteRefusesAHardlinkedBundleFile(t *testing.T) {
 	if string(got) != precious {
 		t.Errorf("the linked file was overwritten:\ngot:  %q\nwant: %q", got, precious)
 	}
-	if strings.Contains(string(got), testExternalID) {
-		t.Error("the ExternalId was copied into the linked file")
-	}
+	// The bundle carries no secret now, so the check that the ExternalId was copied
+	// into the victim retired. The assertion above -- that the victim's contents are
+	// untouched -- is the one that always mattered: writing through a hardlink
+	// destroys whatever shares the inode, secret or not.
 }
 
 // TestWriteRefusesAFIFOWithoutHanging. An existing bundle file is opened O_RDWR to
 // compare it against what automat would render. Opening a FIFO waits for the other
 // end to appear, so a mode-0600 pipe the operator owns — which passes every
-// permission check — turned `automat setup` into a hang with no output and an
-// ExternalId sitting in memory. The Lstat before the open refuses it, and
+// permission check — turned `automat setup` into a hang with no output and the bundle
+// half-written. The Lstat before the open refuses it, and
 // safeio.OpenNonBlock covers one swapped in after that check.
 //
 // The timeout is the assertion. A test that only checked the error would hang rather
@@ -653,12 +659,9 @@ func TestWriteRefusesAFIFOWithoutHanging(t *testing.T) {
 		if !strings.Contains(err.Error(), "not a regular file") {
 			t.Errorf("the error does not name the cause: %v", err)
 		}
-		if strings.Contains(err.Error(), testExternalID) {
-			t.Errorf("the refusal leaks the ExternalId: %v", err)
-		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("Write blocked on a FIFO in the output directory — opening a pipe waits for " +
-			"the other end, so this hangs with an ExternalId in memory and no output")
+			"the other end, so this hangs with no output at all")
 	}
 }
 
@@ -731,7 +734,7 @@ func TestWriteRefusesAnInodeSwapBetweenTheCheckAndTheOpen(t *testing.T) {
 // request cannot leave a half-bundle — but a write failure partway through can, and
 // the loop returns on the first error.
 //
-// The dangerous version of this is an operator rotating an ExternalId: the
+// The dangerous version of this is an operator changing the trust principal: the
 // CloudFormation and Terraform templates end up requiring different values, both mode
 // 0600, with nothing marking which is stale. Central IT applies one, and the other is
 // wrong in a way that surfaces much later as an opaque AccessDenied. Worse, a plain
@@ -765,13 +768,15 @@ func TestAPartialBundleSaysItIsPartial(t *testing.T) {
 	}
 }
 
-// TestTheBundleIgnoresItselfInGit is F6's regression, and it is the finding with the
-// worst recovery story: an operator who commits the ExternalId can only undo it by
-// rewriting history, and on a public repository not even that.
+// TestTheBundleIgnoresItselfInGit is F6's regression. `automat setup --out ./bundle`
+// inside a checkout is the obvious thing to do, and it is one `git add -A` away from
+// publishing the accounts, the organization id, and the requester's address.
 //
-// The generated README already said "do not commit this" — advice printed inside the
-// file being committed. `automat setup --out ./bundle` inside a checkout is the
-// obvious thing to do, and it was one `git add -A` away from publishing a credential.
+// F6 was originally about a credential: the bundle carried a live sts:ExternalId and
+// committing it could not be undone on a public repository. It does not carry one now,
+// so the file stays for the smaller honest reason rather than the large retired one —
+// and the assertion below is about the file saying something true, not about it
+// sounding urgent.
 func TestTheBundleIgnoresItselfInGit(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Write(validRequest(), Options{Dir: dir}); err != nil {
@@ -793,11 +798,23 @@ func TestTheBundleIgnoresItselfInGit(t *testing.T) {
 		t.Errorf("%s does not ignore everything, so a file added later is unprotected:\n%s",
 			fileGitignore, data)
 	}
-	if !strings.Contains(string(data), "ExternalId") {
-		t.Error("the file does not say why it is there, so an operator who finds it in the " +
-			"way will delete it without knowing what it was for")
+	// It must say why it is there, or an operator who finds it in the way deletes it
+	// without knowing what it was for. Keyed to the reason rather than to the word
+	// "ExternalId": the old assertion was `Contains(data, "ExternalId")`, which this
+	// file's current text satisfies with a sentence saying there is *no* ExternalId in
+	// the directory — so the check would have passed either way and was no longer
+	// asserting anything.
+	if !strings.Contains(string(data), "regenerated") {
+		t.Errorf("%s does not say why it is there:\n%s", fileGitignore, data)
 	}
-	// It must be as unreadable as the secret it sits beside.
+	// And it must not claim a secret is here. This is generated output: a false warning
+	// in a file automat wrote teaches the operator to discount automat's true ones.
+	if strings.Contains(string(data), "shared secret") {
+		t.Errorf("%s claims the bundle holds a shared secret, which it does not:\n%s",
+			fileGitignore, data)
+	}
+	// Mode 0600 like the rest of automat's output — a conservative default for a
+	// generated file, not a defense of a secret (see gitignoreContents).
 	fi, err := os.Stat(filepath.Join(dir, fileGitignore))
 	if err != nil {
 		t.Fatal(err)
@@ -817,7 +834,7 @@ func TestTheBundleIgnoresItselfInGit(t *testing.T) {
 // A directory whose name contains a newline is creatable on Linux and darwin, so
 // `--out $'out\n  CREATED  vendor-role.yaml  9999 bytes'` would print a line that
 // reads as automat's own file list — in the output whose whole job is telling the
-// operator which file holds a live ExternalId. An ESC byte is worse: it erases the
+// operator which files automat wrote. An ESC byte is worse: it erases the
 // lines above it.
 func TestARequestedOutputPathWithAControlCharacterIsRefused(t *testing.T) {
 	base := t.TempDir()

@@ -222,9 +222,13 @@ asserts the `sts:ExternalId` condition is present in **both** the CFN and TF
 renderings — an action granted with a condition in one file and without it in the
 other is the same cross-file drift as C1, one step subtler, and it matters more here
 because the operator deploys one file and never reads the other.
-`TestNoRenderedFileLeaksTheExternalIDBeyondTheTrustPolicy` bounds the other side: the
-value appears exactly once per role template and zero times in the policy, `ou.md`,
-and the README.
+`TestNoRenderedFileLeaksTheExternalIDBeyondTheTrustPolicy` bounded the other side: the
+value appeared exactly once per role template and zero times in the policy, `ou.md`,
+and the README. **Superseded by the strictly stronger property** — the value now appears
+*zero* times in every rendered file, asserted by
+`TestNoRenderedFileContainsAnExternalIDValue`; that test was deleted rather than kept
+alongside, because a test bounding where a secret may appear is meaningless once no
+secret is there to bound.
 
 ### M4 — A resolved ExternalId was neither validated nor safely reported. FIXED
 
@@ -247,8 +251,15 @@ docs described the ExternalId as protecting more than it does.
 FIXED in `894b6f9`: a placeholder corpus is refused, and the claim is now accurate —
 it defends the role against assumption by a third party who learns the ARN; it is not
 a password and does not defend against compromised credentials **in the trusted
-account**. The bundle contains a live ExternalId by design; see the trade in the
-human-review section.
+account**.
+
+**Superseded in part.** This finding assumed the bundle carries the value, and the
+review's rejection of that design (see the human-review section) moved the placeholder
+check to `internal/config`, where it now guards the value arriving *from* central IT
+rather than one automat generated. The check itself is unchanged and still jam-checked;
+`--external-id` is gone, so the CLI test that drove it became
+`TestPreflightRefusesAWeakExternalID` against the resolver — the path a placeholder can
+still travel.
 
 ### M6 — Unchecked writes meant a command could report success having written nothing. FIXED
 
@@ -502,17 +513,74 @@ crabby auditor would sign:
 - **The three G304 sites and A2** — see the A1 section. Accepted on narrower grounds
   than AUDIT-0 used, with the condition carried forward rather than closed.
 
-**And one trade that is not a finding but is the human's call, not mine:**
+**And one trade that was not a finding but was the human's call, not mine — REJECTED
+BY REVIEW, now FIXED:**
 
-**The bundle contains a live `sts:ExternalId`.** Both role templates embed it, so the
-bundle is a sensitive file that must be sent over a channel the operator trusts. The
-alternative — a placeholder each side invents — is worse: the two sides must
-configure the *same* value, so a placeholder guarantees either an out-of-band
-exchange that will be done over email anyway, or a mismatch that surfaces as a
-confusing `AccessDenied` during the first vend. The generated README states this
-explicitly and tells the operator not to commit the bundle to a public repository.
-Recorded here because the mitigation is a paragraph, and a paragraph is a weaker
-control than a mechanism.
+**The bundle contained a live `sts:ExternalId`.** Both role templates embedded it, so
+the bundle was a sensitive file that had to be sent over a channel the operator trusts.
+I argued the alternative was worse — a placeholder each side invents means the two sides
+must configure the *same* value, so it guarantees either an out-of-band exchange done
+over email anyway, or a mismatch surfacing as a confusing `AccessDenied` during the
+first vend — and recorded it here because the mitigation was a paragraph, and a
+paragraph is a weaker control than a mechanism.
+
+**The review did not accept it, and was right.** The instruction: *"NOT accepted as a
+paragraph. Convert to a mechanism by inverting generation."*
+
+My framing contained the error. I posed the choice as "automat generates the value" vs.
+"a placeholder each side invents", and both options leave the *requester* choosing the
+management account's confused-deputy defense. There was a third option I did not
+consider: the bundle carries no value at all, and the party bearing the risk generates
+its own. Central IT is already applying a template; supplying one parameter while doing
+so is not an out-of-band exchange bolted on, it is a line in the command they were
+running regardless. The cost I priced as prohibitive was mostly imaginary.
+
+The mechanism, FIXED in this phase:
+
+- Both templates declare the value as a deploy-time input — CloudFormation
+  `AutomatExternalId` with `NoEcho: true`, Terraform `var.automat_external_id` with
+  `sensitive = true`, both bounded by `MinLength`/`MaxLength`/`AllowedPattern` derived
+  from `internal/config`'s exported constants so the template cannot accept a value the
+  resolver will later refuse.
+- `Request.ExternalID`, `bundle.NewExternalID`, and `setup --external-id` are deleted.
+  There is no field, no generator, and no flag — nothing for a future edit to route
+  back into a rendered file.
+- The placeholder and charset validators moved to `internal/config`, which is now the
+  only side that exists: "the requester typed `changeme`" became "somebody typed
+  `changeme`" without becoming any less likely.
+- The README's disclosure paragraph became three numbered steps with an
+  `openssl rand -hex 24`, plus the instruction with teeth: *do not accept an ExternalId
+  from the requester.*
+- `TestNoRenderedFileContainsAnExternalIDValue` is the mechanism replacing the
+  paragraph. It is keyed to the right-hand side of the `sts:ExternalId` assignment
+  rather than to a known value — there is no known value to search for, and a test
+  looking for a specific string would pass on any *other* secret in the same slot.
+  `TestBothTemplatesDeclareTheExternalIDAsADeployTimeInput` stops the trivial way to
+  satisfy it (delete the condition entirely).
+
+**Two things this change surfaced that the original finding did not mention:**
+
+1. **The Terraform `sensitive = true` keyword does not do what it looks like.** It keeps
+   the value out of plan output; it does **not** keep it out of state, and nothing can,
+   because the trust policy is part of the resource. The generated variable description
+   says so outright rather than letting the keyword imply more than it delivers. A
+   reader who trusts `sensitive` to mean "not persisted" is worse off than one who was
+   told nothing.
+2. **`internal/bundle/write.go`'s entire threat model was ExternalId confidentiality,
+   and removing the secret removed its stated reason for every protection it has.** The
+   protections were kept, on a better argument that was true all along: these five files
+   are a *grant* that central IT reads and applies, so what matters is the integrity of
+   the file at review time and at apply time. Anyone who can redirect one of these
+   writes does not learn a secret — they choose the IAM policy someone else is about to
+   deploy, which is strictly worse than the leak the file was organized around. The
+   confidentiality argument for 0600/0700/`.gitignore` did genuinely weaken; those are
+   now labelled as conservative defaults for a tool's own output instead of borrowing
+   urgency from a retired threat.
+
+   The generated `.gitignore` was the sharpest instance, because it is *output*: it told
+   every operator "this directory contains an sts:ExternalId, which is a shared secret",
+   which had become false. A false warning in a generated file is not a stale comment; it
+   trains the reader to discount the warnings that are true.
 
 ---
 

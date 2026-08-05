@@ -52,50 +52,176 @@ var reEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // operator may have pointed somewhere by mistake.
 const maxExternalIDFileBytes = 4096
 
-// reResolvedExternalID is AWS's documented ExternalId charset and length, and it is
-// deliberately *looser* than internal/bundle's reExternalID.
+// ExternalIDCharset is AWS's documented ExternalId charset, as a bare character
+// class with no anchors or repeat.
 //
-// The two validate different things. bundle generates a value and so may insist on
-// its own narrow form. Here the value is being *consumed*, and it must equal
-// whatever the deployed trust policy checks — which may predate automat, or come
-// from a vendor who chose it. Refusing a `/` that AWS accepts would reject a
-// working configuration for no security gain.
+// Exported as a string rather than kept as a compiled pattern because the role
+// templates in internal/bundle need the same charset in *their* dialects — a
+// CloudFormation `AllowedPattern` and a Terraform `regex()` call. It is one constant
+// with two consumers instead of three copies that agree today.
 //
-// What it does refuse is what has no business in a credential: control bytes, ANSI
-// escapes, NUL padding, and anything long enough that AWS would reject it anyway.
-// Without this, `"a"` resolves and is sent to AssumeRole as a confused-deputy
-// defense, and a value carrying an escape sequence reaches a terminal.
+// This package owns the definition because this package is where the value is
+// *consumed*: whatever the deployed trust policy checks is what automat must later
+// send to AssumeRole. The templates constrain a deploy-time input, so their bounds
+// are a consuming constraint too, and they must be these. A template that accepted
+// what ResolveExternalID later refuses would deploy a working role automat cannot
+// use; a template narrower than AWS would refuse a trust policy that predates
+// automat, or one whose value central IT chose before ever hearing of this tool.
+const ExternalIDCharset = `[A-Za-z0-9+=,.@:/_-]`
+
+// reResolvedExternalID anchors ExternalIDCharset over the whole value.
+//
+// It refuses what has no business in a credential: control bytes, ANSI escapes, NUL
+// padding, whitespace, and anything long enough that AWS would reject it anyway.
+// Without it, `"a"` resolves and is sent to AssumeRole as a confused-deputy defense,
+// and a value carrying an escape sequence reaches a terminal.
 //
 // The length is checked in code rather than as a repeat count because RE2 caps a
 // bounded repeat at 1000, below AWS's own limit.
-var reResolvedExternalID = regexp.MustCompile(`^[A-Za-z0-9+=,.@:/_-]+$`)
+var reResolvedExternalID = regexp.MustCompile(`^` + ExternalIDCharset + `+$`)
 
-// maxExternalIDChars is AWS's documented ExternalId length limit.
-const maxExternalIDChars = 1224
+// MaxExternalIDChars is AWS's documented ExternalId length limit.
+const MaxExternalIDChars = 1224
 
-// minExternalIDChars is the point below which a value is short enough to guess.
-// It matches the floor internal/bundle enforces on the values it generates.
-const minExternalIDChars = 16
+// MinExternalIDChars is the point below which a value is short enough to guess.
+// AWS itself permits two characters; a two-character shared secret is a condition
+// that reviews as a control and is not one.
+const MinExternalIDChars = 16
 
 // validateResolvedExternalID checks the value that is about to be sent to
 // AssumeRole. Its errors describe the shape and never echo the value.
 func validateResolvedExternalID(v, source string) error {
-	if !reResolvedExternalID.MatchString(v) || len(v) > maxExternalIDChars {
+	if !reResolvedExternalID.MatchString(v) || len(v) > MaxExternalIDChars {
 		return fmt.Errorf("the ExternalId from %s is not a value AWS accepts: it must be at most %d "+
 			"characters of letters, digits, and _+=,.@:/- with no whitespace or control characters "+
 			"(the value read was %d characters). automat has not sent it; check that %s contains only "+
-			"the ExternalId", source, maxExternalIDChars, len(v), source)
+			"the ExternalId", source, MaxExternalIDChars, len(v), source)
 	}
 	// Short-but-valid is worth a distinct message: it is accepted by AWS and
 	// useless as a defense, and an operator who typed a placeholder needs to be
 	// told that rather than get an opaque AccessDenied from STS later.
-	if len(v) < minExternalIDChars {
+	if len(v) < MinExternalIDChars {
 		return fmt.Errorf("the ExternalId from %s is only %d characters, which is short enough to "+
 			"guess — and a guessable ExternalId is worse than none, because it looks like a control. "+
-			"Generate one with `automat setup --request`, which produces 160 bits, and set the same "+
-			"value in the trust policy", source, len(v))
+			"Generate %d bytes of randomness (`openssl rand -hex 24`) and set the same value in the "+
+			"role's trust policy", source, len(v), MinExternalIDChars)
+	}
+	// Length and charset are satisfied and the value is still not a secret:
+	// "0000000000000000" and "password12345678" both passed until this check. An
+	// ExternalId's only property is being unguessable, so a placeholder is worse than
+	// no condition at all — it puts a StringEquals in the trust policy that reviews as
+	// a control and is not one.
+	//
+	// This check lives on the consuming side because that is now the only side there
+	// is: automat does not choose this value and never sees it until it resolves one.
+	// The reason is reported, the value is not.
+	if reason, weak := weakExternalID(v); weak {
+		return fmt.Errorf("the ExternalId from %s is not usable because %s. An ExternalId's only job "+
+			"is to be a value a third party who knows the role ARN was never told, so a guessable one "+
+			"leaves the condition in the trust policy looking like a control while being none. automat "+
+			"has not sent it; replace the value in both %s and the role's trust policy", source, reason, source)
 	}
 	return nil
+}
+
+// weakExternalID reports whether v is degenerate enough that it is not a secret in
+// any sense, and a short reason if so.
+//
+// Deliberately a small, closed list rather than a strength heuristic. An ExternalId
+// that passes this is not thereby unguessable — nothing automat can compute would
+// tell it that — so the check only catches the cases where a human has clearly typed
+// a placeholder: one repeated character, a digit run, or a password-list staple.
+// Anything cleverer would be a strength meter, and a strength meter that says "ok" is
+// a claim automat cannot support. That is why nothing in automat's output ever tells
+// an operator their ExternalId was judged strong.
+//
+// It lived in internal/bundle when automat generated this value and validated its own
+// output. It now guards the only side that exists: automat receives a value chosen by
+// whoever deployed the role, and "the requester typed `changeme`" became "somebody
+// typed `changeme`" without becoming any less likely.
+func weakExternalID(v string) (string, bool) {
+	if v == "" {
+		return "", false // The length check reports this one.
+	}
+	// A single character repeated: "aaaa...", "0000...".
+	allSame := true
+	for i := 1; i < len(v); i++ {
+		if v[i] != v[0] {
+			allSame = false
+			break
+		}
+	}
+	if allSame {
+		return "it is one character repeated", true
+	}
+	// All digits: a date, an account number, a counter.
+	allDigits := true
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return "it is all digits, so it is a number someone can count to", true
+	}
+	// A sequential run, ascending or descending, in either case: "123456...",
+	// "abcdef...". Checked over the whole string rather than as a substring, so an
+	// ExternalId that merely contains "abc" is unaffected.
+	seq, rev := true, true
+	lower := strings.ToLower(v)
+	for i := 1; i < len(lower); i++ {
+		if lower[i] != lower[i-1]+1 {
+			seq = false
+		}
+		if lower[i] != lower[i-1]-1 {
+			rev = false
+		}
+	}
+	if seq || rev {
+		return "it is a sequential run of characters", true
+	}
+	// The staples. Compared case-insensitively against the whole value, not as
+	// substrings: a real ExternalId that happens to contain "test" is fine.
+	for _, bad := range []string{
+		"password", "passw0rd", "secret", "changeme", "letmein", "qwerty",
+		"external-id", "externalid", "placeholder", "todo", "example",
+		"test", "testing", "temporary", "temp", "automat",
+	} {
+		if lower == bad || strings.HasPrefix(lower, bad) && isPaddingOnly(lower[len(bad):]) {
+			return fmt.Sprintf("it is %q with padding, which is the first thing anyone guesses", bad), true
+		}
+	}
+	return "", false
+}
+
+// isPaddingOnly reports whether s is only the filler someone adds to get a value
+// past a length check: a few digits or separators, nothing more.
+//
+// Bounded, because unbounded it produced a false positive on a real value. When
+// automat generated ExternalIds they began "automat-", and "automat" is on the staple
+// list, so a genuine crypto/rand value whose suffix happened to be all digits was
+// reported as a guessable placeholder. That generator is gone, but the bound stays and
+// the reasoning still holds: refusing a correctly generated secret is the worse
+// failure of the two, because it sends the operator looking for a problem in the one
+// part of this that was right.
+//
+// maxPadding is comfortably over the "1234"/"01"/"!!" a human appends to get past a
+// length check, and well under the tail of any value worth calling a secret.
+func isPaddingOnly(s string) bool {
+	const maxPadding = 8
+	if len(s) > maxPadding {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isDigit := c >= '0' && c <= '9'
+		isFiller := c == '-' || c == '_' || c == '.' || c == '!'
+		if !isDigit && !isFiller {
+			return false
+		}
+	}
+	return true
 }
 
 // validateExternalIDRef checks the reference's shape without resolving it.

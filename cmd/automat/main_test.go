@@ -343,29 +343,74 @@ func TestSetupRequestWritesABundleAndMakesNoAWSCall(t *testing.T) {
 	}
 }
 
-// TestSetupRequestRefusesAWeakExternalID covers the flag-to-validation path: the
-// generator is only reached when --external-id is absent, so an operator who supplies
-// a placeholder is the case where the confused-deputy condition ends up looking like a
-// control while being none. Refused at the CLI, with the value not echoed.
-func TestSetupRequestRefusesAWeakExternalID(t *testing.T) {
-	g, _, _ := fakes(t, testOrg, testManagement, testMember)
+// TestPreflightRefusesAWeakExternalID covers the reference-to-validation path at the
+// CLI.
+//
+// This test used to drive `setup --request --external-id password12345678`, back when
+// automat generated the ExternalId and wrote it into the bundle. That flag is gone
+// along with the value it supplied, but the property it covered did not go anywhere —
+// it moved to the only side that still exists. A placeholder ExternalId leaves the
+// confused-deputy condition in the trust policy looking like a control while being
+// none, and now the way one arrives is that central IT generated it badly and sent it
+// over, so automat meets it when it resolves external_id_ref rather than when it
+// writes a template.
+//
+// Both halves of the original assertion are kept: the operator is told which source
+// holds the bad value, and the value is not echoed — it may be live somewhere else even
+// though it is a placeholder here.
+//
+// The refusal surfaces as a warning plus a failed check rather than a non-zero exit on
+// its own, which is preflight's whole design: it reports every check it can instead of
+// stopping at the first problem. What matters for security is that the value is not
+// used — externalID stays empty, so nothing sends the placeholder to STS and no check
+// can report the trust condition as satisfied on the strength of it.
+func TestPreflightRefusesAWeakExternalID(t *testing.T) {
+	g, stsFake, _ := fakes(t, testOrg, testManagement, testMember)
 	const weak = "password12345678"
-	_, _, err := runCLI(t, g, "setup", "--request",
-		"--member-account", testMember,
-		"--management-account", testManagement,
-		"--org", testOrg,
-		"--ou", testOU,
-		"--contact", "research-it@example.edu",
-		"--external-id", weak,
-		"--out", filepath.Join(t.TempDir(), "bundle"))
-	if err == nil {
-		t.Fatal("a placeholder ExternalId was accepted into a bundle central IT would deploy")
+	// The role is assumable *with the weak value*. If the resolver let it through,
+	// the vendor-role check would pass and the placeholder would be reported as a
+	// working confused-deputy defense — which is the outcome under test.
+	stsFake.Assumable[testVendorRole] = weak
+	t.Setenv("AUTOMAT_TEST_EXTERNAL_ID", weak)
+	writeConfig(t, g, `
+[context.c]
+org = "`+testOrg+`"
+ou = "`+testOU+`"
+vendor_role_arn = "`+testVendorRole+`"
+external_id_ref = "env:AUTOMAT_TEST_EXTERNAL_ID"
+`)
+	out, errOut, err := runCLI(t, g, "preflight")
+	if code := exitCodeOf(err); code == -1 {
+		t.Fatalf("preflight failed rather than reporting: %v", err)
 	}
-	if !strings.Contains(err.Error(), "external_id") {
-		t.Errorf("the error does not name the field: %v", err)
+	if !strings.Contains(errOut, "could not resolve the ExternalId") {
+		t.Errorf("the operator is not warned that the ExternalId was refused:\n%s", errOut)
 	}
-	if strings.Contains(err.Error(), weak) {
-		t.Errorf("the refusal echoes the value, which may be a live one elsewhere: %v", err)
+	// Named by source, so the operator knows where to go: the environment variable
+	// external_id_ref points at, not the setting's own name.
+	if !strings.Contains(errOut, "AUTOMAT_TEST_EXTERNAL_ID") {
+		t.Errorf("the warning does not name the source holding the bad value:\n%s", errOut)
+	}
+	// The placeholder must not be used, and this is the assertion with teeth. The fake
+	// accepts the weak value, so if the resolver let it through the vendor-role check
+	// reports [pass] and the verdict line becomes "vend: yes" — verified by jamming the
+	// weakExternalID branch, which flips both. Keyed to the check line rather than to
+	// the whole report, because a bare Contains over the output matched in the jammed
+	// case too and would have asserted nothing.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "vendor role") && strings.Contains(line, "[pass") {
+			t.Errorf("the vendor-role check passed on the strength of a placeholder "+
+				"ExternalId, so automat sent it to STS:\n%s", out)
+		}
+	}
+	if strings.Contains(out, "vend: yes") {
+		t.Errorf("automat reports it can vend using a placeholder ExternalId:\n%s", out)
+	}
+	for what, s := range map[string]string{"stdout": out, "stderr": errOut} {
+		if strings.Contains(s, weak) {
+			t.Errorf("the refusal echoes the value in %s, which may be a live one "+
+				"elsewhere:\n%s", what, s)
+		}
 	}
 }
 

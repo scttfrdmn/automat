@@ -58,23 +58,37 @@ var goldenScenarios = []struct {
 	},
 }
 
-// externalIDLike returns the first value in s that looks like an ExternalId automat
-// generated but is not the test constant, or "" if there is none.
+// externalIDLike returns the first value in s that sits where an ExternalId would, or
+// "" if there is none.
 //
-// It matches on the shape NewExternalID produces -- the automat- prefix followed by a
-// long run of base32 -- because that is what a maintainer who regenerated these
-// fixtures from a live configuration would have committed. Deliberately narrow: the
-// goal is to catch the one realistic accident, not to guess at every possible secret.
+// This got simpler, and stronger, when the bundle stopped carrying the value: there is
+// no longer a legitimate ExternalId in these fixtures to make an exception for, so the
+// check is "is anything assigned here" rather than "is this the fake one". It looks at
+// the trust condition's right-hand side in either template dialect and accepts only the
+// two forms that name the deploy-time input.
+//
+// The previous version matched the shape NewExternalID produced -- an "automat-" prefix
+// followed by base32 -- which was the right check for the model it was written against
+// and would now miss every other kind of secret a maintainer could paste in.
 func externalIDLike(s string) string {
-	for _, m := range reGeneratedExternalID.FindAllString(s, -1) {
-		if m != testExternalID {
-			return m
+	for _, m := range reExternalIDAssignment.FindAllStringSubmatch(s, -1) {
+		rhs := strings.TrimSpace(m[1])
+		rhs = strings.TrimSpace(strings.TrimSuffix(rhs, "}"))
+		rhs = strings.TrimSpace(strings.TrimSuffix(rhs, ","))
+		if rhs != "!Ref AutomatExternalId" && rhs != "var.automat_external_id" {
+			return rhs
 		}
 	}
 	return ""
 }
 
-var reGeneratedExternalID = regexp.MustCompile(`automat-[A-Z2-7]{16,}`)
+var reExternalIDAssignment = regexp.MustCompile(`sts:ExternalId"?\s*[:=]\s*(.+)`)
+
+// reEmailLike matches something that could be a mailbox: a local part of at least two
+// characters, an @, and a dotted domain with a plausible TLD. Loose enough to catch a
+// real address a maintainer pasted in, tight enough not to fire on a character class or
+// on ARN punctuation.
+var reEmailLike = regexp.MustCompile(`[A-Za-z0-9._%+-]{2,}@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
 
 func TestBundleMatchesGolden(t *testing.T) {
 	for _, sc := range goldenScenarios {
@@ -223,21 +237,30 @@ func TestGoldenFilesContainNoRealIdentifier(t *testing.T) {
 						sc.dir, name, m)
 				}
 			}
-			if strings.Contains(s, "@") && !strings.Contains(s, "example.edu") &&
-				!strings.Contains(s, "_+=,.@") {
-				t.Errorf("%s/%s contains an address outside example.edu", sc.dir, name)
+			// Address-shaped, rather than "contains an @". The old form was a bare `@`
+			// search with two literal-substring exceptions bolted on, and the second
+			// exception ("_+=,.@") was a whole-file escape hatch: any file mentioning
+			// the ExternalId charset anywhere was exempted from the email check
+			// entirely, including a real address elsewhere in it. It also broke the
+			// moment the charset was rendered in a different order. This looks for
+			// something that could actually be a mailbox.
+			for _, addr := range reEmailLike.FindAllString(s, -1) {
+				if !strings.HasSuffix(addr, "@example.edu") {
+					t.Errorf("%s/%s contains the address %s, which is not this package's test "+
+						"contact — was this regenerated from a live configuration?", sc.dir, name, addr)
+				}
 			}
-			// This checks the FILE, not the constant. The previous version read
-			// `strings.Contains(s, testExternalID) && !strings.Contains(testExternalID,
-			// "EXAMPLE")` -- testExternalID is a compile-time constant containing
-			// "EXAMPLE", so the second half was permanently false and the whole clause
-			// was unreachable. It also tested the fake value rather than the file's
-			// contents, so it could not have detected a real ExternalId even if it ran.
-			// Jam-checked by planting a realistic value in a golden fixture.
-			if jam := externalIDLike(s); jam != "" && !strings.Contains(s, testExternalID) {
-				t.Errorf("%s/%s contains %q, which looks like a real ExternalId. These "+
-					"fixtures are committed: regenerate them from the test request, not from "+
-					"a live configuration.", sc.dir, name, jam)
+			// This checks the FILE, not a constant. An earlier version compared against
+			// the test ExternalId with a clause that was permanently false, so it could
+			// not have detected a real value even when it ran; it also had a fake value
+			// to make an exception for. Now there is no exception: any value in the
+			// ExternalId position is wrong, whether it is real or invented.
+			// Jam-checked by planting a value in a golden fixture.
+			if jam := externalIDLike(s); jam != "" {
+				t.Errorf("%s/%s assigns %q to sts:ExternalId. The bundle must not carry the "+
+					"value at all -- the templates declare it as a deploy-time input. If these "+
+					"were regenerated from a live configuration, regenerate from the test request.",
+					sc.dir, name, jam)
 			}
 			for _, real := range []string{"amazonaws.com/console", "signin.aws.amazon.com"} {
 				if strings.Contains(s, real) {

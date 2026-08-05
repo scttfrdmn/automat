@@ -11,6 +11,22 @@ Description: >-
 # occurrence of ou-REPLACE-WITH-THE-NEW-OU-ID below with the real OU id. AWS rejects the
 # template while the placeholder remains, so this cannot be forgotten silently.
 
+Parameters:
+  AutomatExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    MaxLength: 1224
+    AllowedPattern: '[A-Za-z0-9+=,.@:/_-]+'
+    Description: >-
+      The shared secret this role will require in sts:AssumeRole. Generate it
+      yourself — do not let anyone send you one — and give it to the requester over
+      a channel you would use for a password. Suggested: openssl rand -hex 24.
+      NoEcho keeps it out of the CloudFormation console, events, and describe
+      output. It is not a password: it stops a third party who learns this role's
+      ARN from assuming it, and it does not defend against compromised credentials
+      in account 222222222222.
+
 Resources:
   AutomatVendorRole:
     Type: AWS::IAM::Role
@@ -29,7 +45,7 @@ Resources:
             Action: sts:AssumeRole
             Condition:
               StringEquals:
-                sts:ExternalId: 'EXAMPLE-NOT-A-REAL-EXTERNAL-ID'
+                sts:ExternalId: !Ref AutomatExternalId
       Policies:
         - PolicyName: automat-vend
           PolicyDocument:

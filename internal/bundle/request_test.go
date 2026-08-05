@@ -12,17 +12,18 @@ import (
 	"testing"
 )
 
-// Test values. The ExternalId is a fixed, obviously-fake string: the golden files
-// contain it, so it must never be mistaken for something real.
+// Test values. There is no test ExternalId, because there is no field to put one in:
+// the templates declare it as a deploy-time input and the bundle never carries a
+// value. See TestNoRenderedFileContainsAnExternalIDValue.
 const (
 	testMember     = "222222222222"
 	testManagement = "111111111111"
 	testOrg        = "o-exampleorgid"
 	testOU         = "ou-exam-research1"
-	testExternalID = "EXAMPLE-NOT-A-REAL-EXTERNAL-ID"
 	testContact    = "research-it@example.edu"
 	testTime       = "2026-08-05T14:00:00Z"
 	testVersion    = "v0.1.0-test"
+	testOUName     = "Research Computing"
 )
 
 // validRequest is the shape everything else perturbs.
@@ -33,11 +34,20 @@ func validRequest() *Request {
 		OrgID:               testOrg,
 		TargetOU:            testOU,
 		VendorRoleName:      DefaultVendorRoleName,
-		ExternalID:          testExternalID,
 		RequesterContact:    testContact,
 		GeneratedAt:         testTime,
 		ToolVersion:         testVersion,
 	}
+}
+
+// validRequestNewOU is the other legitimate shape: the OU does not exist yet, so every
+// file names the placeholder. Both variants are golden-tested, and anything asserting a
+// property of "the bundle" has to hold for both.
+func validRequestNewOU() *Request {
+	r := validRequest()
+	r.TargetOU = ""
+	r.TargetOUName = testOUName
+	return r
 }
 
 func TestValidateAcceptsAWellFormedRequest(t *testing.T) {
@@ -68,7 +78,6 @@ func TestValidateRejectsEveryInjectionShape(t *testing.T) {
 		"org_id":                func(r *Request, v string) { r.OrgID = v },
 		"target_ou":             func(r *Request, v string) { r.TargetOU = v },
 		"vendor_role_name":      func(r *Request, v string) { r.VendorRoleName = v },
-		"external_id":           func(r *Request, v string) { r.ExternalID = v },
 		"requester_contact":     func(r *Request, v string) { r.RequesterContact = v },
 		"generated_at":          func(r *Request, v string) { r.GeneratedAt = v },
 		"tool_version":          func(r *Request, v string) { r.ToolVersion = v },
@@ -292,120 +301,17 @@ func TestManagementAndMemberMustDiffer(t *testing.T) {
 	}
 }
 
-func TestShortExternalIDIsRejected(t *testing.T) {
-	// The floor is the point: a guessable ExternalId looks like a control and is
-	// not one.
-	for _, v := range []string{"automat", "abc", "0123456789abcde", strings.Repeat("a", 129)} {
-		r := validRequest()
-		r.ExternalID = v
-		if err := r.Validate(); err == nil {
-			t.Errorf("ExternalId %q (%d chars) was accepted", v, len(v))
-		}
-	}
-	// Exactly at the floor is accepted. Not strings.Repeat("a", 16), which this
-	// fixture used to be: that is 16 characters and also one character repeated, so
-	// once weakExternalID existed the test was asserting the length floor with a
-	// value refused for a different reason. A fixture that passes for the wrong
-	// reason is a test that stops testing what it says.
-	r := validRequest()
-	r.ExternalID = "k7Rq2mZx9Tp4Wc8v"
-	if len(r.ExternalID) != 16 {
-		t.Fatalf("fixture is %d characters, not the 16 this test is about", len(r.ExternalID))
-	}
-	if err := r.Validate(); err != nil {
-		t.Errorf("a 16-character ExternalId was rejected: %v", err)
-	}
-}
-
-// TestARejectedExternalIDIsNotEchoed. Every other field this validator refuses is
-// an account id, an OU id, an ARN, or an email — the README says so, and none of
-// them is secret. The ExternalId is the exception, and it goes through the same
-// `check` closure as the rest, so it was reported the same way.
+// The ExternalId validation tests that used to live here — a length floor, a
+// placeholder corpus, a redactor that describes a rejected value without echoing it,
+// and a byte-for-byte agreement between the redactor's character set and the pattern's
+// — moved to internal/config along with the code they cover. This package no longer
+// has an ExternalId to validate: the templates declare it as a deploy-time input, so
+// the value arrives at automat only through config.ResolveExternalID, and validating
+// it here would mean validating a field that does not exist.
 //
-// The realistic case is not a malicious value, it is a working one: AWS permits `/`
-// and a space in an ExternalId and this package deliberately does not, so a
-// legitimate value copied from an existing trust policy is *rejected and printed*.
-// internal/config/externalid.go already has redactRef written for exactly this and
-// this validator did not use it.
-func TestARejectedExternalIDIsNotEchoed(t *testing.T) {
-	// Each of these is a value AWS itself accepts, so each is one an operator may
-	// really be holding when this error fires.
-	for _, v := range []string{
-		"vendor/tenant/0123456789abcdef",
-		"a-real-looking-external-id with a space",
-		"automat-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/suffix",
-		strings.Repeat("live-secret", 20), // over the 128 limit
-	} {
-		r := validRequest()
-		r.ExternalID = v
-		err := r.Validate()
-		if err == nil {
-			t.Fatalf("expected %q to be rejected", v)
-		}
-		if strings.Contains(err.Error(), v) {
-			t.Errorf("the rejection echoes what may be a live ExternalId:\n%v", err)
-		}
-		// A prefix long enough to matter is as bad as the whole thing: it is the
-		// part an attacker would otherwise have to guess.
-		if len(v) >= 12 && strings.Contains(err.Error(), v[:12]) {
-			t.Errorf("the rejection echoes the first 12 characters of the ExternalId:\n%v", err)
-		}
-		// It must still say which field and what shape is wanted (CLAUDE.md rule 7).
-		if !strings.Contains(err.Error(), "external_id") {
-			t.Errorf("the rejection does not name the field: %v", err)
-		}
-	}
-}
-
-// TestTheRedactorAndThePatternAgreeOnEveryByte. redactExternalID describes which
-// character classes a rejected value contains, and it has its own hand-written
-// character set because a regex cannot report *why* it did not match. Two
-// descriptions of one set drift, and the drift is silent: the message would name
-// the wrong reason and send the operator looking at the wrong character.
-func TestTheRedactorAndThePatternAgreeOnEveryByte(t *testing.T) {
-	for b := 0; b < 256; b++ {
-		// A 16-character candidate differing only in this byte, so the only reason
-		// it can fail the pattern is the byte itself.
-		v := strings.Repeat("a", 15) + string([]byte{byte(b)})
-		matched := reExternalID.MatchString(v)
-		allowed := isAllowedExternalIDByte(byte(b))
-		if matched != allowed {
-			t.Errorf("byte %#02x (%q): reExternalID says %v, isAllowedExternalIDByte says %v",
-				b, string(rune(b)), matched, allowed)
-		}
-	}
-}
-
-// TestTheRedactionStillTellsTheOperatorWhatIsWrong. A redaction that says only
-// "rejected" trades one failure for another: the operator cannot see their typo and
-// has no way to find it, so they paste the value somewhere less careful to look at
-// it. The message must name the cause without reproducing the value.
-func TestTheRedactionStillTellsTheOperatorWhatIsWrong(t *testing.T) {
-	cases := []struct {
-		value string
-		want  string
-	}{
-		{"automat-AAAAAAAAAAAAAAAAAAAAAAAA ", "space or tab"},
-		{"automat-AAAAAAAAAAAAAAAAAAAAAAAA\n", "control character"},
-		{"automat-AAAAAAAAAAAAAAAAAAAA/tenant", "outside the accepted set"},
-		{"", "empty"},
-		{"tooshort", "8-character"},
-	}
-	for _, tc := range cases {
-		got := redactExternalID(tc.value)
-		if !strings.Contains(got, tc.want) {
-			t.Errorf("redactExternalID(%q) = %q, want it to mention %q", tc.value, got, tc.want)
-		}
-		if tc.value != "" && strings.Contains(got, tc.value) {
-			t.Errorf("redactExternalID(%q) reproduced the value: %q", tc.value, got)
-		}
-		for _, bad := range []string{"\n", "\x1b", "\r", "\t"} {
-			if strings.Contains(got, bad) {
-				t.Errorf("redactExternalID(%q) passed through %q: %q", tc.value, bad, got)
-			}
-		}
-	}
-}
+// What replaced them on this side is TestNoRenderedFileContainsAnExternalIDValue,
+// which asserts the stronger property the review asked for: not "the value is checked"
+// but "there is no value".
 
 // TestNoPatternAdmitsAStructuralCharacter is the claim the templates rest on,
 // checked by brute force rather than by reading the regexes.
@@ -416,16 +322,15 @@ func TestTheRedactionStillTellsTheOperatorWhatIsWrong(t *testing.T) {
 // admitting a quote or a newline is a template injection.
 func TestNoPatternAdmitsAStructuralCharacter(t *testing.T) {
 	patterns := map[string]*regexp.Regexp{
-		"reAccountID":  reAccountID,
-		"reOrgID":      reOrgID,
-		"reOU":         reOU,
-		"reRoleName":   reRoleName,
-		"reRoleARN":    reRoleARN,
-		"reOUName":     reOUName,
-		"reExternalID": reExternalID,
-		"reEmail":      reEmail,
-		"reTimestamp":  reTimestamp,
-		"reVersion":    reVersion,
+		"reAccountID": reAccountID,
+		"reOrgID":     reOrgID,
+		"reOU":        reOU,
+		"reRoleName":  reRoleName,
+		"reRoleARN":   reRoleARN,
+		"reOUName":    reOUName,
+		"reEmail":     reEmail,
+		"reTimestamp": reTimestamp,
+		"reVersion":   reVersion,
 	}
 
 	// Anything that can end a string, start a line, open a substitution, or move
@@ -461,7 +366,7 @@ func TestNoPatternAdmitsAStructuralCharacter(t *testing.T) {
 			for _, base := range []string{
 				testMember, testOrg, testOU, DefaultVendorRoleName,
 				"arn:aws:iam::222222222222:role/automat-runner", "Research Computing",
-				testExternalID, testContact, testTime, testVersion,
+				testContact, testTime, testVersion,
 			} {
 				if !re.MatchString(base) {
 					continue // not this pattern's shape
@@ -539,7 +444,6 @@ func TestEveryRequestFieldIsValidated(t *testing.T) {
 		"TargetOU":            "target_ou",
 		"TargetOUName":        "target_ou_name",
 		"VendorRoleName":      "vendor_role_name",
-		"ExternalID":          "external_id",
 		"RequesterContact":    "requester_contact",
 		"GeneratedAt":         "generated_at",
 		"ToolVersion":         "tool_version",
@@ -789,7 +693,7 @@ func TestValidationErrorListsEveryProblemAtOnce(t *testing.T) {
 		t.Fatal("an empty request was accepted")
 	}
 	msg := err.Error()
-	for _, want := range []string{"member_account_id", "org_id", "external_id", "requester_contact"} {
+	for _, want := range []string{"member_account_id", "org_id", "vendor_role_name", "requester_contact"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error does not mention %s:\n%s", want, msg)
 		}
@@ -802,73 +706,52 @@ func TestValidationErrorListsEveryProblemAtOnce(t *testing.T) {
 	}
 }
 
-// TestGeneratedExternalIDPassesValidation closes the loop between the generator
-// and the validator: a generator that produced a value Validate refuses would
-// make `setup --request` fail on its own output, and one that produced a value
-// Validate accepts loosely would be worth checking anyway.
-func TestGeneratedExternalIDPassesValidation(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
-		id, err := NewExternalID()
-		if err != nil {
-			t.Fatalf("NewExternalID: %v", err)
-		}
-		if !reExternalID.MatchString(id) {
-			t.Fatalf("generated ExternalId %q does not satisfy automat's own validator", id)
-		}
-		// Every character must be safe in a YAML single-quoted scalar, an HCL
-		// string, and a JSON string, since it lands in all three.
-		if strings.ContainsAny(id, "'\"\\$`{}\n\r\t %") {
-			t.Fatalf("generated ExternalId %q contains a character that means something in a "+
-				"template", id)
-		}
-		if seen[id] {
-			t.Fatalf("NewExternalID returned the duplicate %q within %d draws, which means it is "+
-				"not drawing from crypto/rand", id, i+1)
-		}
-		seen[id] = true
+// The two generator tests that used to be here -- that NewExternalID's output passed
+// automat's own validator, and that it had real entropy rather than being derived from
+// public inputs -- retired with the generator. automat no longer chooses this value.
+//
+// The half of the entropy test worth keeping was not about the bytes: it was that a
+// derived ExternalId is a constant dressed as a secret, and the document must never
+// suggest deriving one. That survives as TestTheREADMENeverSuggestsADerivableExternalID
+// below, aimed at the instruction rather than at a generator that no longer exists.
 
-		r := validRequest()
-		r.ExternalID = id
-		if err := r.Validate(); err != nil {
-			t.Fatalf("a request carrying a generated ExternalId does not validate: %v", err)
-		}
-	}
-}
-
-// TestGeneratedExternalIDHasRealEntropy is a floor, not a statistical test. It
-// catches the failure that matters: a generator that returns a constant, a
-// counter, or something derived from public inputs. A derived ExternalId is a
-// constant dressed as a secret, and it removes the confused-deputy defense while
-// leaving every document that mentions it looking correct.
-func TestGeneratedExternalIDHasRealEntropy(t *testing.T) {
-	id, err := NewExternalID()
+// TestTheREADMENeverSuggestsADerivableExternalID. The bundle now asks a human to
+// generate the value, which puts the failure mode in the instruction: a reader told to
+// "pick something you will both remember" or handed a formula over the account id
+// produces a value anyone who can read the trust policy can recompute. The README must
+// name a real generator and must never suggest deriving it from anything in the request.
+func TestTheREADMENeverSuggestsADerivableExternalID(t *testing.T) {
+	data, err := README(validRequest())
 	if err != nil {
-		t.Fatalf("NewExternalID: %v", err)
+		t.Fatalf("README: %v", err)
 	}
-	body := strings.TrimPrefix(id, externalIDPrefix)
-	if len(body) < 32 {
-		t.Errorf("the random part of %q is %d characters; 20 bytes of base32 is 32", id, len(body))
+	s := strings.Join(strings.Fields(string(data)), " ")
+
+	// A concrete generator, so the reader is not left to invent a value.
+	if !strings.Contains(s, "openssl rand") {
+		t.Error("the README asks for an ExternalId without naming a way to generate one, which is " +
+			"an invitation to type a memorable value")
 	}
-	// It must not contain anything an operator could have predicted from the
-	// request. validRequest's values are the public inputs a derivation would use.
+	// And no phrasing that points at the request's own public values as a source. These
+	// are the inputs a derivation would reach for, and every one of them is readable by
+	// anyone holding the bundle or the deployed trust policy.
 	r := validRequest()
-	for _, public := range []string{
-		r.MemberAccountID, r.ManagementAccountID, r.OrgID, r.TargetOU, r.RequesterContact,
+	for _, phrase := range []string{
+		"use the account id", "based on the account", "derive", "same as the OU",
+		"memorable", "something you will remember", "combination of",
 	} {
-		if public != "" && strings.Contains(strings.ToUpper(id), strings.ToUpper(public)) {
-			t.Errorf("the ExternalId %q contains the public value %q — anyone who can read the "+
-				"trust policy could recompute it", id, public)
+		if strings.Contains(strings.ToLower(s), phrase) {
+			t.Errorf("the README suggests deriving or remembering the ExternalId (%q) — a value "+
+				"computed from public inputs is a constant dressed as a secret", phrase)
 		}
 	}
-	// Distinct characters, as the cheapest check that it is not a repeated byte.
-	distinct := map[rune]bool{}
-	for _, c := range body {
-		distinct[c] = true
+	// The instruction must be to generate it locally, not to accept one. The grantor is
+	// the party bearing the risk, which is the whole reason generation was inverted.
+	if !strings.Contains(s, "Generate it yourself") && !strings.Contains(s, "you choose that value") {
+		t.Errorf("the README does not tell the reader the value is theirs to choose, so nothing " +
+			"stops them using one the requester sent")
 	}
-	if len(distinct) < 8 {
-		t.Errorf("the ExternalId body %q has only %d distinct characters", body, len(distinct))
-	}
+	_ = r
 }
 
 // TestEveryDelegationPolicySidIsPrefixed backs a claim the README makes in its

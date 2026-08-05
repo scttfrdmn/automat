@@ -101,6 +101,26 @@ func VendorRoleCFN(r *Request) ([]byte, error) {
 		w("# template while the placeholder remains, so this cannot be forgotten silently.\n")
 	}
 	w("\n")
+	// The ExternalId is a NoEcho parameter, not a literal. Central IT generates the
+	// value at deploy time and tells the requester out of band; the bundle never
+	// carries it. See the Parameters block's own comment for why this is a mechanism
+	// rather than the paragraph it replaced.
+	w("Parameters:\n")
+	w("  AutomatExternalId:\n")
+	w("    Type: String\n")
+	w("    NoEcho: true\n")
+	w("    MinLength: %d\n", minExternalIDChars)
+	w("    MaxLength: %d\n", maxExternalIDChars)
+	w("    AllowedPattern: '%s'\n", externalIDPattern)
+	w("    Description: >-\n")
+	w("      The shared secret this role will require in sts:AssumeRole. Generate it\n")
+	w("      yourself — do not let anyone send you one — and give it to the requester over\n")
+	w("      a channel you would use for a password. Suggested: openssl rand -hex 24.\n")
+	w("      NoEcho keeps it out of the CloudFormation console, events, and describe\n")
+	w("      output. It is not a password: it stops a third party who learns this role's\n")
+	w("      ARN from assuming it, and it does not defend against compromised credentials\n")
+	w("      in account %s.\n", r.MemberAccountID)
+	w("\n")
 	w("Resources:\n")
 	w("  AutomatVendorRole:\n")
 	w("    Type: AWS::IAM::Role\n")
@@ -127,8 +147,10 @@ func VendorRoleCFN(r *Request) ([]byte, error) {
 	w("            Condition:\n")
 	w("              StringEquals:\n")
 	// The confused-deputy defense. Without it, any account that learns the role
-	// ARN could assume it; with it, only a caller told the ExternalId can.
-	w("                sts:ExternalId: '%s'\n", r.ExternalID)
+	// ARN could assume it; with it, only a caller told the ExternalId can. A Ref to
+	// the NoEcho parameter rather than a literal: the value is chosen by whoever
+	// deploys this and never travels in the bundle.
+	w("                sts:ExternalId: !Ref AutomatExternalId\n")
 	w("      Policies:\n")
 	w("        - PolicyName: automat-vend\n")
 	w("          PolicyDocument:\n")
@@ -299,6 +321,42 @@ func VendorRoleTF(r *Request) ([]byte, error) {
 		w("# occurrence of %s below with the real OU id.\n", ou)
 	}
 	w("\n")
+	// sensitive = true keeps the value out of `terraform plan` output and the CLI's
+	// diff. It does NOT keep it out of the state file — nothing can, since the trust
+	// policy is part of the resource — which is why the description says so rather
+	// than letting `sensitive` imply more than it delivers.
+	w("variable \"automat_external_id\" {\n")
+	w("  type      = string\n")
+	w("  sensitive = true\n")
+	w("  nullable  = false\n")
+	w("  description = <<-EOT\n")
+	w("    The shared secret this role will require in sts:AssumeRole. Generate it\n")
+	w("    yourself -- do not let anyone send you one -- and give it to the requester over\n")
+	w("    a channel you would use for a password. Suggested: openssl rand -hex 24.\n")
+	w("\n")
+	w("    sensitive = true keeps this out of plan output; it does not keep it out of\n")
+	w("    Terraform state, which will contain the trust policy. Treat the state file\n")
+	w("    accordingly -- that is true of it already.\n")
+	w("\n")
+	w("    It is not a password: it stops a third party who learns this role's ARN from\n")
+	w("    assuming it, and it does not defend against compromised credentials in\n")
+	w("    account %s.\n", r.MemberAccountID)
+	w("  EOT\n")
+	w("\n")
+	w("  validation {\n")
+	w("    condition     = can(regex(\"^%s$\", var.automat_external_id))\n", externalIDPattern)
+	w("    error_message = \"Must use only the characters AWS accepts in an ExternalId.\"\n")
+	w("  }\n")
+	w("  validation {\n")
+	w("    condition = (\n")
+	w("      length(var.automat_external_id) >= %d && length(var.automat_external_id) <= %d\n",
+		minExternalIDChars, maxExternalIDChars)
+	w("    )\n")
+	w("    error_message = \"Must be %d-%d characters. Shorter is guessable.\"\n",
+		minExternalIDChars, maxExternalIDChars)
+	w("  }\n")
+	w("}\n")
+	w("\n")
 	w("data \"aws_partition\" \"current\" {}\n")
 	w("data \"aws_caller_identity\" \"management\" {}\n")
 	w("\n")
@@ -329,9 +387,11 @@ func VendorRoleTF(r *Request) ([]byte, error) {
 	w("      Principal = { AWS = \"%s\" }\n", r.trustPrincipal())
 	w("      Action    = \"sts:AssumeRole\"\n")
 	w("      # The confused-deputy defense: without this condition any account that\n")
-	w("      # learns the role ARN could assume it.\n")
+	w("      # learns the role ARN could assume it. A var reference rather than a\n")
+	w("      # literal -- the value is chosen by whoever applies this and is never\n")
+	w("      # carried in the bundle.\n")
 	w("      Condition = {\n")
-	w("        StringEquals = { \"sts:ExternalId\" = \"%s\" }\n", r.ExternalID)
+	w("        StringEquals = { \"sts:ExternalId\" = var.automat_external_id }\n")
 	w("      }\n")
 	w("    }]\n")
 	w("  })\n")

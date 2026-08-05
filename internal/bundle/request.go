@@ -58,9 +58,9 @@ type Request struct {
 	// VendorRoleName is the role to create in the management account.
 	VendorRoleName string
 
-	// ExternalID is the value the trust policy will require and the member
-	// account must send. See the note on Validate about why it is in the bundle.
-	ExternalID string
+	// There is no ExternalID field, and its absence is the point: the templates
+	// declare the value as a deploy-time input, so it never enters a Request and
+	// cannot reach a rendered file. See externalid.go.
 
 	// RequesterContact is the address central IT replies to. One address, shape-
 	// validated, because it is rendered into the README.
@@ -113,11 +113,6 @@ var (
 	// not the same shape. Case-insensitive: "OU-abcd-12345678" is the same
 	// confusion typed differently.
 	reIDShaped = regexp.MustCompile(`(?i)^(?:ou-|o-|r-)|^\d+$`)
-	// Stricter than AWS's ExternalId charset (which includes / and spaces) and
-	// with a 16-character floor: an ExternalId's only property is being
-	// unguessable, so one short enough to guess is worse than none, because it
-	// looks like a control.
-	reExternalID = regexp.MustCompile(`^[A-Za-z0-9_+=,.@:-]{16,128}$`)
 	// No `%`, though RFC 5321 permits it in a local part. Two reasons, and the
 	// second is the real one: `%` carries the old percent-hop relay syntax, and a
 	// `%` in a value is one refactor away from being read as a printf verb if this
@@ -161,15 +156,12 @@ func arnAccount(arn string) (string, bool) {
 // unvalidated. Errors name the field and the accepted form, because the operator
 // hitting this is usually looking at a config file they typed by hand.
 //
-// # On the ExternalId being in the bundle
+// # Nothing here validates an ExternalId
 //
-// The trust policy central IT applies must require the same ExternalId the member
-// account sends, so one of them has to transmit it. automat puts it in the bundle
-// and says so: the alternative — a placeholder both sides fill in — reliably
-// produces an ExternalId of "automat", which is not a confused-deputy defense at
-// all. The bundle is therefore written owner-only and the README states plainly
-// what it contains. This is a documented trade, not an oversight; see
-// audits/AUDIT-1.md.
+// There is no field to validate. The templates declare the value as a deploy-time
+// input and the person deploying supplies it, so the checks that used to live here —
+// charset, length, the placeholder corpus — moved to internal/config, which is where
+// automat resolves a value it did not choose. See externalid.go.
 func (r *Request) Validate() error {
 	var problems []string
 	check := func(field, value string, re *regexp.Regexp, want string) {
@@ -184,34 +176,6 @@ func (r *Request) Validate() error {
 	check("org_id", r.OrgID, reOrgID, "use the o-... form from `automat preflight`")
 	check("vendor_role_name", r.VendorRoleName, reRoleName,
 		"an IAM role name may contain letters, digits, and _+=,.@- and is at most 64 characters")
-	// Redacted rather than quoted, unlike every other field here. The others are
-	// account ids, OU ids, ARNs, and an email — the README says none of them is
-	// secret, and it is right. This one is the ExternalId, and the value reaching
-	// this branch is most likely a *working* one: AWS permits `/` and a space and
-	// this package deliberately does not, so an operator pasting a value from an
-	// existing trust policy lands here and would have it printed back at them, into
-	// a terminal, a scrollback buffer, or a CI transcript.
-	if !reExternalID.MatchString(r.ExternalID) {
-		problems = append(problems, fmt.Sprintf("external_id: %s is not accepted — use 16 to 128 "+
-			"characters of letters, digits, and _+=,.@:- ; automat generates one for you, and the "+
-			"value is not shown here because it may be a live one. AWS itself permits `/` and spaces; "+
-			"automat does not, so a value from an existing trust policy may be rejected here",
-			redactExternalID(r.ExternalID)))
-	} else if reason, weak := weakExternalID(r.ExternalID); weak {
-		// Length and charset are satisfied and the value is still not a secret:
-		// "0000000000000000" and "password12345678" both passed before this. An
-		// ExternalId's only property is being unguessable, so one of these is worse
-		// than none at all — it puts a condition in the trust policy that reviews as
-		// a control and is not one.
-		//
-		// The reason is printed, the value is not: see redactExternalID. Note this
-		// says nothing about a value that passes; see weakExternalID.
-		problems = append(problems, fmt.Sprintf("external_id: the value given is not usable "+
-			"because %s. An ExternalId's only job is to be a value a third party who knows the "+
-			"role ARN was never told, so a guessable one leaves the confused-deputy condition in "+
-			"the trust policy looking like a control while being none. Drop --external-id and let "+
-			"automat generate one", reason))
-	}
 	check("requester_contact", r.RequesterContact, reEmail, "use one email address")
 	check("generated_at", r.GeneratedAt, reTimestamp, "use RFC 3339 UTC to the second, e.g. 2026-08-05T14:00:00Z")
 	check("tool_version", r.ToolVersion, reVersion, "use the value `automat version` prints")
@@ -329,55 +293,6 @@ func plural(word string, n int) string {
 		return word
 	}
 	return word + "s"
-}
-
-// redactExternalID describes a rejected ExternalId without reproducing it.
-//
-// It reports the length and the character classes present, which is what an
-// operator needs to find their own typo — a trailing newline, a stray space, a
-// pasted quote — without the value itself appearing anywhere. The length is safe
-// to disclose: it is bounded by the pattern in the first place and knowing it does
-// not help guess a 160-bit value.
-func redactExternalID(v string) string {
-	if v == "" {
-		return "an empty external_id"
-	}
-	var hasSpace, hasControl, hasOther bool
-	for _, b := range []byte(v) {
-		switch {
-		case b == ' ' || b == '\t':
-			hasSpace = true
-		case b < 0x20 || b == 0x7f:
-			hasControl = true
-		case !isAllowedExternalIDByte(b):
-			hasOther = true
-		}
-	}
-	notes := make([]string, 0, 3)
-	if hasSpace {
-		notes = append(notes, "contains a space or tab")
-	}
-	if hasControl {
-		notes = append(notes, "contains a control character, likely a stray newline")
-	}
-	if hasOther {
-		notes = append(notes, "contains a character outside the accepted set")
-	}
-	if len(notes) == 0 {
-		return fmt.Sprintf("the %d-character value given", len(v))
-	}
-	return fmt.Sprintf("the %d-character value given (it %s)", len(v), strings.Join(notes, "; it "))
-}
-
-// isAllowedExternalIDByte mirrors reExternalID's character class. It is a separate
-// function rather than a second regex so the two cannot describe different sets:
-// the test asserts they agree byte for byte.
-func isAllowedExternalIDByte(b byte) bool {
-	switch {
-	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z', b >= '0' && b <= '9':
-		return true
-	}
-	return strings.IndexByte("_+=,.@:-", b) >= 0
 }
 
 // quote renders a rejected value for an error message with %q, so a value

@@ -74,7 +74,9 @@ This is the section worth your ten minutes.
   so every account it creates is attributable to this request in your own
   CloudTrail. An attempt to create one without those tags fails.
 - **It cannot be used by anyone else.** The role's trust policy names exactly one
-  principal and requires an `sts:ExternalId`. Knowing the role ARN is not enough.
+  principal and requires an `sts:ExternalId` — a value *you* generate at deploy
+  time and hand to the requester out of band, not one this bundle carries. Knowing
+  the role ARN is not enough.
 - **It cannot close, suspend, or remove an account** — none of those actions appear
   in either file. Nor can it enable or disable an AWS service, change billing, or
   read anything *inside* any account: no S3 object, no database, no log. What it
@@ -161,7 +163,9 @@ realistic ask, which is the point of scoping it this way.
      admits `automat:vended-by`, which is the tag the `MoveAccount` statement in
      the same file checks.
 3. The role's `AssumeRolePolicyDocument`: confirm the principal, and that the
-   `sts:ExternalId` condition is present.
+   `sts:ExternalId` condition is present and reads the deploy-time input rather
+   than a hardcoded value — `!Ref AutomatExternalId`, or `var.automat_external_id`.
+   A literal there would be a value the requester chose for you.
 4. The role's inline policy: confirm no `organizations:*Policy` action appears in
    it at all. Policy permissions belong to the other file.
 5. `MoveAccount`: the OU resources are this subtree rather than `*`, **and** the
@@ -195,18 +199,30 @@ realistic ask, which is the point of scoping it this way.
    existing document by hand and put the combined result instead — the `Sid`s in
    `delegation-policy.json` are all prefixed `Automat` so they cannot collide with
    yours.
-2. Create the role, from the management account:
+2. Create the role, from the management account. **Generate the ExternalId first** —
+   see the section below; it is the one value you supply and the one the requester
+   cannot choose for you.
 
    ```
+   EXTERNAL_ID=$(openssl rand -hex 24)
+
    aws cloudformation deploy \
      --template-file vendor-role.cfn.yaml \
      --stack-name automat-vendor-role \
-     --capabilities CAPABILITY_NAMED_IAM
+     --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides AutomatExternalId="$EXTERNAL_ID"
    ```
 
-   Or `terraform apply` with `vendor-role.tf`. The two are equivalent; deploy one.
+   Or, equivalently, with `vendor-role.tf`:
+
+   ```
+   TF_VAR_automat_external_id=$(openssl rand -hex 24) terraform apply
+   ```
+
+   Deploy one, not both. Either way, keep the value: step 3 sends it, separately.
 3. Reply to research-it@example.edu with the role ARN, which is
    `arn:aws:iam::111111111111:role/automat-vendor-research` unless you renamed it, and the OU id you created.
+   **Send the ExternalId separately**, over a channel you would use for a password.
 
 The requester then runs `automat preflight`, which re-checks all of this from their
 side and reports what is still missing. Nothing in this bundle needs to be right
@@ -221,18 +237,31 @@ runs automat and substitute it for `arn:aws:iam::222222222222:root` in the trust
 policy and in `delegation-policy.json`. automat supports this and recommends it;
 the requester can regenerate the bundle that way.
 
+## The one value you generate: the ExternalId
+
+**This bundle contains no secret.** Every value in it is an account id, an OU id,
+an ARN, a role name, or an email address. Forward it or attach it to a ticket
+without ceremony; it is not worth committing, since every file is regenerable
+and they name your accounts and a contact (hence the `.gitignore`).
+
+The role's trust policy requires an `sts:ExternalId`, and **you choose that value,
+not the requester.** Both templates declare it as an input rather than a literal:
+a `NoEcho` parameter in `vendor-role.cfn.yaml`, a `sensitive` variable in `vendor-role.tf`.
+
+1. Generate it: `openssl rand -hex 24`.
+2. Pass it at deploy time — `--parameter-overrides AutomatExternalId=<value>`, or
+   `-var automat_external_id=<value>`.
+3. **Send it to research-it@example.edu out of band** — a channel you would use for a
+   password, not this bundle and not the same email. The requester configures the
+   same value on their side; automat resolves it at assume time and never stores it.
+
+Do not accept an ExternalId from the requester, or from anyone else. It exists to
+prove that a caller of `sts:AssumeRole` is the account you meant to trust, so a
+value someone else picked is a defense you have delegated to them. It is not a
+password: it stops a third party who learns this role's ARN from assuming it, and
+it does nothing against an attacker who already has credentials in account 222222222222.
+
 ## About this file
-
-**This bundle contains a live `sts:ExternalId`** (in the trust policy in both role
-templates). It is not a password — it defends the role against being assumed by a
-third party that learns its ARN, and it does nothing if an attacker already has
-credentials in account 222222222222. But it is only useful while it is not widely known:
-send this bundle the way you would send any internal configuration, and do not
-commit it to a public repository. Both sides must configure the same value, which
-is why it is written here rather than left as a placeholder for each side to invent
-separately.
-
-Every other value here is an account id, an OU id, or an ARN — none is secret.
 
 This bundle was generated mechanically from the requester's configuration. Every
 value in it is an identifier — an account id, an OU id, an ARN, a role name, an

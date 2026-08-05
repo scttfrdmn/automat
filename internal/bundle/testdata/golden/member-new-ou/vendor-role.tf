@@ -7,6 +7,36 @@
 # BEFORE APPLYING: create the organizational unit, then replace every
 # occurrence of ou-REPLACE-WITH-THE-NEW-OU-ID below with the real OU id.
 
+variable "automat_external_id" {
+  type      = string
+  sensitive = true
+  nullable  = false
+  description = <<-EOT
+    The shared secret this role will require in sts:AssumeRole. Generate it
+    yourself -- do not let anyone send you one -- and give it to the requester over
+    a channel you would use for a password. Suggested: openssl rand -hex 24.
+
+    sensitive = true keeps this out of plan output; it does not keep it out of
+    Terraform state, which will contain the trust policy. Treat the state file
+    accordingly -- that is true of it already.
+
+    It is not a password: it stops a third party who learns this role's ARN from
+    assuming it, and it does not defend against compromised credentials in
+    account 222222222222.
+  EOT
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9+=,.@:/_-]+$", var.automat_external_id))
+    error_message = "Must use only the characters AWS accepts in an ExternalId."
+  }
+  validation {
+    condition = (
+      length(var.automat_external_id) >= 16 && length(var.automat_external_id) <= 1224
+    )
+    error_message = "Must be 16-1224 characters. Shorter is guessable."
+  }
+}
+
 data "aws_partition" "current" {}
 data "aws_caller_identity" "management" {}
 
@@ -34,9 +64,11 @@ resource "aws_iam_role" "automat_vendor" {
       Principal = { AWS = "arn:aws:iam::222222222222:root" }
       Action    = "sts:AssumeRole"
       # The confused-deputy defense: without this condition any account that
-      # learns the role ARN could assume it.
+      # learns the role ARN could assume it. A var reference rather than a
+      # literal -- the value is chosen by whoever applies this and is never
+      # carried in the bundle.
       Condition = {
-        StringEquals = { "sts:ExternalId" = "EXAMPLE-NOT-A-REAL-EXTERNAL-ID" }
+        StringEquals = { "sts:ExternalId" = var.automat_external_id }
       }
     }]
   })

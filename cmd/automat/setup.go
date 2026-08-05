@@ -33,7 +33,6 @@ func newSetupCmd(g *globals) *cobra.Command {
 		memberRole string
 		roleName   string
 		contact    string
-		externalID string
 		outDir     string
 		dryRun     bool
 		force      bool
@@ -76,17 +75,10 @@ func newSetupCmd(g *globals) *cobra.Command {
 				targetOU = orgCtx.OU
 			}
 
-			// The ExternalId is generated unless the operator is regenerating a
-			// bundle for a role that already exists with one. Both cases are real:
-			// a fresh request needs a new value, and a re-send must not silently
-			// change the value the deployed trust policy checks.
-			if externalID == "" {
-				externalID, err = bundle.NewExternalID()
-				if err != nil {
-					return err
-				}
-			}
-
+			// No ExternalId is generated here, and there is no flag to supply one.
+			// The templates declare it as a deploy-time input, so the management
+			// account chooses it and tells the requester out of band. automat sees
+			// it only later, through external_id_ref at assume time.
 			req := &bundle.Request{
 				MemberAccountID:     memberAcct,
 				MemberRoleARN:       memberRole,
@@ -95,7 +87,6 @@ func newSetupCmd(g *globals) *cobra.Command {
 				TargetOU:            targetOU,
 				TargetOUName:        ouName,
 				VendorRoleName:      roleName,
-				ExternalID:          externalID,
 				RequesterContact:    contact,
 				// Truncated to the second and forced to UTC: a bundle is a
 				// document two organizations compare, and a local-time stamp in
@@ -158,14 +149,11 @@ func newSetupCmd(g *globals) *cobra.Command {
 	f.StringVar(&roleName, "vendor-role-name", "automat-vendor",
 		"name for the role to create in the management account")
 	f.StringVar(&contact, "contact", "", "address central IT should reply to")
-	// The help text says "reuse", not "set", and names the only case. automat cannot
-	// measure whether a supplied value is unguessable -- that is the value's whole
-	// job and no computation reveals it -- so the wording has to steer rather than
-	// reassure. Obvious placeholders are refused by Request.Validate; anything past
-	// that is the operator's word.
-	f.StringVar(&externalID, "external-id", "",
-		"reuse the ExternalId an existing role already trusts (only when re-sending a bundle for "+
-			"a deployed role; otherwise omit this and let automat generate one)")
+	// There is deliberately no --external-id. The flag existed when automat generated
+	// the value and wrote it into the bundle, which made the requester the party
+	// choosing the management account's confused-deputy defense. The templates now take
+	// it as a deploy-time input, so there is nothing for this command to supply: a flag
+	// here could only put the value back into a file that is meant not to carry one.
 	f.StringVar(&outDir, "out", "automat-onboarding", "directory to write the bundle into")
 	f.BoolVar(&dryRun, "dry-run", false, "print what would be written and stop")
 	f.BoolVar(&force, "force", false, "overwrite files that were edited by hand")
@@ -184,14 +172,17 @@ func nextSteps(req *bundle.Request, res *bundle.Result) string {
 		b.WriteString("  " + bundle.FileOU + " asks them to create the OU first — the bundle " +
 			"names a placeholder until they do.\n")
 	}
-	// The ExternalId is in the bundle by necessity (both sides must agree on it),
-	// and the README discloses that. What the operator needs here is the fact that
-	// they now hold a value they will have to configure on their own side.
-	b.WriteString("\nThe bundle contains the ExternalId both sides must use. It is in " +
-		bundle.FileRoleCFN + "\nand " + bundle.FileRoleTF +
-		"; set `external_id_ref` in your config to point at wherever\nyou keep it — " +
-		"automat resolves it at assume time and never stores the value itself.\n")
-	b.WriteString("\nWhen they reply with the role ARN, run `automat preflight` to check it from " +
-		"this side.\n")
+	// The operator's most likely wrong assumption at this moment is that the bundle
+	// contains everything both sides need. It does not, on purpose, and the value it
+	// leaves out is the one that makes assuming the role work — so an operator who is
+	// not told this discovers it as an opaque AccessDenied from STS.
+	b.WriteString("\nThe bundle contains no secret; you can send it however you like.\n")
+	b.WriteString("The ExternalId is not in it: whoever deploys the role generates that value\n" +
+		"and sends it to you separately. When it arrives, keep it outside the config file\n" +
+		"and set `external_id_ref` to point at it (`env:AUTOMAT_EXTERNAL_ID`, or\n" +
+		"`file:~/.config/automat/external-id`) — automat resolves it at assume time and\n" +
+		"never stores the value itself.\n")
+	b.WriteString("\nWhen they reply with the role ARN and the ExternalId, run `automat preflight` " +
+		"to\ncheck it from this side.\n")
 	return b.String()
 }
