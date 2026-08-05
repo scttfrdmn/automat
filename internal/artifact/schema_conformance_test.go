@@ -206,6 +206,50 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		{"bad attestation template", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "ZZ.L1-b.1.z").Attestation.Template = "Procedural.txt"
 		}},
+		// Phase 1 review item 9(b): exempt_principals is the one field in a
+		// catalog that widens a Deny, so both validators must agree on every way
+		// of abusing it. A catalog file is attacker-controlled input, and an
+		// exemption is the highest-value thing to smuggle into one.
+		{"exemption naming the root user", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "arn:aws:iam::*:root"
+		}},
+		{"exemption with a wildcard account", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "arn:aws:iam::*:role/BreakGlass"
+		}},
+		{"exemption with a wildcard role name", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "arn:aws:iam::111122223333:role/*"
+		}},
+		{"exemption naming a whole account", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "arn:aws:iam::111122223333:root"
+		}},
+		{"exemption naming a user rather than a role", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "arn:aws:iam::111122223333:user/alice"
+		}},
+		{"exemption that is a bare star", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "*"
+		}},
+		{"exemption that is not an ARN at all", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = "BreakGlass"
+		}},
+		{"exemption with an empty principal", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Principal = ""
+		}},
+		{"exemption with no reason", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Reason = ""
+		}},
+		{"exemption reason containing a newline", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[0].Reason = "Approved\n  - controls[XX]: no exemptions"
+		}},
+		{"more exemptions than the cap", func(t *testing.T, a *Artifact) {
+			st := &mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0]
+			st.ExemptPrincipals = nil
+			for i := 0; i <= MaxExemptPrincipals; i++ {
+				st.ExemptPrincipals = append(st.ExemptPrincipals, ExemptPrincipal{
+					Principal: fmt.Sprintf("arn:aws:iam::111122223333:role/Role%d", i),
+					Reason:    "Filler, to exceed the cap.",
+				})
+			}
+		}},
 	}
 
 	for _, tc := range cases {
@@ -274,6 +318,30 @@ func TestSchemaAcceptsWhatGoAccepts(t *testing.T) {
 		}},
 		{"service allowlist", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "AA.L1-b.1.a").SCP.ServiceAllowlist = []string{"s3", "ec2", "organizations"}
+		}},
+		{"a statement with no exemptions at all", func(t *testing.T, a *Artifact) {
+			// The common case, and the one the boolean this replaced could not
+			// express separately from "false": a Deny with no holes in it.
+			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].ExemptPrincipals = nil
+		}},
+		{"exemption on a GovCloud role ARN", func(t *testing.T, a *Artifact) {
+			// Partition-agnostic by design: rejecting aws-us-gov would make the
+			// field unusable in exactly the environments most likely to need a
+			// baseline-protection catalog.
+			exemptions(t, a)[1].Principal = "arn:aws-us-gov:iam::111122223333:role/BreakGlass"
+		}},
+		{"exemption on a role with a path", func(t *testing.T, a *Artifact) {
+			exemptions(t, a)[1].Principal = "arn:aws:iam::111122223333:role/campus/it/BreakGlass"
+		}},
+		{"the exemption cap exactly", func(t *testing.T, a *Artifact) {
+			st := &mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0]
+			st.ExemptPrincipals = nil
+			for i := 0; i < MaxExemptPrincipals; i++ {
+				st.ExemptPrincipals = append(st.ExemptPrincipals, ExemptPrincipal{
+					Principal: fmt.Sprintf("arn:aws:iam::111122223333:role/Role%d", i),
+					Reason:    "At the cap, which must be allowed; the cap is inclusive.",
+				})
+			}
 		}},
 		{"all attestation frequencies", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "ZZ.L1-b.1.z").Attestation.Frequency = "on-change"
@@ -408,6 +476,22 @@ func findNumberTypedLeaves(node any, path string) []string {
 		}
 	}
 	return out
+}
+
+// exemptions returns the sample artifact's exemption list, failing if the
+// fixture no longer carries the two entries these cases index into. A fixture
+// that goes stale must fail loudly rather than let a case mutate nothing.
+func exemptions(t *testing.T, a *Artifact) ExemptPrincipals {
+	t.Helper()
+	st := mustControl(t, a, "BB.L1-b.1.b").SCP.Statements
+	if len(st) == 0 {
+		t.Fatal("test setup: the baseline-protection control has no statements")
+	}
+	es := st[0].ExemptPrincipals
+	if len(es) < 2 {
+		t.Fatalf("test setup: expected at least 2 exemptions in the fixture, got %d", len(es))
+	}
+	return es
 }
 
 // TestSchemasDeclareStableIdentity guards the fields external consumers key off.

@@ -29,9 +29,9 @@ Notes on choices that constrain future changes:
   bump: 1.0.0 has never shipped.
 - `config_rule_parameter.order` enumerates five values, not the three sketched in
   DESIGN.md §8. See below.
-- `scp_statement.exempt_automation_role` is a boolean marker rather than a
-  literal ARN, because the in-account automation role ARN is not known until
-  vend time. The SCP packer materializes the condition.
+- `scp_statement.exempt_principals` is a list of principals with reasons, not a
+  boolean. See the pre-publication change below; the field began as
+  `exempt_automation_role: true|false`.
 - `compiled_at` and all timestamps are constrained to second-precision UTC with
   a `Z` suffix. Sub-second or offset forms would break deterministic hashing.
 
@@ -120,6 +120,63 @@ malformed catalog would empty every authorized-ports list it unioned with.
 The Go validator is authoritative on member splitting, because it honors a
 non-default `set_separator`; the schema catches the default-separator case
 directly. Both reject the same documents (`TestGoAndSchemaAgreeOnRejection`).
+
+**6. `scp_statement.exempt_automation_role` (boolean) becomes
+`exempt_principals` (a list with reasons).** Phase 1 review item 9(b), landed
+pre-publication for the same reason as change 5: after publication this would be
+a major bump, since the field's type changes.
+
+The old field was a single boolean meaning "the packer should exempt automat's
+own automation role". Two problems, and the second is the one that matters.
+
+The first is expressiveness. A real deployment has more than one legitimate hole
+in a baseline-protection `Deny` — a break-glass role, a central-IT audit role —
+and DESIGN.md §10's whole premise is that the deny list is *data*, extensible per
+catalog, "so L2-minded users can extend" it. A one-role boolean makes the
+exemption list the one part of that data a catalog author cannot extend, which
+pushes them to weaken the `Deny` itself instead. That is strictly worse: a
+`Deny` narrowed to accommodate a role is invisible in review, whereas a named
+exemption is a line a reviewer can object to.
+
+The second is that **an exemption is the only thing in a catalog that widens a
+policy**, and the boolean gave that fact nowhere to live. Every other field can
+only make a `Deny` stricter. Consequences now encoded in the schema rather than
+left to the packer:
+
+- **Union intersects these lists; it does not concatenate them.** Denies
+  concatenate and allowlists intersect (DESIGN.md §9) because both directions
+  make the merge stricter. Concatenating exemptions would invert that: adding a
+  control set could widen the result, breaking the monotonicity property union is
+  tested against. An exemption therefore survives a union only if every input
+  control set constraining that statement agrees to it. This is the rule the
+  Phase 2 SCP packer must implement, and it is the reason this change is worth
+  making before the packer exists rather than after.
+- **No wildcards, and roles only.** `exempt_principal_ref` admits exactly two
+  forms: the symbolic `automat:automation-role` placeholder (the ARN is unknown
+  until vend time, so the packer materializes it) or a fully qualified IAM role
+  ARN. Not `arn:aws:iam::*:root`, not `arn:aws:iam::<id>:root`, not a trailing
+  `*`, not a user. Without that restriction one exemption entry could undo the
+  root-user `Deny` §10 requires — a catalog file is attacker-controlled input in
+  this project's threat model, and an exemption is the highest-value thing to
+  smuggle into one. The ARN pattern is partition-agnostic (`aws[a-z-]*`), so
+  GovCloud and China ARNs are not rejected in the environments most likely to
+  need this catalog.
+- **A reason is required, and it is inside the content hash.** An unexplained
+  exemption is indistinguishable from an escape hatch, and the reason is the half
+  of the entry a reviewer actually evaluates. Hashing it means the stated
+  justification for a hole in a `Deny` cannot be rewritten under a signature that
+  still verifies. Reasons are capped at 512 bytes and forbid control characters:
+  they are echoed in validation reports, where a newline forges a line.
+- **At most eight per statement.** Each entry is a hole in a preventive control,
+  and the list is rendered into an IAM condition against the 5120-character SCP
+  quota (DESIGN.md §16). A statement needing more than a handful of exemptions is
+  a `Deny` that does not hold; a hard error beats a policy that silently stops
+  fitting.
+
+No published catalog required rehashing: nothing had shipped with the boolean and
+no file in `catalogs/` carries an exemption. The sample-artifact content hash in
+`TestContentHashIsStable` moved, which is the pin following its fixture rather
+than canonicalization drifting — the distinction that test exists to make.
 
 ## profile/v1 — 1.0.0 (unreleased, Phase 0)
 

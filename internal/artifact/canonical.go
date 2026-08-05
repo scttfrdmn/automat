@@ -130,6 +130,7 @@ func (s *SCP) canonicalize() {
 func (s *SCPStatement) canonicalize() {
 	s.Action = sortedUnique(s.Action)
 	s.Resource = sortedUnique(s.Resource)
+	s.ExemptPrincipals = s.ExemptPrincipals.canonicalize()
 	if len(s.Condition) == 0 {
 		s.Condition = nil
 		return
@@ -146,6 +147,35 @@ func (s *SCPStatement) canonicalize() {
 	if len(s.Condition) == 0 {
 		s.Condition = nil
 	}
+}
+
+// canonicalize sorts the exemption list by principal and drops entries that are
+// duplicates in both fields, the same way sortedUnique treats an action list.
+//
+// It deliberately keeps two entries that name the same principal with different
+// reasons: that is a conflict a human must resolve, and silently picking one
+// would let the artifact hash agree while the two files disagree about why a
+// hole in a Deny exists. Validate rejects it — canonicalization normalizes, it
+// does not adjudicate.
+func (es ExemptPrincipals) canonicalize() ExemptPrincipals {
+	if len(es) == 0 {
+		return nil
+	}
+	seen := make(map[ExemptPrincipal]bool, len(es))
+	out := make(ExemptPrincipals, 0, len(es))
+	for _, e := range es {
+		if !seen[e] {
+			seen[e] = true
+			out = append(out, e)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Principal != out[j].Principal {
+			return out[i].Principal < out[j].Principal
+		}
+		return out[i].Reason < out[j].Reason
+	})
+	return out
 }
 
 func (r *ConfigRule) canonicalize() {

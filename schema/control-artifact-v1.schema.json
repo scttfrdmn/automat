@@ -222,11 +222,43 @@
             }
           }
         },
-        "exempt_automation_role": {
-          "description": "When true, the SCP packer adds a condition exempting automat's in-account automation role, whose ARN is not known until vend time (DESIGN 10).",
-          "type": "boolean"
+        "exempt_principals": {
+          "description": "Principals the SCP packer must exempt from this Deny, each with a reason. An exemption is the one thing in a catalog that WIDENS a policy, so the list is capped, every entry must justify itself, and under union these lists are INTERSECTED, never concatenated (DESIGN 9): an exemption present in only one input control set is not carried into the merged artifact.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/exempt_principal" }
         }
       }
+    },
+
+    "exempt_principal": {
+      "description": "One hole in a Deny, and the reason it exists.",
+      "type": "object",
+      "required": ["principal", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "principal": { "$ref": "#/$defs/exempt_principal_ref" },
+        "reason": {
+          "description": "Why this principal must be exempt. Required because an unexplained exemption is indistinguishable from one added to create an escape hatch, and the reviewer of a baseline-protection catalog is reading for exactly that.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+        }
+      }
+    },
+
+    "exempt_principal_ref": {
+      "description": "Either the symbolic token for automat's own in-account automation role, whose ARN is not known until vend time and which the packer materializes, or a literal IAM role ARN a catalog author supplies. Only these two forms: the ARN pattern admits no wildcard and no principal type other than role, so neither a whole account nor the root user can be exempted — which is what keeps the root-user Deny in DESIGN 10 from being undone by an exemption entry.",
+      "type": "string",
+      "oneOf": [
+        { "const": "automat:automation-role" },
+        {
+          "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9_+=,.@-](?:[A-Za-z0-9_+=,.@/-]{0,510}[A-Za-z0-9_+=,.@-])?$"
+        }
+      ]
     },
 
     "config_rule": {

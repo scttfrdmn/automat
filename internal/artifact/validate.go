@@ -102,6 +102,18 @@ var (
 	reService    = regexp.MustCompile(`^[a-z0-9-]+$`)
 	reSid        = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 	reTemplate   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.md$`)
+	// An exempt principal must be a specific IAM role in a specific account. No
+	// wildcard anywhere, and no principal type but role: an exemption is a hole
+	// in a preventive Deny, so `arn:aws:iam::*:root` or a trailing `*` would let
+	// one catalog entry undo the root-user Deny that DESIGN §10 requires.
+	// Deliberately the same shape as internal/bundle's reRoleARN, and partition-
+	// agnostic (`aws[a-z-]*`) so GovCloud and China ARNs are not silently
+	// rejected.
+	reExemptRoleARN = regexp.MustCompile(`^arn:aws[a-z-]*:iam::\d{12}:role/[A-Za-z0-9_+=,.@-]` +
+		`(?:[A-Za-z0-9_+=,.@/-]{0,510}[A-Za-z0-9_+=,.@-])?$`)
+	// Reasons are printed back in validation reports and rendered into policy
+	// comments. A control byte in one forges a line of that report; see safe().
+	reNoControlBytes = regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`)
 )
 
 // Validate checks the artifact against the schema's constraints and returns a
@@ -337,6 +349,8 @@ func (s *SCP) validate(p *problems, path string) {
 		if len(st.Action) == 0 {
 			p.add(spath+".action", "missing", "list the actions this statement covers")
 		}
+		st.ExemptPrincipals.validate(p, spath+".exempt_principals")
+
 		for op, keys := range st.Condition {
 			if op == "" {
 				p.add(spath+".condition", "has an empty condition operator", "use an IAM operator, e.g. \"StringNotEquals\"")
@@ -364,6 +378,74 @@ func (s *SCP) validate(p *problems, path string) {
 		if !reService.MatchString(sv) {
 			p.add(fmt.Sprintf("%s.service_allowlist[%d]", path, i), fmt.Sprintf("%q is not a service namespace", sv),
 				"use IAM service namespaces like s3, ec2, or organizations")
+		}
+	}
+}
+
+// validate checks a statement's exemption list.
+//
+// This is the strictest validator in the package, and deliberately so: every
+// other field in a catalog can only make a Deny narrower, while an entry here
+// makes it wider. A catalog file is attacker-controlled input in the threat
+// model, so an exemption is the single highest-value thing to smuggle into one.
+func (es ExemptPrincipals) validate(p *problems, path string) {
+	if len(es) == 0 {
+		return
+	}
+	if len(es) > MaxExemptPrincipals {
+		p.add(path, fmt.Sprintf("has %d entries, more than the %d allowed", len(es), MaxExemptPrincipals),
+			fmt.Sprintf("keep exemptions to at most %d per statement; each one is a hole in a preventive "+
+				"control and they are rendered into an IAM condition with a 5120-character policy budget "+
+				"(DESIGN §16) — a Deny needing more than a handful of exemptions is a Deny that does not hold",
+				MaxExemptPrincipals))
+	}
+	// Keyed by principal, not by whole entry: canonicalize already drops entries
+	// identical in both fields, so a duplicate that survives to here names the
+	// same principal with a different reason. That is a conflict about *why* a
+	// hole exists, and picking one silently would let two files disagree while
+	// the artifact hash agrees.
+	first := make(map[string]int, len(es))
+	for i, e := range es {
+		epath := fmt.Sprintf("%s[%d]", path, i)
+		switch {
+		case e.Principal == "":
+			p.add(epath+".principal", "missing",
+				"name the principal to exempt: either \""+AutomationRolePlaceholder+
+					"\" for automat's own in-account automation role, or a literal IAM role ARN")
+		case e.Principal == AutomationRolePlaceholder:
+			// The symbolic form. The packer substitutes the real ARN at vend time,
+			// because it is not known until the role exists.
+		case reExemptRoleARN.MatchString(e.Principal):
+			// A literal role ARN, fully qualified.
+		default:
+			p.add(epath+".principal", fmt.Sprintf("%s is not an exemptable principal", safe(e.Principal)),
+				"use \""+AutomationRolePlaceholder+"\" or a specific IAM role ARN like "+
+					"arn:aws:iam::111122223333:role/BreakGlass. No wildcards and no other principal type: "+
+					"an exemption is a hole in a preventive Deny, so a value like arn:aws:iam::*:root would "+
+					"undo the root-user Deny this control set exists to apply (DESIGN §10)")
+		}
+		if prev, dup := first[e.Principal]; dup && e.Principal != "" {
+			p.add(epath+".principal", fmt.Sprintf("%s is already exempted at %s[%d] with a different reason",
+				safe(e.Principal), path, prev),
+				"one entry per principal: two reasons for the same hole means the catalogs disagree about "+
+					"why it exists, and this validator will not choose for you")
+		} else if e.Principal != "" {
+			first[e.Principal] = i
+		}
+
+		switch {
+		case e.Reason == "":
+			p.add(epath+".reason", "missing",
+				"state why this principal must be exempt; an unexplained exemption is indistinguishable "+
+					"from an escape hatch, and it is what a reviewer of this catalog is reading for")
+		case !reNoControlBytes.MatchString(e.Reason):
+			p.add(epath+".reason", "contains a control character",
+				"use printable text; reasons are echoed in validation reports and rendered beside the "+
+					"policy, where a newline forges a line of the report")
+		case len(e.Reason) > 512:
+			p.add(epath+".reason", fmt.Sprintf("is %d bytes, over the 512-byte limit", len(e.Reason)),
+				"state the reason in one line; the full justification belongs in the catalog's review, "+
+					"not in a field rendered into a size-capped policy")
 		}
 	}
 }

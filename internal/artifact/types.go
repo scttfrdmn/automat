@@ -234,11 +234,60 @@ type SCPStatement struct {
 	Action    []string  `json:"action"`
 	Resource  []string  `json:"resource,omitempty"`
 	Condition Condition `json:"condition,omitempty"`
-	// ExemptAutomationRole marks statements the packer must condition so they
-	// do not lock out automat's own in-account automation role. The role ARN is
-	// not known until vend time, hence a marker rather than a literal ARN.
-	ExemptAutomationRole bool `json:"exempt_automation_role,omitempty"`
+	// ExemptPrincipals are the principals the packer must exempt from this
+	// Deny. A list rather than the single boolean this replaced: a real
+	// deployment has more than one legitimate hole in a baseline-protection
+	// Deny (a break-glass role, a central-IT audit role), and a catalog that
+	// cannot name them forces the operator to weaken the Deny itself instead.
+	//
+	// This is the one field in a catalog that widens a policy, so it is the one
+	// field whose union rule is intersection rather than concatenation: see
+	// ExemptPrincipals.
+	ExemptPrincipals ExemptPrincipals `json:"exempt_principals,omitempty"`
 }
+
+// ExemptPrincipals is a statement's exemption list.
+//
+// Under union these lists are INTERSECTED, not concatenated. Every other field
+// in an SCP fragment gets stricter as control sets merge; an exemption is the
+// only thing that gets *looser*, so concatenating them would let adding a
+// control set widen the result — the exact direction DESIGN §9's monotonicity
+// property forbids. Intersecting means an exemption survives only if every
+// control set that constrains the statement agrees to it.
+type ExemptPrincipals []ExemptPrincipal
+
+// ExemptPrincipal is one hole in a Deny, with the reason it exists.
+type ExemptPrincipal struct {
+	// Principal is either AutomationRolePlaceholder or a literal IAM role ARN.
+	Principal string `json:"principal"`
+	// Reason says why this principal must be exempt. Required: an unexplained
+	// exemption is indistinguishable from an escape hatch, and a reviewer of a
+	// baseline-protection catalog is reading for precisely that.
+	Reason string `json:"reason"`
+}
+
+// AutomationRolePlaceholder stands for automat's own in-account automation role,
+// whose ARN is not known until vend time. The packer materializes it; a catalog
+// author writes the placeholder.
+//
+// Named "placeholder" rather than "token" because gosec's G101 reads a constant
+// named *Token holding a string literal as a hardcoded credential. It was a
+// false positive, but the accurate word costs nothing and a //nolint here would
+// be one more suppression a future auditor has to re-triage.
+const AutomationRolePlaceholder = "automat:automation-role"
+
+// MaxExemptPrincipals caps a statement's exemption list.
+//
+// Not an arbitrary limit: each entry is a hole in a preventive control, the list
+// is rendered into an IAM condition with a per-policy character budget (DESIGN
+// §16's 5120-character SCP quota), and a catalog needing more than a handful of
+// exemptions is describing a Deny that does not hold. A hard error is better
+// than a policy that silently stops fitting.
+const MaxExemptPrincipals = 8
+
+// IsAutomationRole reports whether the entry is the symbolic automation-role
+// token rather than a literal ARN.
+func (e ExemptPrincipal) IsAutomationRole() bool { return e.Principal == AutomationRolePlaceholder }
 
 // Condition is an IAM condition block: operator -> condition key -> values.
 //

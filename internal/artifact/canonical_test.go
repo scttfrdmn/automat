@@ -90,11 +90,14 @@ func unhashedSampleArtifact() *Artifact {
 				Title:       "Baseline protection control",
 				Enforcement: []EnforcementClass{EnforcementBaselineProtection},
 				SCP: &SCP{Statements: []SCPStatement{{
-					Sid:                  "ProtectRecorder",
-					Effect:               "Deny",
-					Action:               []string{"config:StopConfigurationRecorder"},
-					Resource:             []string{"*"},
-					ExemptAutomationRole: true,
+					Sid:      "ProtectRecorder",
+					Effect:   "Deny",
+					Action:   []string{"config:StopConfigurationRecorder"},
+					Resource: []string{"*"},
+					ExemptPrincipals: ExemptPrincipals{
+						{Principal: AutomationRolePlaceholder, Reason: "automat's own baseline apply must be able to configure the recorder."},
+						{Principal: "arn:aws:iam::111122223333:role/BreakGlass", Reason: "Exercises the literal-ARN form alongside the placeholder."},
+					},
 				}}},
 			},
 		},
@@ -249,8 +252,29 @@ func TestContentHashChangesWithControls(t *testing.T) {
 			c.Attestation = nil
 			c.ConfigRules = []ConfigRule{{Identifier: "SOME_RULE"}}
 		},
-		"toggle automation-role exemption": func(t *testing.T, a *Artifact) {
-			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].ExemptAutomationRole = false
+		"drop an exemption": func(t *testing.T, a *Artifact) {
+			st := &mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0]
+			st.ExemptPrincipals = st.ExemptPrincipals[:1]
+		},
+		"add an exemption": func(t *testing.T, a *Artifact) {
+			st := &mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0]
+			st.ExemptPrincipals = append(st.ExemptPrincipals, ExemptPrincipal{
+				Principal: "arn:aws:iam::111122223333:role/Auditor",
+				Reason:    "A third principal, so the hash must move.",
+			})
+		},
+		"change an exempted principal": func(t *testing.T, a *Artifact) {
+			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].
+				ExemptPrincipals[1].Principal = "arn:aws:iam::111122223333:role/SomeoneElse"
+		},
+		// The reason is part of the hash, not annotation. Two artifacts that
+		// exempt the same principals for different stated reasons are different
+		// artifacts: the reason is the reviewable half of an exemption, and a
+		// hash that ignored it would let the justification be rewritten under a
+		// signature that still verified.
+		"change an exemption reason": func(t *testing.T, a *Artifact) {
+			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].
+				ExemptPrincipals[0].Reason = "A different reason for the same hole."
 		},
 		"change crosswalk": func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "AA.L1-b.1.a").Crosswalk["800-171r3"] = "03.01.01"
@@ -280,7 +304,21 @@ func TestContentHashIsStable(t *testing.T) {
 	// every previously written tag, SCP tag, and evidence record that names an
 	// artifact hash is now unverifiable. Treat a diff here as a schema-breaking
 	// change requiring a version bump and a note in schema/CHANGELOG.md.
-	const want = "9d80614faf8540914d658edc41027f657d7074273d9d462bb98d422fdadaa96d"
+	//
+	// Moved from 9d80614f… when exempt_automation_role became exempt_principals
+	// (Phase 1 review item 9b). The fixture's own contents changed, so this is
+	// the pin following the sample rather than canonicalization drifting under
+	// it — the distinction is why this constant exists, and it is the reason no
+	// published catalog needed rehashing: nothing had shipped with the boolean,
+	// and no catalog in catalogs/ carries an exemption at all.
+	//
+	// It moved a second time within that same change, for editing one fixture
+	// exemption's *reason* text and nothing else. That is the field working as
+	// designed: the reason is the reviewable half of an exemption, so it is
+	// inside the hash. A hash that ignored it would let the stated
+	// justification for a hole in a Deny be rewritten under a signature that
+	// still verified.
+	const want = "b35fbe93002a6a519fb7cd83820a82a6dd194ad77ecc4743551bb9555b302fcc"
 
 	a := sampleArtifact()
 	got, err := a.ComputeContentHash()

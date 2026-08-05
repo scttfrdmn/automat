@@ -163,7 +163,9 @@ Property tests Claude Code should write: idempotence (A∪A=A), commutativity, a
 
 ## 10. Baseline-protection meta-control
 
-A control set that guards the guards, attached at the OU with every vend, extensible per catalog. Deny (with a Condition exempting only the automat automation role ARN):
+A control set that guards the guards, attached at the OU with every vend, extensible per catalog. Deny, with a Condition exempting the principals the statement names — `scp_statement.exempt_principals`, each with a required reason (Phase 1 review item 9b; see `schema/CHANGELOG.md`). This paragraph originally said "exempting only the automat automation role ARN"; the list generalizes that, because a deployment has other legitimate holes (break-glass, a central-IT audit role) and a catalog that cannot name them forces the operator to weaken the Deny itself instead. Under union these lists are **intersected**, never concatenated: an exemption is the only thing in a catalog that widens a policy, so concatenation would let adding a control set widen the merge, which §9's monotonicity property forbids. Only `automat:automation-role` (materialized by the packer at vend time) or a fully qualified IAM role ARN — no wildcards, no root, no users, so no exemption entry can undo the root-user Deny below.
+
+The deny list itself:
 
 - `config:DeleteConfigurationRecorder`, `config:StopConfigurationRecorder`, `config:DeleteDeliveryChannel`, conformance-pack delete/modify
 - `cloudtrail:StopLogging`, `cloudtrail:DeleteTrail`, `cloudtrail:UpdateTrail` (scoped to the baseline trail if one is deployed)
