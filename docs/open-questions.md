@@ -187,3 +187,45 @@ restricted to a statement that permits it only as a source, if IAM allows that d
 keys, which is itself part of the question). If it does not, the honest resolution is a
 `DestinationParentId`-only grant plus documenting that the delegate can move an account it
 created back to the root, and saying so in the README's blast-radius section.
+
+---
+
+## Awaiting a maintainer decision
+
+Not a live-org question and not a code question: a question about source data whose
+authority matters more than its availability. `docs/smoke.md` does not cover these,
+because no sandbox run answers them.
+
+### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively?
+
+Phase 4's score computation (`docs/assessment-reporting.md`) needs the DoD assessment
+methodology's per-requirement weights: 5, 3, or 1 subtracted from 110 for each
+unimplemented 800-171 requirement. The weights are published in the DoD *NIST SP 800-171
+Assessment Methodology* document, which is **not machine-readable** — unlike every other
+source in `artifact.sources`, which is retrieved and hashed.
+
+What makes this a recorded question rather than an afternoon of transcription: the output
+is a number posted to SPRS under a senior official's affirmation. A transcription error in
+one weight produces a score that is confidently wrong and looks exactly like a score that
+is right, and it would be wrong in the same direction every time it is regenerated. There
+is no test that catches it — the arithmetic would be correct and the input would be
+false.
+
+Three options, none picked:
+
+1. **Vendor a hand-transcribed weight table, hashed and committed, with the transcription
+   reviewed against the source document by a human and that review recorded** — the same
+   posture as the curated FAR source (`gen/sources/far-52.204-21.json`), which is also a
+   file a human read rather than a fetch. Honest, and the provenance is stated as
+   `curated` rather than dressed up as a retrieval.
+2. **Find a machine-readable publication of the weights.** Preferred if one exists with
+   real authority behind it; a third-party spreadsheet does not qualify.
+3. **Do not compute a score.** Emit the per-requirement satisfied/unsatisfied worksheet
+   and let the operator apply the methodology. Loses the most-requested number but
+   generates nothing automat cannot vouch for.
+
+Option 1 is the current lean, on the condition that the score renderer states which weight
+table it used, by hash, in the report — so a wrong weight is discoverable from the output
+rather than only from the source tree. Note that **CMMC Level 1 needs none of this**: L1 is
+MET/NOT MET with no scoring, so Q10 gates only the 800-171 renderer and must not be
+allowed to hold up the L1 path.
