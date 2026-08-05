@@ -18,10 +18,16 @@ import (
 //
 // Phase 1 implements the --request half: the MEMBER-state path that generates the
 // onboarding bundle central IT reviews. The MANAGEMENT half — applying the
-// delegation and creating the vendor role directly — is Phase 2, and the command
-// says so rather than failing with a bare "unknown flag", because an operator in
-// MANAGEMENT state running `automat setup` needs to know which half of the tool
-// they are waiting on.
+// delegation and creating the vendor role directly — is Phase 3 per ROADMAP.md
+// ("`setup` (MANAGEMENT side): apply delegation policy + create vendor role for a
+// named member account"), and the command says so rather than failing with a bare
+// "unknown flag", because an operator in MANAGEMENT state running `automat setup`
+// needs to know which half of the tool they are waiting on.
+//
+// The phase number here said 2 until the DESIGN §13 reconciliation checked it
+// against ROADMAP.md. Worth stating rather than quietly correcting: this is a
+// promise made to an operator in an error message, and one that names the wrong
+// release tells them to wait for a version that will not have it.
 func newSetupCmd(g *globals) *cobra.Command {
 	var (
 		request    bool
@@ -49,12 +55,12 @@ func newSetupCmd(g *globals) *cobra.Command {
 			"bundle is meant to be read in full by the person who approves it, which is why it\n" +
 			"is short and why it contains no free-text field.\n\n" +
 			"Without --request, setup applies the delegation directly from a management\n" +
-			"account. That half arrives in Phase 2.",
+			"account. That half arrives in Phase 3.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !request {
 				return fmt.Errorf("`automat setup` without --request applies the delegation from a " +
-					"management account, which is not implemented yet (Phase 2).\n" +
+					"management account, which is not implemented yet (Phase 3).\n" +
 					"If you are in a member account, you want --request: it generates the bundle " +
 					"to send to whoever runs your organization.\n" +
 					"If you are in the management account, `automat preflight` will tell you so, " +

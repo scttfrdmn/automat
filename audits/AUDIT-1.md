@@ -492,6 +492,20 @@ three were made during the phase; none is retroactively self-approved.
    and generates one) and `--force` (overwrites files edited by hand, which is how an
    operator's local correction gets silently discarded).
 
+   **Ratified on the condition that it matches DESIGN §13, with deviations flagged as
+   their own line items. Reconciliation done: `docs/cli-surface.md`.** Read from the
+   built binary and from `internal/config`'s struct tags rather than from this list —
+   checking §13 against a summary of the code would find nothing. Result: every §13
+   command is either shipped or unbuilt-and-phased, all four §13 config keys exist,
+   and §13's "never store secrets" holds literally. Two things came out of it:
+
+   - **`--external-id` has since been removed** (review item 6). Not a §13 deviation
+     in either direction: §13's command list never mentioned it, and §13's "never
+     store secrets" is what removing it serves. Recorded because the review ratified
+     a list that has since shrunk, and that should be visible without diffing audits.
+   - **D1, a real deviation, found by doing this rather than asserting it** — see
+     below.
+
 3. **Validation changes that strictly tighten.** Per the amended rule 6 these did not
    need pre-approval, and are listed here for ratification: resolved-ExternalId
    charset and length (M4), the weak/placeholder `--external-id` corpus (M5), ARN
@@ -582,6 +596,26 @@ The mechanism, FIXED in this phase:
    which had become false. A false warning in a generated file is not a stale comment; it
    trains the reader to discount the warnings that are true.
 
+### D1 — The CLI promised the wrong release for `setup` without `--request`. FIXED
+
+Found by the DESIGN §13 reconciliation the review asked for (item 2), which is the
+argument for having asked: the surface *matched* §13, and the defect was in a string
+§13 does not govern.
+
+`automat setup` in a management account is unimplemented, and the refusal told the
+operator it "arrives in Phase 2". ROADMAP.md schedules the MANAGEMENT half of `setup`
+for **Phase 3**; Phase 2 is `init` and `vend`.
+
+Low severity, and worth a finding anyway. It is a promise to an operator who is
+blocked, in the one place they will look, naming a release that will not contain what
+they are waiting for. It appeared in the `Long` help, the refusal message, the command's
+doc comment, and `docs/phase-1.md`. FIXED in the same commit as the reconciliation, and
+the test now asserts the phase *number* rather than the word "Phase" — the assertion was
+`Contains(err, "Phase 2")`, which passed while being wrong, and would have passed for any
+phase number after a correction. CLAUDE.md's rule (when design and code disagree, flag
+it rather than reinterpret) makes ROADMAP the sequencing authority, so the code was
+wrong, not the ROADMAP.
+
 ---
 
 ## Where this audit is weaker than it looks
@@ -615,3 +649,43 @@ generated output. It is not: it is checked against `reTimestamp` and set from
 `time.Now().UTC()` at `cmd/automat/setup.go:103`, not from operator input. Recorded
 rather than dropped, because an audit trail that silently omits the findings it
 rejected cannot be checked by the person reviewing it.
+
+---
+
+## Carried forward to AUDIT-2
+
+Recorded here rather than left in a review message, because a carry-forward that lives
+only in conversation is one the next audit will not find.
+
+From the Phase 1 review's closing instruction:
+
+1. **The A1 / `os.Root` acceptance closes this phase.** AUDIT-0 accepted three `G304`
+   sites on the grounds that no path came from anywhere but a CLI flag, with the
+   acceptance expiring the moment a path derived from a profile or an artifact existed.
+   Both now exist. `internal/bundle/write.go` already resolves-once-then-operates; the
+   AUDIT-2 question is whether `artifact.Load` and the profile path do the same, and the
+   acceptance may not be renewed a third time.
+2. **The SCP packer's can-any-merge-widen question is AUDIT-2's centerpiece.** Not one
+   finding among others: the packer merges policy documents to fit a 5-per-target,
+   5120-character quota, and a merge that widens is a privilege escalation with a
+   deterministic-golden-output test sitting on top of it saying everything is fine. The
+   property to establish is that no merge admits an action or resource that neither
+   input admitted, and it should be a property test, not an example.
+3. **Review item 7 applies to every grant `vend` touches.** Every
+   `aws:ResourceTag` / `aws:RequestTag` condition must be paired with an audit of which
+   principals can *write* that tag at the same scope. This is now in CLAUDE.md's ritual;
+   noted here because `vend` is where the tag-gated grants multiply, and because Q8 is
+   its live-org counterpart (`docs/smoke.md`).
+
+Added by the §13 reconciliation:
+
+4. **`automat compile` is in DESIGN §13's command list with nothing shipping it.** What
+   exists is `gen/catalog`, maintainer tooling by design. Either `compile` ships as a
+   subcommand over `internal/compilesets`, or §13 is amended to say the compiler is
+   maintainer-time. Leaving a command in the design's CLI list with no plan to build it
+   is how a design document stops being the source of truth. See
+   `docs/cli-surface.md`.
+5. **`make smoke` points at a runbook whose tests do not exist yet.** `docs/smoke.md` is
+   now written and specifies the checklist (Q9 first, per review item 4), but no test
+   carries the `smoke` tag. AUDIT-2 should confirm the gap is still deliberate and still
+   documented, since a target that runs zero tests and exits 0 reads as a pass.

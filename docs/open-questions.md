@@ -94,7 +94,15 @@ Adjacent CPRT datasets found while checking, potentially useful later:
 ## Awaiting a live org
 
 Nothing here can be answered from fakes; all of it is Phase 1+ and DESIGN §16 already
-names most of it. Listed so the smoke-test runbook (Phase 5) has a checklist.
+names most of it. The checklist is `docs/smoke.md`, which orders these by when a first
+live run reaches them and says what each run must capture. Answering one of these means
+editing this file — deleting an entry or narrowing it — not reporting that a test
+passed.
+
+One of them is worth knowing about before reading the rest: **Q8's bad case is the only
+one here that is silent.** Q9 and Q7 fail visibly, Q5 and Q6 are questions about
+capability and headroom. A tag condition that does not bind looks exactly like one that
+does.
 
 ### Q5 — What can `preflight` actually detect about delegation from the member side?
 
@@ -168,7 +176,11 @@ prevent, and would do so silently, in the direction that cannot be caught later.
 first smoke vend is recoverable in an afternoon; a role that can quietly park any account at
 the root is not.
 
-Phase 5 smoke runbook: this is the first thing the first vend tests. If the move is denied
+**Phase 5 smoke runbook: `docs/smoke.md`, first item on the checklist.** The Phase 1 review
+made the acceptance conditional on that tie being explicit ("first sandbox run answers Q9
+empirically"), so the procedure — vend one account, let it fail, read whether the denial names
+the *source* parent, record the error text rather than a paraphrase — lives there rather than
+here. This is the first thing the first vend tests. If the move is denied
 with the source parent named in the error, the fix is a fourth resource entry — the root ARN,
 restricted to a statement that permits it only as a source, if IAM allows that distinction
 (`organizations:MoveAccount` does not appear to expose separate source/destination condition

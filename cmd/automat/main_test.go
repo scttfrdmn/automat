@@ -276,7 +276,8 @@ external_id_ref = "env:AUTOMAT_TEST_EXTERNAL_ID"
 }
 
 // TestSetupWithoutRequestSaysWhichHalfIsMissing. `automat setup` in a management
-// account is Phase 2. The failure an operator gets today must tell them which half of
+// account is Phase 3 per ROADMAP.md. The failure an operator gets today must tell them
+// which half of
 // the tool they are waiting on and what to do meanwhile, rather than reading as a
 // broken command — CLAUDE.md rule 7 applied to an unimplemented path.
 func TestSetupWithoutRequestSaysWhichHalfIsMissing(t *testing.T) {
@@ -285,7 +286,10 @@ func TestSetupWithoutRequestSaysWhichHalfIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("`setup` without --request succeeded; the management half is not implemented")
 	}
-	for _, want := range []string{"--request", "Phase 2"} {
+	// The phase number is asserted, not just the word "Phase": this error tells an
+	// operator which release to wait for, and it named Phase 2 while ROADMAP.md
+	// scheduled the MANAGEMENT half for Phase 3.
+	for _, want := range []string{"--request", "Phase 3"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not mention %q: %v", want, err)
 		}

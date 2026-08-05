@@ -56,7 +56,7 @@ call**:
 by hand.
 
 Without `--request`, `setup` applies the delegation directly from a management
-account — Phase 2.
+account — Phase 3.
 
 ## What the bundle is, as a security artifact
 
