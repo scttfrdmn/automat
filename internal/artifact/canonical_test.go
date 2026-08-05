@@ -321,7 +321,7 @@ func TestCanonicalizeNormalizesEmptyCollections(t *testing.T) {
 	detective.SCP.ServiceAllowlist = []string{}
 	mustRule(t, detective, "ACCESS_KEYS_ROTATED").ResourceTypes = []string{}
 	protection := mustControl(t, withEmpty, "BB.L1-b.1.b")
-	protection.SCP.Statements[0].NotAction = []string{}
+	protection.SCP.RegionAllowlist = []string{}
 	protection.SCP.Statements[0].Condition = Condition{}
 	mustControl(t, withEmpty, "ZZ.L1-b.1.z").Crosswalk = map[string]string{}
 

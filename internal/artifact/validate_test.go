@@ -258,7 +258,28 @@ func TestValidateRejects(t *testing.T) {
 				c.SCP.Statements[0].Effect = "Maybe"
 			},
 			wantPath: "effect",
-			wantFix:  "use \"Deny\" or \"Allow\"",
+			wantFix:  "use \"Deny\"",
+		},
+		{
+			// An Allow is rejected outright, not warned about: it widens what a
+			// parent SCP permits and does not compose under union. AUDIT-0 H4.
+			name: "allow effect",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Effect = "Allow"
+			},
+			wantPath: "effect",
+			wantFix:  "does not compose under union",
+		},
+		{
+			// An empty set is not a stricter set. AUDIT-0 H5.
+			name: "set parameter with no members",
+			mutate: func(a *Artifact) {
+				r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+				r.Parameters["authorizedTcpPorts"] = RuleParameter{Value: " , ", Order: OrderSetIntersect}
+			},
+			wantPath: "authorizedTcpPorts",
+			wantFix:  "at least one member",
 		},
 		{
 			name: "statement with no actions",
@@ -266,17 +287,8 @@ func TestValidateRejects(t *testing.T) {
 				c := mustControl(t, a, "BB.L1-b.1.b")
 				c.SCP.Statements[0].Action = nil
 			},
-			wantPath: "statements",
+			wantPath: "action",
 			wantFix:  "list the actions",
-		},
-		{
-			name: "statement with both action and not_action",
-			mutate: func(a *Artifact) {
-				c := mustControl(t, a, "BB.L1-b.1.b")
-				c.SCP.Statements[0].NotAction = []string{"s3:GetObject"}
-			},
-			wantPath: "statements",
-			wantFix:  "pick one",
 		},
 		{
 			name: "non-alphanumeric sid",
@@ -336,6 +348,57 @@ func TestValidateRejects(t *testing.T) {
 				t.Errorf("report should include remediation text containing %q; got:\n%s", tc.wantFix, msg)
 			}
 		})
+	}
+}
+
+// TestReportsCannotBeForgedByCatalogInput proves AUDIT-0 finding M1 is fixed.
+//
+// A validation report is a multi-line bulleted list and a catalog file is
+// attacker-controlled input. Before the fix, a control id containing a newline
+// forged extra report lines, and an ANSI escape could recolor or erase real ones
+// — a reviewer reads a clean report while the artifact is anything but. Every
+// catalog-supplied value must therefore be quoted before it reaches output.
+func TestReportsCannotBeForgedByCatalogInput(t *testing.T) {
+	const forged = "AC.1\n  - controls[FORGED].scp: \x1b[32mno problems here\x1b[0m"
+
+	t.Run("validation report", func(t *testing.T) {
+		a := sampleArtifact()
+		c := mustControl(t, a, "AA.L1-b.1.a")
+		c.ID = forged
+		c.Title = "" // force a problem that prints the path
+		a.Meta.ID = "evil\nartifact"
+		err := a.Validate()
+		if err == nil {
+			t.Fatal("expected a validation error")
+		}
+		assertNoForgedStructure(t, err.Error())
+	})
+
+	t.Run("parameter conflict report", func(t *testing.T) {
+		p := RuleParameter{Value: "1", Order: OrderExact}
+		q := RuleParameter{Value: "2\x1b[2K\rall clear", Order: OrderExact}
+		_, err := p.Resolve(q, "rule\nname", "param\nname")
+		if err == nil {
+			t.Fatal("expected a conflict")
+		}
+		assertNoForgedStructure(t, err.Error())
+	})
+}
+
+// assertNoForgedStructure checks that no untrusted value contributed a line
+// break or an escape byte to a report.
+func assertNoForgedStructure(t *testing.T, report string) {
+	t.Helper()
+	if strings.Contains(report, "\x1b") {
+		t.Errorf("report contains a raw escape byte, so catalog input can recolor or erase it:\n%q", report)
+	}
+	for i, line := range strings.Split(report, "\n") {
+		// Every legitimate line is either the subject line or a "  - " bullet the
+		// validator itself emitted. A line from catalog input would be neither.
+		if i == 0 || strings.HasPrefix(line, "  - ") {
+			continue
+		}
+		t.Errorf("report line %d was not emitted by the validator, so catalog input forged it: %q", i, line)
 	}
 }
 

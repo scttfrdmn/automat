@@ -44,15 +44,19 @@ type ParamConflict struct {
 	Reason string
 }
 
+// Error renders the conflict with every catalog-supplied value quoted. Rule and
+// parameter names come from artifact files, which are attacker-controlled in the
+// threat model, and a conflict report is read as a report — an unescaped newline
+// in a rule name could forge a line of it. AUDIT-0 finding M1.
 func (c *ParamConflict) Error() string {
-	where := c.Parameter
+	where := safe(c.Parameter)
 	if c.Rule != "" {
-		where = c.Rule + " parameter " + c.Parameter
+		where = safe(c.Rule) + " parameter " + safe(c.Parameter)
 	}
-	return fmt.Sprintf("%s binds conflicting values %q and %q under order %s: %s. "+
+	return fmt.Sprintf("%s binds conflicting values %s and %s under order %s: %s. "+
 		"Resolve it explicitly in an override file naming %s and the value you intend; "+
 		"union must never guess which is stricter (DESIGN §9)",
-		where, c.A, c.B, c.Order, c.Reason, c.Parameter)
+		where, safe(c.A), safe(c.B), safe(string(c.Order)), c.Reason, safe(c.Parameter))
 }
 
 // Resolve returns the binding that satisfies both p and other.

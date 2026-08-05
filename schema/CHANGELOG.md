@@ -37,10 +37,11 @@ Notes on choices that constrain future changes:
 
 ### Pre-publication changes to 1.0.0
 
-Both landed during Phase 0 review, before `1.0.0` was published. **No version
-bump**, because there is no consumer of the earlier shape to migrate; if either
-change were made after publication it would be a major bump, since both tighten
-what validates.
+Changes 1 and 2 landed during Phase 0 review; changes 3–5 landed as AUDIT-0
+fixes. All of them predate publication of `1.0.0`, so there is **no version
+bump**: there is no consumer of the earlier shape to migrate. Every one of them
+tightens what validates, so after publication each would have been a major bump.
+`audits/AUDIT-0.md` records the findings that motivated 3–5.
 
 **1. `config_rule.provenance` (required) and `config_rule.rationale`.**
 
@@ -82,6 +83,43 @@ requires (DESIGN.md §9):
 canonicalize to trimmed, deduplicated, sorted, separator-joined members so two
 spellings of the same set produce the same content hash; an explicit separator
 equal to the default is dropped for the same reason.
+
+**3. `scp_statement.not_action` removed (AUDIT-0 H3).**
+
+The field is gone from the schema and from the Go type, so both decoders reject
+it as an unknown field. A `Deny` over `NotAction` denies everything it does *not*
+name, so two such fragments concatenate into a deny-all: the union of two control
+sets that each permitted something would permit nothing. That destroys the
+safe-concatenation property union relies on (DESIGN.md §9), and it fails closed
+in the worst way — a vended account that cannot function.
+
+The legitimate uses of that shape are region and service allowlists, which are
+already their own fields (`scp.region_allowlist`, `scp.service_allowlist`) with
+`set-intersect`-style semantics. The SCP packer emits the `NotAction` form from
+those fields; a catalog author never writes it directly.
+
+**4. `scp_statement.effect` is now `const: "Deny"` (AUDIT-0 H4).**
+
+Previously the schema enumerated `Deny` and `Allow` while the Go validator merely
+discouraged `Allow` — drift a consumer would have discovered the hard way. An
+`Allow` in an SCP does not grant anything; it only widens what a parent SCP
+already permits, so it does not compose under union: the union of control sets
+must be an *intersection* of permitted behavior. Permission is expressed through
+the two allowlist fields, which are intersected rather than concatenated.
+
+**5. A set-valued `config_rule_parameter` must carry at least one member
+(AUDIT-0 H5).**
+
+`value` may no longer be empty or whitespace-only when `order` is `set-union` or
+`set-intersect`; with the default separator the schema also rejects a value made
+entirely of separators. An empty set is not a stricter set. AWS Config rejects
+the parameter outright, and under `set-intersect` an empty set is the absorbing
+element: resolving anything against it yields empty forever, so a single
+malformed catalog would empty every authorized-ports list it unioned with.
+
+The Go validator is authoritative on member splitting, because it honors a
+non-default `set_separator`; the schema catches the default-separator case
+directly. Both reject the same documents (`TestGoAndSchemaAgreeOnRejection`).
 
 ## profile/v1 — 1.0.0 (unreleased, Phase 0)
 

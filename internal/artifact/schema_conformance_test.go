@@ -176,6 +176,20 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		{"bad statement effect", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].Effect = "Maybe"
 		}},
+		// AUDIT-0 H4: Allow was a Go-side warning the published schema did not
+		// share. Both must now reject it.
+		{"allow statement effect", func(t *testing.T, a *Artifact) {
+			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].Effect = "Allow"
+		}},
+		// AUDIT-0 H5: an empty set is not a stricter set.
+		{"set-intersect parameter with no members", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+			r.Parameters["authorizedTcpPorts"] = RuleParameter{Value: "", Order: OrderSetIntersect}
+		}},
+		{"set-union parameter of only separators", func(t *testing.T, a *Artifact) {
+			r := mustRule(t, mustControl(t, a, "AA.L1-b.1.a"), "RESTRICTED_INCOMING_TRAFFIC")
+			r.Parameters["blockedPort1"] = RuleParameter{Value: " , , ", Order: OrderSetUnion}
+		}},
 		{"non-alphanumeric sid", func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0].Sid = "Protect-Recorder"
 		}},

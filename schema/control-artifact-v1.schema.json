@@ -192,14 +192,12 @@
       "additionalProperties": false,
       "properties": {
         "sid": { "type": "string", "pattern": "^[A-Za-z0-9]+$" },
-        "effect": { "type": "string", "enum": ["Deny", "Allow"] },
-        "action": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+        "effect": {
+          "description": "Deny only. An Allow in an SCP merely widens what a parent SCP already permits, so it does not compose under union: the union of control sets must be an intersection of permitted behavior (DESIGN 9). Region and service allowlists are the supported way to express permission, and are intersected rather than concatenated.",
+          "type": "string",
+          "const": "Deny"
         },
-        "not_action": {
+        "action": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
@@ -303,6 +301,22 @@
           },
           "then": {
             "not": { "required": ["set_separator"] }
+          }
+        },
+        {
+          "comment": "A set-valued parameter must carry at least one member. An empty set is not a stricter set: AWS Config rejects it, and under set-intersect it absorbs every set it is resolved against. With the default separator this is checkable directly; a value made entirely of a non-default separator is caught by the Go validator, which is authoritative on member splitting.",
+          "if": {
+            "properties": { "order": { "enum": ["set-union", "set-intersect"] } },
+            "required": ["order"]
+          },
+          "then": {
+            "properties": { "value": { "minLength": 1, "not": { "pattern": "^\\s*$" } } },
+            "allOf": [
+              {
+                "if": { "not": { "required": ["set_separator"] } },
+                "then": { "properties": { "value": { "pattern": "[^,\\s]" } } }
+              }
+            ]
           }
         }
       ]

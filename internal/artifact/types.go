@@ -221,11 +221,17 @@ type SCP struct {
 }
 
 // SCPStatement is a single policy statement fragment.
+//
+// There is deliberately no NotAction field. A Deny over NotAction denies
+// everything it does not name, so two such fragments concatenate into a
+// deny-all and the safe-concatenation property DESIGN §9 relies on is lost. The
+// legitimate uses of that shape are the region and service allowlists, which are
+// their own intersected fields so the SCP packer emits the NotAction form rather
+// than a catalog author.
 type SCPStatement struct {
 	Sid       string    `json:"sid"`
 	Effect    string    `json:"effect"`
 	Action    []string  `json:"action"`
-	NotAction []string  `json:"not_action,omitempty"`
 	Resource  []string  `json:"resource,omitempty"`
 	Condition Condition `json:"condition,omitempty"`
 	// ExemptAutomationRole marks statements the packer must condition so they

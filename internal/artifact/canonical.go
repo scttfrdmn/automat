@@ -129,7 +129,6 @@ func (s *SCP) canonicalize() {
 
 func (s *SCPStatement) canonicalize() {
 	s.Action = sortedUnique(s.Action)
-	s.NotAction = sortedUnique(s.NotAction)
 	s.Resource = sortedUnique(s.Resource)
 	if len(s.Condition) == 0 {
 		s.Condition = nil

@@ -29,6 +29,23 @@ func (p Problem) Error() string {
 	return fmt.Sprintf("%s: %s — %s", p.Path, p.Message, p.Fix)
 }
 
+// safe renders an untrusted string for inclusion in an error message.
+//
+// Catalog files are attacker-controlled input in the threat model, and the
+// validator's own output is a multi-line bulleted list. A control id containing
+// a newline could therefore forge additional "- controls[X]: ok" lines, and an
+// ANSI escape could hide or recolor real ones — a reviewer reads a clean report
+// while the artifact is anything but. Quoting with %q escapes newlines, control
+// characters, and escape bytes, and marks the value as data rather than
+// structure. AUDIT-0 finding M1.
+func safe(s string) string {
+	const max = 120
+	if len(s) > max {
+		return fmt.Sprintf("%q (truncated from %d bytes)", s[:max], len(s))
+	}
+	return fmt.Sprintf("%q", s)
+}
+
 // ValidationError collects every problem found in one pass.
 //
 // Validation reports all problems rather than stopping at the first, because a
@@ -112,7 +129,7 @@ func (a *Artifact) Validate() error {
 	}
 	subject := "control artifact"
 	if a.Meta.ID != "" {
-		subject = fmt.Sprintf("control artifact %q", a.Meta.ID)
+		subject = "control artifact " + safe(a.Meta.ID)
 	}
 	return &ValidationError{Subject: subject, Problems: p.list}
 }
@@ -185,7 +202,9 @@ func (cs Controls) validate(p *problems) {
 			} else {
 				seen[id] = i
 			}
-			path = fmt.Sprintf("controls[%s]", id)
+			// safe(), not the raw id: a control id is attacker-controlled and this
+			// path is printed verbatim in a multi-line report (see safe).
+			path = fmt.Sprintf("controls[%s]", safe(id))
 		}
 		cs[i].validate(p, path)
 	}
@@ -287,30 +306,36 @@ func (s *SCP) validate(p *problems, path string) {
 				p.add(spath+".sid", fmt.Sprintf("duplicate Sid %q within this control", st.Sid), "Sids must be unique per control")
 			}
 			seenSid[st.Sid] = true
-			spath = fmt.Sprintf("%s.statements[%s]", path, st.Sid)
+			spath = fmt.Sprintf("%s.statements[%s]", path, safe(st.Sid))
 		}
 
+		// Deny is the only permitted effect. An Allow in an SCP widens what a
+		// parent already permits, so a catalog carrying one could raise the
+		// institutional floor a delegate is meant to be unable to lower — and it
+		// does not compose under union at all. Previously this was a warning the
+		// published schema did not share; a contract that permits what the code
+		// discourages is drift a consumer discovers the hard way.
+		// AUDIT-0 finding H4.
 		switch st.Effect {
 		case "Deny":
-			// The preferred form.
-		case "Allow":
-			// Permitted, but Allow in an SCP only widens what a parent SCP
-			// already permits and does not compose under union, so flag it.
-			p.add(spath+".effect", "is \"Allow\", which does not compose under union",
-				"prefer Deny fragments; union of control sets must be an intersection of permitted behavior (DESIGN §9). "+
-					"If an Allow is genuinely required, document why in the catalog's mapping notes")
+			// The only form.
 		case "":
-			p.add(spath+".effect", "missing", "set it to \"Deny\" (preferred) or \"Allow\"")
+			p.add(spath+".effect", "missing", "set it to \"Deny\"")
 		default:
-			p.add(spath+".effect", fmt.Sprintf("%q is not a valid effect", st.Effect), "use \"Deny\" or \"Allow\"")
+			p.add(spath+".effect", fmt.Sprintf("%q is not a permitted effect", st.Effect),
+				"use \"Deny\"; an Allow in an SCP only widens what a parent SCP already permits, so it does "+
+					"not compose under union — the union of control sets must be an intersection of permitted "+
+					"behavior (DESIGN §9). Express permission as scp.region_allowlist or scp.service_allowlist, "+
+					"which are intersected")
 		}
 
-		if len(st.Action) == 0 && len(st.NotAction) == 0 {
-			p.add(spath, "has neither action nor not_action", "list the actions this statement covers")
-		}
-		if len(st.Action) > 0 && len(st.NotAction) > 0 {
-			p.add(spath, "sets both action and not_action",
-				"IAM evaluates these very differently; pick one so the statement's meaning is unambiguous")
+		// There is no not_action to check: the field does not exist in the type or
+		// the schema, so both decoders reject it as an unknown field. A Deny over
+		// NotAction denies everything it does not name, so two such fragments
+		// concatenate into a deny-all — the opposite of the safe concatenation
+		// DESIGN §9 relies on. AUDIT-0 finding H3.
+		if len(st.Action) == 0 {
+			p.add(spath+".action", "missing", "list the actions this statement covers")
 		}
 		for op, keys := range st.Condition {
 			if op == "" {
@@ -391,6 +416,16 @@ func (r *ConfigRule) validate(p *problems, path string) {
 		case param.SetSeparator != "" && !param.Order.IsSet():
 			p.add(ppath+".set_separator", fmt.Sprintf("set on a %s parameter, which has no members", param.Order),
 				"drop set_separator, or change order to set-union or set-intersect if the value really is a set")
+		case param.Order.IsSet() && len(param.Members()) == 0:
+			// An empty set is not a stricter set — it is a value AWS Config
+			// rejects, and under set-intersect it is also the absorbing element:
+			// resolving anything against it yields empty forever, so one malformed
+			// catalog would empty every authorized-ports list it unions with.
+			// AUDIT-0 finding H5.
+			p.add(ppath+".value", fmt.Sprintf("is %q, which splits into no members under order %s",
+				param.Value, param.Order),
+				"list at least one member, or remove the parameter; an empty set is not a stricter set — "+
+					"AWS Config rejects it, and under set-intersect it would empty every set it is unioned with")
 		}
 	}
 }
