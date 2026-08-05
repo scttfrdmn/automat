@@ -1,11 +1,10 @@
-# Build output
+# Build output. Anchored: a bare "automat" would also match cmd/automat/.
 /bin/
 /dist/
-automat
+/automat
 
 # Test and coverage output
 *.test
-*.out
 coverage.*
 
 # gen/ scratch: fetched upstream sources are cached, never committed
