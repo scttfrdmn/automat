@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteProducesTheWholeBundle(t *testing.T) {
@@ -618,6 +619,111 @@ func TestWriteRefusesAHardlinkedBundleFile(t *testing.T) {
 	}
 	if strings.Contains(string(got), testExternalID) {
 		t.Error("the ExternalId was copied into the linked file")
+	}
+}
+
+// TestWriteRefusesAFIFOWithoutHanging. An existing bundle file is opened O_RDWR to
+// compare it against what automat would render. Opening a FIFO waits for the other
+// end to appear, so a mode-0600 pipe the operator owns — which passes every
+// permission check — turned `automat setup` into a hang with no output and an
+// ExternalId sitting in memory. The Lstat before the open refuses it, and
+// safeio.OpenNonBlock covers one swapped in after that check.
+//
+// The timeout is the assertion. A test that only checked the error would hang rather
+// than fail if the flag were dropped, which is how this class of bug survives.
+func TestWriteRefusesAFIFOWithoutHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs")
+	}
+	out := t.TempDir()
+	if err := mkfifo(filepath.Join(out, FileRoleCFN), 0o600); err != nil {
+		t.Skipf("mkfifo unsupported: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Write(validRequest(), Options{Dir: out, Force: true})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a FIFO was accepted as a bundle file")
+		}
+		if !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("the error does not name the cause: %v", err)
+		}
+		if strings.Contains(err.Error(), testExternalID) {
+			t.Errorf("the refusal leaks the ExternalId: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Write blocked on a FIFO in the output directory — opening a pipe waits for " +
+			"the other end, so this hangs with an ExternalId in memory and no output")
+	}
+}
+
+// TestWriteRefusesAnInodeSwapBetweenTheCheckAndTheOpen covers the tie between the
+// two resolutions in inspectForWrite: the Lstat that decides the entry is an
+// ordinary regular file, and the open that actually gets written.
+//
+// os.Root does not close this. Verified against go1.24: it refuses a symlink whose
+// target escapes the root but follows one whose target is inside it, and it silently
+// ignores O_NOFOLLOW in the flags it is handed. So an attacker who can write the
+// output directory can leave a regular file for the Lstat to approve and replace it
+// with a link to another entry before the open — and the descriptor's own Stat then
+// reports the target, a perfectly regular file. os.SameFile is what refuses it.
+//
+// Simulated by making the swap unconditional rather than racing for it: this asserts
+// the check exists, and a race would assert only that this machine lost slowly.
+func TestWriteRefusesAnInodeSwapBetweenTheCheckAndTheOpen(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics")
+	}
+	out := t.TempDir()
+	// A regular file at the bundle name, and a second file for it to become.
+	if err := os.WriteFile(filepath.Join(out, FileRoleCFN), []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(out, "attacker-keeps-this")
+	if err := os.WriteFile(other, []byte("attacker\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := os.OpenRoot(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	// The Lstat inside inspectForWrite sees the regular file; the swap happens
+	// before the open.
+	fi, err := root.Lstat(FileRoleCFN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rmErr := os.Remove(filepath.Join(out, FileRoleCFN)); rmErr != nil {
+		t.Fatal(rmErr)
+	}
+	if lnErr := os.Symlink("attacker-keeps-this", filepath.Join(out, FileRoleCFN)); lnErr != nil {
+		t.Fatal(lnErr)
+	}
+
+	f, err := root.OpenFile(FileRoleCFN, os.O_RDWR, fileMode)
+	if err != nil {
+		t.Fatalf("os.Root followed the in-root symlink and then failed to open it: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Mode().IsRegular() {
+		t.Fatal("the descriptor should report the symlink's target, a regular file — " +
+			"if this fires, the premise of the check has changed")
+	}
+	if os.SameFile(fi, st) {
+		t.Fatal("the swapped file compares equal to the one that was inspected, so the " +
+			"SameFile tie in inspectForWrite cannot detect this")
 	}
 }
 

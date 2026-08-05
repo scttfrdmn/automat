@@ -47,6 +47,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -58,6 +59,7 @@ import (
 	"github.com/aws/smithy-go"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/safeio"
 )
 
 // The client automat registers itself as. RegisterClient takes a name purely for
@@ -344,13 +346,16 @@ func writeCache(opts Options, tok cachedToken) (string, error) {
 		}
 		dir = filepath.Join(home, ".aws", "sso", "cache")
 	}
-	if err := os.MkdirAll(dir, cacheDirMode); err != nil {
-		return "", fmt.Errorf("create the token cache directory %s: %w", dir, err)
-	}
-
-	root, err := os.OpenRoot(dir)
+	// safeio.EnsureDir, not MkdirAll followed by OpenRoot. Those are two
+	// resolutions of the same name with a window between them, and what lands here
+	// is a bearer token: anything that can write into ~/.aws/sso — including a
+	// previous compromise — could otherwise put a symlink at the cache directory
+	// and choose where the credential is written. EnsureDir creates the final
+	// component through a descriptor on its parent and inspects what is already
+	// there rather than assuming it is the directory that was wanted.
+	root, err := safeio.EnsureDir(dir, cacheDirMode)
 	if err != nil {
-		return "", fmt.Errorf("open the token cache directory %s: %w", dir, err)
+		return "", fmt.Errorf("prepare the token cache directory: %w", err)
 	}
 	defer func() { _ = root.Close() }()
 
@@ -363,33 +368,128 @@ func writeCache(opts Options, tok cachedToken) (string, error) {
 	}
 
 	name := cacheFileName(opts.StartURL)
-	// Refuse anything that is not already a regular file. A symlink here is an
-	// attempt to redirect a credential; a directory or a device is a jam that
-	// would otherwise surface as a confusing write error.
-	if fi, lerr := root.Lstat(name); lerr == nil && !fi.Mode().IsRegular() {
-		return "", fmt.Errorf("the token cache entry %s is not a regular file (mode %s). "+
-			"automat will not write a credential through it. Remove it, or run "+
-			"`aws sso logout` to clear the cache, then try again",
-			filepath.Join(dir, name), fi.Mode())
-	}
+	path := filepath.Join(dir, name)
 
-	data, err := json.Marshal(tok)
+	// gosec G117 flags marshaling a struct whose field names look like secrets. They
+	// are secrets, and serializing them is the point: this file *is* the SSO token
+	// cache, and the field names are the interoperability contract with the AWS CLI
+	// and every SDK's credential chain (see cachedToken). Writing anything else here
+	// produces a file automat can write and nothing else can read, including
+	// `aws sso logout`.
+	//
+	// What makes that acceptable is where the bytes go, not that they exist: mode
+	// 0600 in a 0700 directory, through the checks below, and never into an error
+	// message — TestNoErrorPathLeaksTheToken and TestResultDoesNotCarryTheToken hold
+	// that line. The alternative gosec is hinting at, not persisting the token, means
+	// not implementing the device flow.
+	data, err := json.Marshal(tok) //nolint:gosec // G117: this file is the SSO token cache; see above.
 	if err != nil {
 		return "", fmt.Errorf("encode the token cache: %w", err)
 	}
 
-	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, cacheFileMode)
-	if err != nil {
-		return "", fmt.Errorf("open the token cache %s for writing: %w",
-			filepath.Join(dir, name), err)
+	// Lstat first, because it is the only thing that can see a symlink here.
+	// Verified against go1.24: os.Root refuses a link whose target *escapes* the
+	// root but *follows* one whose target is inside it, and silently ignores
+	// syscall.O_NOFOLLOW in the flags it is given — and the f.Stat() below reports
+	// the link's target, which is an ordinary regular file. So a link to a sibling
+	// name is followed by every other check in this function. That is not an
+	// escaped write but a chosen one: whoever planted it reads the token afterwards,
+	// and `aws sso logout` clears the name automat wrote rather than the name the
+	// token landed in.
+	//
+	// This is a check on a name, so it is not sufficient on its own; the descriptor
+	// checks after the open are what confirm the file that got opened. The two are
+	// tied together by the os.SameFile comparison below.
+	existing, existed := fs.FileInfo(nil), false
+	if fi, lerr := root.Lstat(name); lerr == nil {
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			return "", fmt.Errorf("the token cache entry %s is a symbolic link, and automat will "+
+				"not write a credential through one: whoever controls the link controls where your "+
+				"access token lands, and `aws sso logout` would not clear it. Remove it, or run "+
+				"`aws sso logout` to clear the cache, then try again", path)
+		}
+		// Refused before the open, not after, because for a FIFO there is no
+		// "after": opening one for writing blocks until a reader arrives, so a
+		// mode-0600 pipe the operator owns hangs `automat login` indefinitely with
+		// no output. Found by jam-checking this function — the descriptor check
+		// below cannot be reached in that case, which is exactly why it is not the
+		// only check.
+		if !fi.Mode().IsRegular() {
+			return "", fmt.Errorf("the token cache entry %s is not a regular file (mode %s). "+
+				"automat will not write a credential through it. Remove it, or run "+
+				"`aws sso logout` to clear the cache, then try again", path, fi.Mode())
+		}
+		existing, existed = fi, true
 	}
-	path := filepath.Join(dir, name)
+
+	// Open without O_TRUNC, then check the descriptor, then truncate. Truncating
+	// first would destroy the file this code is about to refuse to write.
+	//
+	// O_NONBLOCK covers the residual FIFO case the Lstat above cannot: a pipe
+	// swapped in after the check. Without it that open never returns and the
+	// process hangs holding a live token in memory. It is otherwise a no-op on a
+	// regular file, which is all this open is ever meant to reach.
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|safeio.OpenNonBlock, cacheFileMode)
+	if err != nil {
+		// The open itself fails for a directory, and on some platforms for a device,
+		// before the mode check below can report it. Ask what is there — through the
+		// same root, so nothing outside this directory is consulted — so the
+		// operator gets the fix rather than a raw openat error. This is a diagnostic
+		// path only: it runs after the write has already failed and it grants
+		// nothing, so the second resolution cannot be used to redirect anything.
+		if fi, lerr := root.Lstat(name); lerr == nil && !fi.Mode().IsRegular() {
+			return "", fmt.Errorf("the token cache entry %s is not a regular file (mode %s). "+
+				"automat will not write a credential through it. Remove it, or run "+
+				"`aws sso logout` to clear the cache, then try again", path, fi.Mode())
+		}
+		return "", fmt.Errorf("open the token cache %s for writing: %w", path, err)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("inspect the token cache %s: %w", path, err)
+	}
+	// Refuse anything that is not a regular file. A symlink is an attempt to
+	// redirect a credential; a directory or a device is a jam that would otherwise
+	// surface as a confusing write error.
+	if !st.Mode().IsRegular() {
+		_ = f.Close()
+		return "", fmt.Errorf("the token cache entry %s is not a regular file (mode %s). "+
+			"automat will not write a credential through it. Remove it, or run "+
+			"`aws sso logout` to clear the cache, then try again", path, st.Mode())
+	}
+	// Tie the name that was inspected to the descriptor that was opened. If they are
+	// not the same object, something swapped the entry in between and automat is
+	// about to write a credential into a file it never checked.
+	if existed && !os.SameFile(existing, st) {
+		_ = f.Close()
+		return "", fmt.Errorf("the token cache entry %s changed while automat was opening it, so "+
+			"the file it checked is not the file it opened — something else is writing that path. "+
+			"No token was written; investigate before retrying", path)
+	}
+	// A hardlink is a regular file by every mode check and Lstat cannot tell one
+	// from an ordinary file: only the link count distinguishes them. Writing through
+	// one copies a bearer token into whatever else shares the inode.
+	if n, ok := safeio.LinkCount(st); ok && n > 1 {
+		_ = f.Close()
+		return "", fmt.Errorf("the token cache entry %s has %d hard links, so writing it would "+
+			"copy your access token into whatever else shares that file. Remove it, or run "+
+			"`aws sso logout` to clear the cache, then try again", path, n)
+	}
 	// O_CREATE's mode is masked by the umask and ignored entirely for a file that
 	// already exists, so set it explicitly — on the descriptor, so there is no
 	// window in which the file exists with the wrong mode under a resolvable name.
 	if cerr := f.Chmod(cacheFileMode); cerr != nil {
 		_ = f.Close()
 		return "", fmt.Errorf("restrict the token cache %s to the owner: %w", path, cerr)
+	}
+	// Truncate here rather than via O_TRUNC, so the checks above ran against the
+	// file's real contents and an entry this code refuses is left intact. Chmod
+	// precedes it so there is no moment in which a longer previous token is
+	// readable at a wider mode.
+	if terr := f.Truncate(0); terr != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("truncate the token cache %s: %w", path, terr)
 	}
 	if _, werr := f.Write(data); werr != nil {
 		_ = f.Close()

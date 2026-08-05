@@ -33,7 +33,7 @@ const (
 // directory has to say so.
 func testOptions(t *testing.T) Options {
 	t.Helper()
-	var now time.Time = time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	return Options{
 		StartURL: testStartURL,
 		Region:   testRegion,
@@ -305,6 +305,27 @@ func TestLoginTightensALooseCacheDirectory(t *testing.T) {
 // that can write into ~/.aws/sso/cache can plant a symlink at the filename
 // automat is about to write, and automat would then deliver a live bearer token
 // wherever the link points.
+// The tests from here to TestLoginRefusesADirectoryInTheCacheFilesPlace cover
+// writeCache's defenses against something that can already write into
+// ~/.aws/sso/cache. Those defenses overlap, so no single test proves any single
+// check is present. Jam-checked one at a time, with the patch confirmed applied:
+//
+//	pre-open symlink branch, alone ....... nothing fails
+//	pre-open IsRegular, alone ............ nothing fails
+//	both pre-open name checks ............ nothing fails
+//	both + the os.SameFile tie ........... the in-directory symlink test fails
+//	both + O_NONBLOCK .................... the FIFO test fails
+//	the os.SameFile tie, alone ........... nothing fails
+//	safeio.LinkCount, alone .............. the hardlink test fails
+//
+// Read that as: os.SameFile is the last line for a symlink and O_NONBLOCK is the
+// last line for a FIFO, the two pre-open name checks are redundant with them and
+// with each other, and LinkCount is the only thing standing between a hardlink and
+// a copied bearer token. The pre-open checks are kept even so — they refuse before
+// the open rather than after, which for a FIFO is the difference between an error
+// and having opened one, and they are what produce the message that names the fix.
+// The redundancy is deliberate; recording it here is so a later reader does not
+// mistake "every test passes" for "every check is load-bearing".
 func TestLoginRefusesToWriteACredentialThroughASymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink semantics")
@@ -333,6 +354,200 @@ func TestLoginRefusesToWriteACredentialThroughASymlink(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Errorf("the refusal message leaks the token: %v", err)
+	}
+}
+
+// TestLoginRefusesASymlinkPointingInsideTheCacheDirectory is the case os.Root does
+// not cover, and the reason this defense cannot be left to it.
+//
+// Verified against go1.24 on darwin: os.Root refuses a symlink whose target
+// *escapes* the root, which is what the test above plants — but it *follows* one
+// whose target is inside the root, and it silently ignores syscall.O_NOFOLLOW in
+// the flags it is passed. So a link to a sibling path is followed, and a check made
+// against the opened descriptor sees the target: a perfectly regular file.
+//
+// The consequence here is not an escaped write but a chosen one. Anything that can
+// write into ~/.aws/sso/cache can point automat's filename at a second file it
+// keeps, and then read the bearer token out of it after automat has written it —
+// including after `aws sso logout`, which clears the name automat wrote, not the
+// name the token landed in.
+func TestLoginRefusesASymlinkPointingInsideTheCacheDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics")
+	}
+	dir := t.TempDir()
+	sum := sha1.Sum([]byte(testStartURL)) //nolint:gosec // Interop hash.
+	name := hex.EncodeToString(sum[:]) + ".json"
+
+	// The attacker's file, inside the same directory, so os.Root permits it.
+	sibling := filepath.Join(dir, "attacker-keeps-this.json")
+	if err := os.WriteFile(sibling, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write sibling: %v", err)
+	}
+	if err := os.Symlink("attacker-keeps-this.json", filepath.Join(dir, name)); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	opts := testOptions(t)
+	opts.CacheDir = dir
+	const secret = "SECRET-BEARER-TOKEN-DO-NOT-PRINT"
+	api := awsfake.NewSSOOIDC(0)
+	api.AccessToken = secret
+
+	_, err := Login(context.Background(), api, opts)
+	if err == nil {
+		t.Fatal("Login wrote a bearer token through a symlink to a file in the same directory")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal message leaks the token: %v", err)
+	}
+	got, rerr := os.ReadFile(sibling) //nolint:gosec // test fixture
+	if rerr != nil {
+		t.Fatalf("read sibling: %v", rerr)
+	}
+	if strings.Contains(string(got), secret) {
+		t.Error("the bearer token was written into the symlink's target, where `aws sso logout` " +
+			"will not clear it")
+	}
+}
+
+// TestLoginRefusesAHardlinkedCacheEntry. A hardlink passes every check a symlink
+// fails: Lstat reports a regular file, no path is escaped, and the mode is
+// whatever the attacker set. Only the link count distinguishes it, and writing
+// through one copies a live bearer token into a second name the attacker keeps.
+//
+// Unlike the symlink and FIFO cases above, nothing else covers this one: disabling
+// safeio.LinkCount fails this test and only this test. It is the single defense.
+func TestLoginRefusesAHardlinkedCacheEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hardlink semantics")
+	}
+	dir := t.TempDir()
+	sum := sha1.Sum([]byte(testStartURL)) //nolint:gosec // Interop hash.
+	name := filepath.Join(dir, hex.EncodeToString(sum[:])+".json")
+	if err := os.WriteFile(name, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	attackers := filepath.Join(dir, "attackers-second-name.json")
+	if err := os.Link(name, attackers); err != nil {
+		t.Skipf("hardlink unsupported: %v", err)
+	}
+
+	opts := testOptions(t)
+	opts.CacheDir = dir
+	const secret = "SECRET-BEARER-TOKEN-DO-NOT-PRINT"
+	api := awsfake.NewSSOOIDC(0)
+	api.AccessToken = secret
+
+	_, err := Login(context.Background(), api, opts)
+	if err == nil {
+		t.Fatal("Login wrote a bearer token into a file with two names")
+	}
+	if !strings.Contains(err.Error(), "hard link") {
+		t.Errorf("the error should say what it refused and why: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal message leaks the token: %v", err)
+	}
+	got, rerr := os.ReadFile(attackers) //nolint:gosec // test fixture
+	if rerr != nil {
+		t.Fatalf("read: %v", rerr)
+	}
+	if strings.Contains(string(got), secret) {
+		t.Error("the token was written into the attacker's second name for the same inode")
+	}
+}
+
+// TestLoginRefusesAFIFOAtTheCachePathWithoutHanging was found by jam-checking this
+// package: removing the descriptor's regular-file check did not fail any test,
+// which meant nothing reached it.
+//
+// It could not be reached. Opening a FIFO for *writing* blocks until a reader
+// arrives, so `automat login` against a mode-0600 pipe the operator owns hung
+// indefinitely, with no output, holding a live bearer token in memory — a denial of
+// service that reads as a network stall, planted by anything that can write into
+// ~/.aws/sso/cache. The timeout below is the assertion: a test that only checked
+// the error would hang rather than fail if the fix were reverted.
+//
+// Two defenses now cover a FIFO planted before the check — the pre-open refusal and
+// O_NONBLOCK — so removing either alone still passes. Removing both hangs, and this
+// test then fails on the timeout rather than stalling the package. So this does not
+// prove the flag is present; it proves the pair is.
+func TestLoginRefusesAFIFOAtTheCachePathWithoutHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs")
+	}
+	dir := t.TempDir()
+	sum := sha1.Sum([]byte(testStartURL)) //nolint:gosec // Interop hash.
+	path := filepath.Join(dir, hex.EncodeToString(sum[:])+".json")
+	if err := mkfifo(path, 0o600); err != nil {
+		t.Skipf("mkfifo unsupported: %v", err)
+	}
+
+	opts := testOptions(t)
+	opts.CacheDir = dir
+	const secret = "SECRET-BEARER-TOKEN-DO-NOT-PRINT"
+	api := awsfake.NewSSOOIDC(0)
+	api.AccessToken = secret
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Login(context.Background(), api, opts)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a FIFO was accepted as the token cache")
+		}
+		if !strings.Contains(err.Error(), "logout") {
+			t.Errorf("the error should say how to clear the cache: %v", err)
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("the refusal message leaks the token: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Login blocked on a FIFO at the cache path — opening a pipe for writing waits " +
+			"for a reader, so this hangs with a live token in memory and no output")
+	}
+}
+
+// TestLoginRefusesASymlinkedCacheDirectory. The file checks above are moot if the
+// directory itself is a link: the token still lands wherever it points, and
+// `aws sso logout` still clears the wrong place.
+func TestLoginRefusesASymlinkedCacheDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics")
+	}
+	base := t.TempDir()
+	real := filepath.Join(base, "attackers-dir")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(base, "cache")
+	if err := os.Symlink("attackers-dir", link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	opts := testOptions(t)
+	opts.CacheDir = link
+	const secret = "SECRET-BEARER-TOKEN-DO-NOT-PRINT"
+	api := awsfake.NewSSOOIDC(0)
+	api.AccessToken = secret
+
+	_, err := Login(context.Background(), api, opts)
+	if err == nil {
+		t.Fatal("Login wrote a bearer token into a symlinked cache directory")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal message leaks the token: %v", err)
+	}
+	entries, rerr := os.ReadDir(real)
+	if rerr != nil {
+		t.Fatalf("readdir: %v", rerr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("%d file(s) landed in the symlink's target", len(entries))
 	}
 }
 

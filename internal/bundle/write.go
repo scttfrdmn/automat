@@ -13,7 +13,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
+
+	"github.com/scttfrdmn/automat/internal/safeio"
 )
 
 // Writing the bundle to disk.
@@ -366,12 +367,11 @@ func openOutputDir(abs string) (*os.Root, error) {
 		}
 		switch {
 		case fi.Mode()&fs.ModeSymlink != 0:
-			target, _ := proot.Readlink(base)
 			return nil, fmt.Errorf("the output directory %s is a symbolic link (to %s) — "+
 				"automat will not write an ExternalId through a link it did not create, "+
 				"because the name you passed and the directory it resolves to are not the "+
 				"same choice; pass --out with a real directory, or remove the link",
-				quote(abs), quote(target))
+				quote(abs), safeio.LinkTarget(parent, base))
 		case !fi.IsDir():
 			return nil, fmt.Errorf("the output directory %s exists and is not a directory "+
 				"(mode %s) — remove it or pass a different --out", quote(abs), fi.Mode())
@@ -480,7 +480,11 @@ func inspectForWrite(root *os.Root, name string, want []byte, force bool) (*os.F
 			name, fi.Mode())
 	}
 
-	f, err = root.OpenFile(name, os.O_RDWR, fileMode)
+	// safeio.OpenNonBlock covers the FIFO the Lstat above cannot: one swapped in
+	// after the check. Without it this open never returns — opening a pipe waits for
+	// the other end — so automat hangs with no output rather than refusing. It is a
+	// no-op on a regular file, which is all this open is meant to reach.
+	f, err = root.OpenFile(name, os.O_RDWR|safeio.OpenNonBlock, fileMode)
 	if err != nil {
 		return nil, Created, fmt.Errorf("open %s: %w", name, err)
 	}
@@ -494,7 +498,19 @@ func inspectForWrite(root *os.Root, name string, want []byte, force bool) (*os.F
 		return f, Created, fmt.Errorf("%s is not a regular file (mode %s) — "+
 			"automat will not write through it", name, st.Mode())
 	}
-	if n := linkCount(st); n > 1 {
+	// Tie the name that was inspected to the descriptor that was opened. Without
+	// this the two resolutions above are independent, and whoever can write this
+	// directory decides which file the second one lands on — the Lstat passes on a
+	// regular file they then replace with a link to somewhere else. os.Root does not
+	// close this: verified against go1.24, it follows a symlink whose target is
+	// inside the root and ignores O_NOFOLLOW in the flags it is handed.
+	if !os.SameFile(fi, st) {
+		return f, Created, fmt.Errorf("%s changed while automat was opening it — the file "+
+			"inspected and the file opened are not the same one. Nothing was written; "+
+			"investigate before retrying, because on a shared host this is what a swapped "+
+			"path looks like", name)
+	}
+	if n, ok := safeio.LinkCount(st); ok && n > 1 {
 		// A hardlink is a regular file by every mode check, and Lstat cannot tell
 		// one from an ordinary file. Writing through it truncates whatever else
 		// shares the inode and copies the ExternalId into it, so the target's
@@ -537,22 +553,6 @@ func inspectForWrite(root *os.Root, name string, want []byte, force bool) (*os.F
 // file over the limit is not equal to what automat renders, which is the
 // conservative outcome.
 const maxCompareBytes = 1 << 20
-
-// linkCount reports how many names refer to this file, or 1 when the platform does
-// not say.
-//
-// The syscall detail is deliberately isolated here. Returning 1 on an unknown
-// platform means the hardlink check silently passes rather than failing every write,
-// which is the right trade for a defense against a local attacker who already needs
-// write access to the output directory: automat still refuses symlinks, still writes
-// 0600, and still fails closed on an inode it does not own.
-func linkCount(fi fs.FileInfo) uint64 {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 1
-	}
-	return uint64(st.Nlink)
-}
 
 func readFile(root *os.Root, name string) ([]byte, error) {
 	f, err := root.Open(name)
