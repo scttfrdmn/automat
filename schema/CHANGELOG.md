@@ -684,4 +684,6 @@ Writing that test found two divergences, both fixed rather than accepted:
    `schema/` file changed.
 2. `request_id` had no pattern, per the section above.
 
-Both are listed in `audits/AUDIT-2.md` for ratification, per CLAUDE.md rule 6.
+Both strictly tighten validation, so rule 6 permits them without pre-approval and
+requires them to be ratified. Carried in ROADMAP's Phase 2 AUDIT-2 list until
+`audits/AUDIT-2.md` is written.

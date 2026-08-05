@@ -21,6 +21,29 @@ Phases are ordered so the compatibility contract (schema) exists before anything
 - **Cosigning and freshness fields — done, schema and data only** (DESIGN §11a, `schema/CHANGELOG.md`). Profile documents carry an optional `signatures[]` array of attestation predicates over the document's content hash — each with a **role** from a closed five-value vocabulary and a **required statement**, never a bare signature — plus a **required `review_by` date**; evidence records carry the profile id, its content hash, and the set of attestations that **verified** (always empty in v1). Landed before `internal/evidence` writes its first record because retrofitting the *record* shape once records exist in the wild is a versioning event rather than a changelog line. A signature attests **provenance only**; trust is an operator determination against a trust policy the operator maintains; automat ships **no trust anchor and no default**, and **verification, trust-policy loading, and any registry are deliberately not implemented**. Listed in `schema/CHANGELOG.md` for maintainer ratification, since `signatures[]` adds structure rather than only tightening.
 - **Accept:** full vend pipeline runs against fakes with every step idempotent (run twice = no diff); manifest chain validates.
 
+### Carried to AUDIT-2 for ratification
+
+Rule 6 lets an audit-driven or review-driven change that **strictly tightens**
+validation land without pre-approval, and requires it to be ratified. This is the
+list AUDIT-2 must work through; each item names where the reasoning lives, so the
+audit records a decision rather than rediscovering the change.
+
+- **`evidence-manifest/v1`: `records[].request_id` gained a pattern**
+  (`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`, previously `minLength: 1` only).
+  Pre-publication, so no version bump; after publication it would be a major one.
+  It is the single field in a record a human copies back onto a command line as
+  `vend --resume <request-id>`, which is why it is worth narrowing rather than
+  tidying. Reasoning in `schema/CHANGELOG.md`.
+- **The Go enforcement-set validator was tightened to match the published schema.**
+  `Enforcement.validate` checked only `scp_arns` for empty members and none of the
+  five arrays for duplicates, while the schema has declared `uniqueItems` and
+  `minLength: 1` on all of them since Phase 0. No `schema/` file changed. Found by
+  reading the schema in full while writing
+  `internal/evidence/schema_conformance_test.go` — i.e. by the test's preparation
+  rather than by the test.
+- **substrate#577** (root has no stable identity) as evidence the emulator probe
+  paid for itself independent of the migration decision. See Phase 3 below.
+
 ### Scheduled pass: institutional classification profiles — **AFTER task #13 lands, BEFORE AUDIT-2. Do not start until `vend` works.**
 
 Recorded now so it is not lost, and gated deliberately: this is a new document type and the argument for it is only legible once there is a vended account to rate.
