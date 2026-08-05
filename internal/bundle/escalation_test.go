@@ -4,6 +4,7 @@
 package bundle
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -387,6 +388,209 @@ func TestREADMEDescribesTheGrantThatIsActuallyGenerated(t *testing.T) {
 		if !strings.Contains(s, claim) {
 			t.Errorf("the README's review checklist does not mention %s, which is one of the "+
 				"conditions the whole argument rests on", claim)
+		}
+	}
+}
+
+// conditionKeysRead returns every tag key that any condition in either generated
+// document reads, as a set of bare tag keys ("automat:managed-by").
+//
+// Both documents are scanned as text rather than parsed per-format, because the
+// question is not "what shape is this file" but "which tag names does anything in
+// this bundle trust". A regex over the rendered output cannot miss a document a
+// structural walker was never taught about.
+func conditionKeysRead(t *testing.T, r *Request) map[string]bool {
+	t.Helper()
+	keys := map[string]bool{}
+	re := regexp.MustCompile(`aws:(?:Resource|Request)Tag/(automat:[a-z-]+)`)
+	for name, render := range allRenderers() {
+		data, err := render(r)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(data), -1) {
+			keys[m[1]] = true
+		}
+	}
+	return keys
+}
+
+// TestNoConditionReadsATagTheBundleLetsTheDelegateWrite is the union check across
+// both documents, and it exists because auditing them separately is what let a
+// fixed escalation come straight back.
+//
+// The delegation policy's tag-write grant was hardened to require the target
+// already be automat's. The vendor role then granted organizations:TagResource on
+// Resource: '*' with only an aws:TagKeys bound of automat:* — which is the same
+// forgery, one document over:
+//
+//  1. Assume the vendor role (by design).
+//  2. TagResource on central IT's SCP with automat:managed-by=automat. Permitted:
+//     '*' matches a policy ARN and the key matches automat:*.
+//  3. Drop back to the member account's delegated credentials. UpdatePolicy and
+//     DeletePolicy on that SCP are now gated on a tag that is present.
+//
+// Same trick with automat:vended-by unlocks MoveAccount against any account in
+// the organization, defeating the condition added for exactly that reason.
+//
+// The rule this encodes: a tag key that any condition in the bundle READS must not
+// be writable by any statement in the bundle. Authorization cannot rest on a value
+// the authorized party controls, and it does not matter which file the two halves
+// live in.
+func TestNoConditionReadsATagTheBundleLetsTheDelegateWrite(t *testing.T) {
+	r := validRequest()
+	read := conditionKeysRead(t, r)
+	if len(read) == 0 {
+		t.Fatal("no condition keys found; the scanner is broken, not the bundle")
+	}
+
+	for name, render := range allRenderers() {
+		data, err := render(r)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, stmt := range tagWritingStatements(string(data)) {
+			for key := range read {
+				if tagKeyIsWritable(stmt, key) {
+					t.Errorf("%s: statement %q may write the tag %q, which a condition somewhere "+
+						"in this bundle reads.\n"+
+						"A principal that can write the tag a condition checks is not constrained "+
+						"by that condition — whichever file the two halves are in.\n%s",
+						name, stmt.sid, key, stmt.text)
+				}
+			}
+		}
+	}
+}
+
+// TestTheRoleNeverTouchesAPolicy holds the design invariant DESIGN §5 states and
+// role.go's own comment claims: no policy actions in the vendor role, those flow
+// through the delegation policy. TagResource on Resource: '*' silently broke it,
+// because '*' includes every SCP ARN in the organization — the role could not
+// change a policy's content, but it could change the tag that decides who may.
+func TestTheRoleNeverTouchesAPolicy(t *testing.T) {
+	for name, render := range map[string]func(*Request) ([]byte, error){
+		FileRoleCFN: VendorRoleCFN,
+		FileRoleTF:  VendorRoleTF,
+	} {
+		data, err := render(validRequest())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, stmt := range tagWritingStatements(string(data)) {
+			if strings.Contains(stmt.text, ":policy/") {
+				t.Errorf("%s: %q can tag a policy resource", name, stmt.sid)
+			}
+			// An unscoped resource includes every policy ARN in the organization,
+			// which is the same reach written less visibly.
+			if reUnscopedResource.MatchString(stmt.text) {
+				t.Errorf("%s: %q grants a tag write on an unscoped resource. '*' matches every "+
+					"SCP in the organization, so the role can rewrite the tag that decides which "+
+					"policies the delegation may modify:\n%s", name, stmt.sid, stmt.text)
+			}
+		}
+	}
+}
+
+// reUnscopedResource matches a Resource of exactly "*" in either rendering.
+var reUnscopedResource = regexp.MustCompile(`(?m)^\s*Resource\s*[:=]\s*'?"?\*'?"?\s*$`)
+
+// tagStatement is one tag-writing statement found in a rendered document.
+type tagStatement struct {
+	sid  string
+	text string
+}
+
+// tagWritingStatements finds every statement in a rendered document that grants a
+// tag-writing action, in either the CFN, Terraform, or JSON rendering.
+func tagWritingStatements(doc string) []tagStatement {
+	var out []tagStatement
+	reSid := regexp.MustCompile(`Sid\s*[:=]\s*"?([A-Za-z]+)"?`)
+	// Split on Sid boundaries so each chunk is one statement.
+	locs := reSid.FindAllStringSubmatchIndex(doc, -1)
+	for i, loc := range locs {
+		end := len(doc)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		text := doc[loc[0]:end]
+		if !strings.Contains(text, "organizations:TagResource") &&
+			!strings.Contains(text, "organizations:UntagResource") {
+			continue
+		}
+		out = append(out, tagStatement{sid: doc[loc[2]:loc[3]], text: text})
+	}
+	return out
+}
+
+// tagKeyIsWritable reports whether a tag-writing statement admits the given key.
+//
+// Conservative on purpose: a statement is treated as admitting the key unless it
+// visibly excludes it. An aws:TagKeys bound of automat:* admits every automat key,
+// which is the defect; an explicit list admits only what it names.
+func tagKeyIsWritable(stmt tagStatement, key string) bool {
+	// A statement gated on the resource already carrying automat's owner tag
+	// cannot be used to apply that tag to something that does not have it, so it
+	// is not a forgery path for the key it is gated on.
+	if strings.Contains(stmt.text, "aws:ResourceTag/"+key) {
+		return false
+	}
+	// An explicit key list: writable only if the key is named.
+	if strings.Contains(stmt.text, "aws:TagKeys") {
+		if strings.Contains(stmt.text, "'"+key+"'") || strings.Contains(stmt.text, `"`+key+`"`) {
+			return true
+		}
+		// A wildcard bound over automat's namespace admits every automat key.
+		return strings.Contains(stmt.text, "automat:*")
+	}
+	return true // No bound at all.
+}
+
+// allRenderers is every file the bundle generates, for tests that must not miss
+// one when a renderer is added.
+func allRenderers() map[string]func(*Request) ([]byte, error) {
+	return map[string]func(*Request) ([]byte, error){
+		FilePolicy:  DelegationPolicy,
+		FileRoleCFN: VendorRoleCFN,
+		FileRoleTF:  VendorRoleTF,
+		FileREADME:  README,
+		FileOU:      OUInstructions,
+	}
+}
+
+// TestTheRoleCanOnlyTagAccountsItVended closes the residual reach left by scoping
+// TagResource: an Organizations account ARN encodes the organization, not the OU, so
+// "account/<org>/*" is every account in the organization however the OU is spelled.
+//
+// The keys are inventory labels no condition reads, so forging one escalates
+// nothing — but writing tags onto central IT's own accounts is reach the vend
+// pipeline never needs, and "it is only a cost-allocation tag" is a sentence that
+// stops being true the first time someone builds a report on it. Accounts the role
+// vended already carry automat:vended-by (applied at CreateAccount, where the value
+// is fixed by the template), so the condition costs nothing legitimate.
+//
+// OUs are handled by a separate statement: a freshly created OU carries no tags at
+// all, so a resource-tag condition would make tagging one impossible. Its resource
+// bound is the delegated subtree, which is a real bound — unlike the account ARN.
+func TestTheRoleCanOnlyTagAccountsItVended(t *testing.T) {
+	for name, render := range map[string]func(*Request) ([]byte, error){
+		FileRoleCFN: VendorRoleCFN,
+		FileRoleTF:  VendorRoleTF,
+	} {
+		data, err := render(validRequest())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, stmt := range tagWritingStatements(string(data)) {
+			if !strings.Contains(stmt.text, ":account/") {
+				continue // an OU-only statement; the subtree bound confines it
+			}
+			if !strings.Contains(stmt.text, "aws:ResourceTag/automat:vended-by") {
+				t.Errorf("%s: %q can tag an account but is not conditioned on "+
+					"automat:vended-by. account/<org>/* is every account in the organization, "+
+					"so this writes tags onto accounts central IT owns:\n%s",
+					name, stmt.sid, stmt.text)
+			}
 		}
 	}
 }

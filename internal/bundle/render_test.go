@@ -343,10 +343,23 @@ func TestCFNAndTFGrantTheSameThing(t *testing.T) {
 		want = append(want, a.action)
 	}
 	sort.Strings(want)
+	// Compared as sets, not multisets: one action may legitimately appear in more
+	// than one statement, because that is how an action gets two different
+	// conditions. organizations:TagResource is granted twice for exactly that
+	// reason — once for accounts, gated on automat:vended-by, and once for OUs in
+	// the subtree, which cannot carry that gate because a fresh OU has no tags. A
+	// count-sensitive comparison here would report that split as drift and push
+	// toward merging the statements back into one broader grant.
 	for name, got := range map[string]map[string][]string{FileRoleCFN: gotCFN, FileRoleTF: gotTF} {
-		var flat []string
+		seen := map[string]bool{}
 		for _, as := range got {
-			flat = append(flat, as...)
+			for _, a := range as {
+				seen[a] = true
+			}
+		}
+		var flat []string
+		for a := range seen {
+			flat = append(flat, a)
 		}
 		sort.Strings(flat)
 		if !reflect.DeepEqual(flat, want) {

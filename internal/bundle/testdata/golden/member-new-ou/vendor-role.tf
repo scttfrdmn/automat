@@ -102,16 +102,47 @@ resource "aws_iam_role_policy" "automat_vend" {
         ]
       },
       {
-        # Unrestricted, this would let the role write any tag onto any account
-        # or OU in the organization -- including a tag central IT uses in a
-        # policy condition of its own, which would make that condition forgeable.
-        Sid      = "TagOnlyInAutomatsNamespace"
+        # Two bounds, both load-bearing.
+        #
+        # The RESOURCE bound excludes policies: on "*" this statement would
+        # reach every service control policy in the organization, and tagging
+        # one of yours with automat:managed-by=automat would hand the delegation
+        # policy permission to rewrite it -- that document gates update, delete,
+        # and detach on exactly that tag.
+        #
+        # The KEY bound is an explicit list rather than automat:*, because
+        # automat:vended-by and automat:ou are read by conditions elsewhere in
+        # this bundle. Both are applied once at CreateAccount via aws:RequestTag,
+        # so nothing legitimate re-sets them; the keys below are inventory labels
+        # that no condition reads.
+        # Accounts and OUs are split because only one can be confined by a tag:
+        # account/<org>/* is every account in the organization, so that statement
+        # carries a vended-by condition, while a fresh OU has no tags at all and
+        # its ARN does encode the subtree.
+        Sid      = "TagAccountsThisRoleVended"
         Effect   = "Allow"
         Action   = ["organizations:TagResource"]
-        Resource = "*"
+        Resource = ["${local.automat_org_arn_base}:account/${local.automat_org_id}/*"]
         Condition = {
-          "ForAllValues:StringLike" = {
-            "aws:TagKeys" = ["automat:*"]
+          StringEquals = {
+            "aws:ResourceTag/automat:vended-by" = local.automat_member_acct
+          }
+          "ForAllValues:StringEquals" = {
+            "aws:TagKeys" = ["automat:artifact-id", "automat:artifact-sha256", "automat:version"]
+          }
+        }
+      },
+      {
+        Sid      = "TagOrganizationalUnitsInTheSubtree"
+        Effect   = "Allow"
+        Action   = ["organizations:TagResource"]
+        Resource = [
+          "${local.automat_org_arn_base}:ou/${local.automat_org_id}/${local.automat_target_ou}",
+          "${local.automat_org_arn_base}:ou/${local.automat_org_id}/${local.automat_target_ou}/*",
+        ]
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "aws:TagKeys" = ["automat:artifact-id", "automat:artifact-sha256", "automat:version"]
           }
         }
       },

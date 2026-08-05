@@ -76,19 +76,61 @@ Resources:
                   - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-exampleorgid/ou-exam-research1'
                   - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-exampleorgid/ou-exam-research1/*'
 
-              # Tagging, restricted to automat's own tag namespace. Unrestricted,
-              # this action would let the role write any tag onto any account or OU
-              # in the organization -- including a tag central IT uses in a policy
-              # condition of its own, which would make that condition forgeable.
-              - Sid: TagOnlyInAutomatsNamespace
+              # Tagging. Two bounds, and both are load-bearing.
+              #
+              # The RESOURCE bound excludes policies. On '*' this statement would
+              # reach every service control policy ARN in the organization, and
+              # tagging one of yours with automat:managed-by=automat would hand the
+              # delegation policy in delegation-policy.json permission to rewrite
+              # it -- that document gates update, delete, and detach on exactly
+              # that tag. The role would never touch policy CONTENT; it would just
+              # forge the label that decides who may.
+              #
+              # The KEY bound is an explicit list, not automat:*. The keys omitted
+              # from it are omitted on purpose: automat:vended-by and automat:ou
+              # are read by conditions elsewhere in this bundle, so a principal
+              # that could write them would not be constrained by those conditions.
+              # Both are applied once, at CreateAccount, through aws:RequestTag
+              # above -- so nothing legitimate needs to set them again, and this
+              # statement cannot. The three keys below are cost-allocation and
+              # inventory labels that no condition anywhere reads, which is what
+              # makes them safe to leave mutable.
+              # Accounts and OUs are separate statements because only one of them
+              # can be confined by a tag. account/<org>/* is every account in the
+              # organization -- an Organizations account ARN encodes the org, not
+              # the OU -- so the account statement carries a condition instead: the
+              # account must already be one this role vended. A fresh OU has no
+              # tags at all, so the same condition there would make tagging a
+              # newly created OU impossible; its ARN does encode the subtree, so
+              # the resource bound is a real one.
+              - Sid: TagAccountsThisRoleVended
                 Effect: Allow
                 Action:
                   - organizations:TagResource
-                Resource: '*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/o-exampleorgid/*'
                 Condition:
-                  ForAllValues:StringLike:
+                  StringEquals:
+                    aws:ResourceTag/automat:vended-by: '222222222222'
+                  ForAllValues:StringEquals:
                     aws:TagKeys:
-                      - 'automat:*'
+                      - 'automat:artifact-id'
+                      - 'automat:artifact-sha256'
+                      - 'automat:version'
+
+              - Sid: TagOrganizationalUnitsInTheSubtree
+                Effect: Allow
+                Action:
+                  - organizations:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-exampleorgid/ou-exam-research1'
+                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-exampleorgid/ou-exam-research1/*'
+                Condition:
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - 'automat:artifact-id'
+                      - 'automat:artifact-sha256'
+                      - 'automat:version'
 
               # The reads that make the above verifiable. No policy actions appear
               # anywhere in this role -- those flow through the delegation policy in

@@ -47,6 +47,29 @@ var vendorRoleActions = []struct {
 	{"organizations:ListRoots", "the root id is needed to address the subtree"},
 }
 
+// mutableTagKeys is every tag key the vendor role may write after an account
+// exists, and it is a closed list because of what is NOT on it.
+//
+// DESIGN §217 defines five tags on a vended account. Two of them --
+// automat:vended-by and automat:ou -- are read by conditions in this bundle:
+// MoveAccount requires an account to carry vended-by, and the delegation policy's
+// owner tag works the same way. A tag a condition reads must not be writable by
+// the principal the condition constrains, or the condition constrains nothing. Both
+// are set exactly once, at CreateAccount, through aws:RequestTag, where the value
+// is fixed by the template rather than chosen at call time.
+//
+// The three below are cost-allocation and inventory labels. They change when an
+// account is re-vended against a newer artifact, so they must stay writable -- and
+// they are safe to leave writable precisely because no condition anywhere reads
+// them. TestNoConditionReadsATagTheBundleLetsTheDelegateWrite enforces that
+// property over both documents, so adding a condition on one of these keys without
+// removing it here fails the build.
+var mutableTagKeys = []string{
+	"automat:artifact-id",
+	"automat:artifact-sha256",
+	"automat:version",
+}
+
 // VendorRoleCFN renders vendor-role.cfn.yaml.
 func VendorRoleCFN(r *Request) ([]byte, error) {
 	if err := r.Validate(); err != nil {
@@ -150,19 +173,61 @@ func VendorRoleCFN(r *Request) ([]byte, error) {
 	w("                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/%s/%s'\n", r.OrgID, ou)
 	w("                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/%s/%s/*'\n", r.OrgID, ou)
 	w("\n")
-	w("              # Tagging, restricted to automat's own tag namespace. Unrestricted,\n")
-	w("              # this action would let the role write any tag onto any account or OU\n")
-	w("              # in the organization -- including a tag central IT uses in a policy\n")
-	w("              # condition of its own, which would make that condition forgeable.\n")
-	w("              - Sid: TagOnlyInAutomatsNamespace\n")
+	w("              # Tagging. Two bounds, and both are load-bearing.\n")
+	w("              #\n")
+	w("              # The RESOURCE bound excludes policies. On '*' this statement would\n")
+	w("              # reach every service control policy ARN in the organization, and\n")
+	w("              # tagging one of yours with automat:managed-by=automat would hand the\n")
+	w("              # delegation policy in delegation-policy.json permission to rewrite\n")
+	w("              # it -- that document gates update, delete, and detach on exactly\n")
+	w("              # that tag. The role would never touch policy CONTENT; it would just\n")
+	w("              # forge the label that decides who may.\n")
+	w("              #\n")
+	w("              # The KEY bound is an explicit list, not automat:*. The keys omitted\n")
+	w("              # from it are omitted on purpose: automat:vended-by and automat:ou\n")
+	w("              # are read by conditions elsewhere in this bundle, so a principal\n")
+	w("              # that could write them would not be constrained by those conditions.\n")
+	w("              # Both are applied once, at CreateAccount, through aws:RequestTag\n")
+	w("              # above -- so nothing legitimate needs to set them again, and this\n")
+	w("              # statement cannot. The three keys below are cost-allocation and\n")
+	w("              # inventory labels that no condition anywhere reads, which is what\n")
+	w("              # makes them safe to leave mutable.\n")
+	w("              # Accounts and OUs are separate statements because only one of them\n")
+	w("              # can be confined by a tag. account/<org>/* is every account in the\n")
+	w("              # organization -- an Organizations account ARN encodes the org, not\n")
+	w("              # the OU -- so the account statement carries a condition instead: the\n")
+	w("              # account must already be one this role vended. A fresh OU has no\n")
+	w("              # tags at all, so the same condition there would make tagging a\n")
+	w("              # newly created OU impossible; its ARN does encode the subtree, so\n")
+	w("              # the resource bound is a real one.\n")
+	w("              - Sid: TagAccountsThisRoleVended\n")
 	w("                Effect: Allow\n")
 	w("                Action:\n")
 	w("                  - organizations:TagResource\n")
-	w("                Resource: '*'\n")
+	w("                Resource:\n")
+	w("                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/%s/*'\n", r.OrgID)
 	w("                Condition:\n")
-	w("                  ForAllValues:StringLike:\n")
+	w("                  StringEquals:\n")
+	w("                    aws:ResourceTag/automat:vended-by: '%s'\n", r.MemberAccountID)
+	w("                  ForAllValues:StringEquals:\n")
 	w("                    aws:TagKeys:\n")
-	w("                      - 'automat:*'\n")
+	for _, k := range mutableTagKeys {
+		w("                      - '%s'\n", k)
+	}
+	w("\n")
+	w("              - Sid: TagOrganizationalUnitsInTheSubtree\n")
+	w("                Effect: Allow\n")
+	w("                Action:\n")
+	w("                  - organizations:TagResource\n")
+	w("                Resource:\n")
+	w("                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/%s/%s'\n", r.OrgID, ou)
+	w("                  - !Sub 'arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/%s/%s/*'\n", r.OrgID, ou)
+	w("                Condition:\n")
+	w("                  ForAllValues:StringEquals:\n")
+	w("                    aws:TagKeys:\n")
+	for _, k := range mutableTagKeys {
+		w("                      - '%s'\n", k)
+	}
 	w("\n")
 	w("              # The reads that make the above verifiable. No policy actions appear\n")
 	w("              # anywhere in this role -- those flow through the delegation policy in\n")
@@ -325,16 +390,61 @@ func VendorRoleTF(r *Request) ([]byte, error) {
 	w("        ]\n")
 	w("      },\n")
 	w("      {\n")
-	w("        # Unrestricted, this would let the role write any tag onto any account\n")
-	w("        # or OU in the organization -- including a tag central IT uses in a\n")
-	w("        # policy condition of its own, which would make that condition forgeable.\n")
-	w("        Sid      = \"TagOnlyInAutomatsNamespace\"\n")
+	w("        # Two bounds, both load-bearing.\n")
+	w("        #\n")
+	w("        # The RESOURCE bound excludes policies: on \"*\" this statement would\n")
+	w("        # reach every service control policy in the organization, and tagging\n")
+	w("        # one of yours with automat:managed-by=automat would hand the delegation\n")
+	w("        # policy permission to rewrite it -- that document gates update, delete,\n")
+	w("        # and detach on exactly that tag.\n")
+	w("        #\n")
+	w("        # The KEY bound is an explicit list rather than automat:*, because\n")
+	w("        # automat:vended-by and automat:ou are read by conditions elsewhere in\n")
+	w("        # this bundle. Both are applied once at CreateAccount via aws:RequestTag,\n")
+	w("        # so nothing legitimate re-sets them; the keys below are inventory labels\n")
+	w("        # that no condition reads.\n")
+	w("        # Accounts and OUs are split because only one can be confined by a tag:\n")
+	w("        # account/<org>/* is every account in the organization, so that statement\n")
+	w("        # carries a vended-by condition, while a fresh OU has no tags at all and\n")
+	w("        # its ARN does encode the subtree.\n")
+	w("        Sid      = \"TagAccountsThisRoleVended\"\n")
 	w("        Effect   = \"Allow\"\n")
 	w("        Action   = [\"organizations:TagResource\"]\n")
-	w("        Resource = \"*\"\n")
+	w("        Resource = [\"${local.automat_org_arn_base}:account/${local.automat_org_id}/*\"]\n")
 	w("        Condition = {\n")
-	w("          \"ForAllValues:StringLike\" = {\n")
-	w("            \"aws:TagKeys\" = [\"automat:*\"]\n")
+	w("          StringEquals = {\n")
+	w("            \"aws:ResourceTag/automat:vended-by\" = local.automat_member_acct\n")
+	w("          }\n")
+	w("          \"ForAllValues:StringEquals\" = {\n")
+	w("            \"aws:TagKeys\" = [")
+	for i, k := range mutableTagKeys {
+		if i > 0 {
+			w(", ")
+		}
+		w("\"%s\"", k)
+	}
+	w("]\n")
+	w("          }\n")
+	w("        }\n")
+	w("      },\n")
+	w("      {\n")
+	w("        Sid      = \"TagOrganizationalUnitsInTheSubtree\"\n")
+	w("        Effect   = \"Allow\"\n")
+	w("        Action   = [\"organizations:TagResource\"]\n")
+	w("        Resource = [\n")
+	w("          \"${local.automat_org_arn_base}:ou/${local.automat_org_id}/${local.automat_target_ou}\",\n")
+	w("          \"${local.automat_org_arn_base}:ou/${local.automat_org_id}/${local.automat_target_ou}/*\",\n")
+	w("        ]\n")
+	w("        Condition = {\n")
+	w("          \"ForAllValues:StringEquals\" = {\n")
+	w("            \"aws:TagKeys\" = [")
+	for i, k := range mutableTagKeys {
+		if i > 0 {
+			w(", ")
+		}
+		w("\"%s\"", k)
+	}
+	w("]\n")
 	w("          }\n")
 	w("        }\n")
 	w("      },\n")

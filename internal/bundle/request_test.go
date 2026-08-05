@@ -483,3 +483,72 @@ func TestValidationErrorListsEveryProblemAtOnce(t *testing.T) {
 		t.Errorf("the count in the header does not match the list:\n%s", msg)
 	}
 }
+
+// TestGeneratedExternalIDPassesValidation closes the loop between the generator
+// and the validator: a generator that produced a value Validate refuses would
+// make `setup --request` fail on its own output, and one that produced a value
+// Validate accepts loosely would be worth checking anyway.
+func TestGeneratedExternalIDPassesValidation(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		id, err := NewExternalID()
+		if err != nil {
+			t.Fatalf("NewExternalID: %v", err)
+		}
+		if !reExternalID.MatchString(id) {
+			t.Fatalf("generated ExternalId %q does not satisfy automat's own validator", id)
+		}
+		// Every character must be safe in a YAML single-quoted scalar, an HCL
+		// string, and a JSON string, since it lands in all three.
+		if strings.ContainsAny(id, "'\"\\$`{}\n\r\t %") {
+			t.Fatalf("generated ExternalId %q contains a character that means something in a "+
+				"template", id)
+		}
+		if seen[id] {
+			t.Fatalf("NewExternalID returned the duplicate %q within %d draws, which means it is "+
+				"not drawing from crypto/rand", id, i+1)
+		}
+		seen[id] = true
+
+		r := validRequest()
+		r.ExternalID = id
+		if err := r.Validate(); err != nil {
+			t.Fatalf("a request carrying a generated ExternalId does not validate: %v", err)
+		}
+	}
+}
+
+// TestGeneratedExternalIDHasRealEntropy is a floor, not a statistical test. It
+// catches the failure that matters: a generator that returns a constant, a
+// counter, or something derived from public inputs. A derived ExternalId is a
+// constant dressed as a secret, and it removes the confused-deputy defense while
+// leaving every document that mentions it looking correct.
+func TestGeneratedExternalIDHasRealEntropy(t *testing.T) {
+	id, err := NewExternalID()
+	if err != nil {
+		t.Fatalf("NewExternalID: %v", err)
+	}
+	body := strings.TrimPrefix(id, externalIDPrefix)
+	if len(body) < 32 {
+		t.Errorf("the random part of %q is %d characters; 20 bytes of base32 is 32", id, len(body))
+	}
+	// It must not contain anything an operator could have predicted from the
+	// request. validRequest's values are the public inputs a derivation would use.
+	r := validRequest()
+	for _, public := range []string{
+		r.MemberAccountID, r.ManagementAccountID, r.OrgID, r.TargetOU, r.RequesterContact,
+	} {
+		if public != "" && strings.Contains(strings.ToUpper(id), strings.ToUpper(public)) {
+			t.Errorf("the ExternalId %q contains the public value %q — anyone who can read the "+
+				"trust policy could recompute it", id, public)
+		}
+	}
+	// Distinct characters, as the cheapest check that it is not a repeated byte.
+	distinct := map[rune]bool{}
+	for _, c := range body {
+		distinct[c] = true
+	}
+	if len(distinct) < 8 {
+		t.Errorf("the ExternalId body %q has only %d distinct characters", body, len(distinct))
+	}
+}

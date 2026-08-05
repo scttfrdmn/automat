@@ -49,13 +49,21 @@ This is the section worth your ten minutes.
   "can remove yours".
 - **It cannot tag its way around that.** The bullet above depends on the delegate
   being unable to *write* the tag those conditions read — a principal that can set
-  the tag a condition checks is not constrained by that condition. So
-  `organizations:TagResource` is itself restricted twice: to resources that already
-  carry `automat:managed-by=automat` (it cannot apply that tag to an SCP of yours),
-  and to tag keys matching `automat:*` (it cannot forge a tag you use in a
-  condition of your own elsewhere). If you check one thing in the policy, check
-  this: the `TagResource` statement must use `aws:ResourceTag`, not
-  `aws:RequestTag`.
+  the tag a condition checks is not constrained by that condition, and the two
+  halves of that mistake can sit in different files. Both files are written so no
+  tag either one reads is a tag either one can write:
+  - In `delegation-policy.json`, `organizations:TagResource` applies only to
+    resources that *already* carry `automat:managed-by=automat`. It cannot put that
+    tag on an SCP of yours, because it would need the tag to be there already.
+  - In the role, `organizations:TagResource` reaches no policy resource at all, and
+    its tag keys are a closed list of three inventory labels.
+    `automat:vended-by` and `automat:ou` are deliberately absent from that list:
+    they are the keys the conditions above read, they are set once at account
+    creation, and nothing can set them again. The grant is split in two so each
+    half can be confined by whatever actually confines it — accounts by the
+    `automat:vended-by` tag, OUs by the subtree in their ARN.
+  If you check one thing across both files, check that: no tag key that appears in
+  a `Condition` anywhere appears in a `TagResource` statement's allowed keys.
 - **It cannot loosen anything you enforce.** Service control policies you attach
   above OU ou-exam-research1 — at the root or at a parent OU — still apply to every account
   below it. SCPs intersect: the effective permissions of a vended account are what
@@ -78,16 +86,24 @@ further restrictions to that OU.
 ## What to check before approving
 
 Read both files. They are short on purpose — around a hundred lines each, five
-statements in the policy and five in the role — and reading them in full is a
+statements in the policy and six in the role — and reading them in full is a
 realistic ask, which is the point of scoping it this way.
 
 1. `delegation-policy.json`: confirm the `Principal` is the account you expect, and
    that every `Resource` names organization o-exampleorgid. Only the last statement —
    `AutomatReadTheOrganization...`, which is reads only — should reach past OU ou-exam-research1.
-2. **The `TagResource` statement uses `aws:ResourceTag`, not `aws:RequestTag`.**
-   This is the one line where the difference is not obvious and the consequence is
-   total: `RequestTag` would let the delegate put automat's tag on *your* SCP and
-   inherit every permission the other statements grant over automat's own.
+2. **Both `TagResource` statements — one per file — and check them together.**
+   This is where the difference is least obvious and the consequence is total,
+   because the tags in these documents are what authorization rests on.
+   - In `delegation-policy.json`: the condition is `aws:ResourceTag`, not
+     `aws:RequestTag`. `RequestTag` would let the delegate put automat's tag on
+     *your* SCP and inherit every permission the other statements grant over
+     automat's own.
+   - In the role: no `Resource` is `*` and none names a policy, and the
+     `aws:TagKeys` list is `StringEquals` over named keys rather than `StringLike`
+     over `automat:*`. A `*` resource reaches your SCPs; an `automat:*` key bound
+     admits `automat:vended-by`, which is the tag the `MoveAccount` statement in
+     the same file checks.
 3. The role's `AssumeRolePolicyDocument`: confirm the principal, and that the
    `sts:ExternalId` condition is present.
 4. The role's inline policy: confirm no `organizations:*Policy` action appears in
