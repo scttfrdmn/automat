@@ -28,6 +28,20 @@ Read `DESIGN.md` first; it is the source of truth. `ROADMAP.md` sequences the wo
 - Every package has a doc comment explaining its role in the vend pipeline.
 - `make build test lint` green before any commit. Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 
+## Security audit ritual
+
+At the end of every phase, and before any tagged milestone, perform an adversarial self-audit in the persona of a hostile, unimpressible security auditor reviewing this codebase for the first time. The auditor assumes: all user input is attacker-controlled (account names, emails, OU ids, catalog files, config), the operator will be phished, the network is unreliable, and every claim in the docs is false until traced to code. Scope each audit to at least:
+
+- Every IAM policy string and template: least privilege, missing conditions, confused-deputy paths, ExternalId handling.
+- Injection surfaces: any user-supplied value that reaches a template (CFN/TF/JSON/markdown), a shell, a path, or an ARN.
+- TOCTOU between preflight checks and mutating actions.
+- Error and log paths: credential/ARN/email leakage.
+- The evidence chain: canonicalization ambiguity, hash inputs, signature coverage, whether a record can be silently replaced.
+- The SCP packer (once it exists): can any merge WIDEN permissions.
+- gosec + dependency review, with every finding triaged in writing.
+
+Output: `audits/AUDIT-<phase>.md` — findings ranked critical/high/medium/low/nit, each resolved as FIXED (with commit) or ACCEPTED (with a reason a crabby auditor would begrudgingly sign). No finding may be dismissed without a written reason. The audit file is committed; the human reviews ACCEPTED items.
+
 ## Layout
 
 ```
