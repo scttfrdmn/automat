@@ -114,3 +114,32 @@ therefore how aggressive the packer must be about merging Action lists.
 DESIGN §5 documents the cosmetic race and requires treating create-without-move as an error
 state with a `parked` outcome. The retry policy that is actually needed — how long, how many
 attempts — is an empirical question.
+
+### Q8 — Does `MoveAccount` honor `aws:ResourceTag` on the account being moved?
+
+AUDIT-1 added `aws:ResourceTag/automat:vended-by` to the vendor role's `MoveAccount`
+statement (`internal/bundle/role.go`). The reasoning: `MoveAccount` authorizes against both
+the destination parent and the account being moved, and an Organizations account ARN encodes
+the organization rather than the OU, so `account/<org>/*` is org-wide and the condition is
+the only thing confining which account may be moved. Without it the role can move any
+account in the organization into the delegated OU — and out from under whatever SCPs bound
+it before, since an account has exactly one parent.
+
+What is unverified is whether Organizations evaluates `aws:ResourceTag` against the account
+resource for this action, or only against the destination OU. Two failure modes:
+
+- **The condition is ignored for the account.** Then the confinement does not exist and the
+  bullet the generated README makes about it is false. This is the bad case, and it cannot
+  be detected from fakes.
+- **The condition is evaluated against the destination OU too.** Then `MoveAccount` fails
+  for a legitimate vend, because automat's OUs are tagged `automat:managed-by` rather than
+  `automat:vended-by`. Fails closed and shows up on the first smoke run.
+
+The second is self-announcing; the first is not, so the Phase 5 smoke runbook must test it
+directly: attempt to move an untagged account, from the vendor role, into the delegated OU,
+and confirm `AccessDenied`. A smoke test that only proves the happy path proves nothing here.
+
+If it turns out `MoveAccount` cannot be conditioned on the account at all, the fallback is
+`organizations:MoveAccount` scoped by a permissions boundary that `preflight` verifies, or —
+better — dropping the org-wide account resource and accepting that automat must be told each
+account's ARN, which it knows, since it created it.
