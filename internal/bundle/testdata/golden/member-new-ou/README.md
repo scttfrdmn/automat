@@ -101,10 +101,39 @@ This is the section worth your ten minutes.
   rather than discovering it later. There is no narrower version of this grant that
   leaves the tool able to report on what it did.
 
+Two further things it *can* do, which follow from the grants above and are easy to
+read past. Neither reaches your policies or your other accounts; both are worth
+knowing before you approve.
+
+- **It can remove restrictions it added itself.** The delegation includes
+  `organizations:DetachPolicy` on automat's own policies, because a tool that can
+  only ever add policies cannot correct one. So the compliance controls automat
+  attaches to a vended account are not permanent against the account that vended
+  it: account 222222222222 can detach them. It cannot touch yours — that is the
+  tag-conditioned bullet above, and it is why your floor still holds — but if you
+  are relying on automat's controls as *your* assurance rather than the requester's,
+  that is the wrong place to put the reliance. Assurance here comes from
+  re-checking, not from the grant being narrow: `automat verify` is the command
+  meant to re-read what is actually attached and report drift, rather than trusting
+  that a past run's controls are still in place. **It is not in this version.**
+  Until it ships, treat "automat attached a control once" as a claim with no
+  standing evidence behind it, and check the OU's attached policies yourself if
+  you need to know what is on it right now.
+- **It can use up the policy slots on OU ou-REPLACE-WITH-THE-NEW-OU-ID.** AWS allows five service control
+  policies directly attached to any one target, and AWS's own `FullAWSAccess`
+  occupies one of them by default. Nothing in these files stops the delegate
+  attaching its policies until that OU is full, and then *you* cannot attach one
+  there. This does not weaken anything — a full target still enforces everything
+  attached to it, and an SCP you attach at a parent OU or the root still binds
+  every account below, which is where an institutional baseline belongs anyway. But
+  if you were planning to attach a policy directly at this OU, attach it before
+  handing over the delegation, or attach it one level up.
+
 What it *can* do, stated plainly: create AWS accounts (which cost money and count
-against your organization's account quota), place them in one OU, attach further
-restrictions to that OU, and read the organization's structure — including every
-account's root-user email and every SCP's contents, as above.
+against your organization's account quota), place them in one OU, attach and detach
+its own restrictions on that OU — using up to the five policy slots AWS allows
+there — and read the organization's structure, including every account's root-user
+email and every SCP's contents, as above.
 
 ## What to check before approving
 

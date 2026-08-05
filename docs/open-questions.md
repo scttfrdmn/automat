@@ -143,3 +143,35 @@ If it turns out `MoveAccount` cannot be conditioned on the account at all, the f
 `organizations:MoveAccount` scoped by a permissions boundary that `preflight` verifies, or —
 better — dropping the org-wide account resource and accepting that automat must be told each
 account's ARN, which it knows, since it created it.
+
+### Q9 — Does `MoveAccount` authorize against the *source* parent as well as the destination?
+
+Q8's neighbor, same statement, opposite direction. The `MoveAccountsIntoTheDelegatedSubtreeOnly`
+statement in both generated templates (`internal/bundle/role.go`, CFN and TF) lists three
+resources: `account/<org>/*` and the two OU ARNs — the target OU and its `/*` descendants.
+**It does not list the organization root.** That is deliberate: naming the root would let the
+role move accounts to the root, which is the confinement the whole statement exists to create,
+and the generated README says so ("An attempt to move an account into any other OU, or to the
+root, is denied by IAM").
+
+The unverified part is whether `MoveAccount` requires authorization on `SourceParentId` in
+addition to `DestinationParentId`. If it does, the first vend fails: a newly created account
+lands at the organization root (DESIGN §5's cosmetic race), so the source parent is the root
+ARN, which is not in the resource list. Every vend fails the same way, on the move, after the
+account exists — the `parked` outcome Q7 describes, for a reason that has nothing to do with
+timing.
+
+This **fails closed and is self-announcing**, unlike Q8's bad case, which is why AUDIT-1
+accepted it rather than adding the root ARN speculatively: adding it to fix a failure that may
+not exist would widen the grant to include the exact move the statement is designed to
+prevent, and would do so silently, in the direction that cannot be caught later. A denied
+first smoke vend is recoverable in an afternoon; a role that can quietly park any account at
+the root is not.
+
+Phase 5 smoke runbook: this is the first thing the first vend tests. If the move is denied
+with the source parent named in the error, the fix is a fourth resource entry — the root ARN,
+restricted to a statement that permits it only as a source, if IAM allows that distinction
+(`organizations:MoveAccount` does not appear to expose separate source/destination condition
+keys, which is itself part of the question). If it does not, the honest resolution is a
+`DestinationParentId`-only grant plus documenting that the delegate can move an account it
+created back to the root, and saying so in the README's blast-radius section.

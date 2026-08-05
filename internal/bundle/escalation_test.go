@@ -392,6 +392,76 @@ func TestREADMEDescribesTheGrantThatIsActuallyGenerated(t *testing.T) {
 	}
 }
 
+// TestREADMEDisclosesWhatTheDelegateCanDoToAutomatsOwnControls.
+//
+// The two capabilities here are not escalations and no test above catches them,
+// because every test above asks "can the delegate reach central IT's things" and the
+// answer is still no. These are about automat's *own* things, and the reason they
+// belong in the README is that a reader who accepts the blast-radius argument will
+// draw a conclusion from it that is not true.
+//
+//  1. `DetachPolicy` on automat's own policies means the controls a vended account
+//     is born with are not permanent against the account that vended it. Someone
+//     approving this bundle as the mechanism by which a research group's accounts
+//     stay compliant has read a guarantee that is not in these files. The real
+//     answer is `automat verify` re-reading what is attached — which is a different
+//     claim, and the README has to make it rather than imply the stronger one.
+//  2. `AttachPolicy` on the OU with no cap means the delegate can occupy all five of
+//     the SCP slots AWS allows on that target. It weakens nothing, but "I will attach
+//     my own policy to that OU later" is a reasonable plan this quietly breaks.
+//
+// Both assertions are keyed to the actions the policy actually grants, so removing
+// the grant retires the disclosure requirement automatically rather than leaving a
+// paragraph describing a permission that is gone.
+func TestREADMEDisclosesWhatTheDelegateCanDoToAutomatsOwnControls(t *testing.T) {
+	r := validRequest()
+	data, err := README(r)
+	if err != nil {
+		t.Fatalf("README: %v", err)
+	}
+	// Whitespace-normalized, because the README is hard-wrapped prose: a phrase this
+	// test looks for can straddle a line break with the next line's bullet indent in
+	// the middle of it, and pinning the wrap point would make an editorial reflow
+	// fail a security test for no reason.
+	s := strings.Join(strings.Fields(string(data)), " ")
+
+	granted := map[string]bool{}
+	for _, stmt := range decodePolicy(t, r) {
+		for _, a := range stmt.Action {
+			granted[a] = true
+		}
+	}
+
+	if granted["organizations:DetachPolicy"] {
+		// "not permanent" is the claim; DetachPolicy is the reason. Asserted on the
+		// phrase rather than the sentence so rewording is free and dropping the point
+		// is not.
+		if !strings.Contains(s, "not permanent") {
+			t.Error("the delegation grants organizations:DetachPolicy, so the delegate can remove " +
+				"the controls automat attached, and the README does not say so — a reader takes " +
+				"the blast-radius section to mean those controls hold")
+		}
+		if !strings.Contains(s, "automat verify") {
+			t.Error("the README says the controls can be detached without naming the answer " +
+				"(`automat verify`), which leaves the reader with a problem and no remedy")
+		}
+		// `automat verify` is DESIGN §12 and ships in Phase 4. Naming it as the remedy
+		// without saying it does not exist yet is the worse failure of the two: it
+		// invites central IT to approve a delegation on the strength of a check they
+		// cannot run, which is exactly the kind of claim outrunning the code that this
+		// bundle is supposed to make impossible.
+		if !strings.Contains(s, "not in this version") {
+			t.Error("the README offers `automat verify` as the answer without saying it does not " +
+				"ship yet, so the disclosure is settled by a command the reader cannot run")
+		}
+	}
+	if granted["organizations:AttachPolicy"] && !strings.Contains(s, "five service control policies") {
+		t.Error("the delegation grants organizations:AttachPolicy on the OU with no cap on " +
+			"how many, and the README does not mention AWS's five-per-target limit — central " +
+			"IT can be locked out of attaching a policy at that OU")
+	}
+}
+
 // conditionKeysRead returns every tag key that any condition in either generated
 // document reads, as a set of bare tag keys ("automat:managed-by").
 //
