@@ -9,6 +9,7 @@ Read `DESIGN.md` first; it is the source of truth. `ROADMAP.md` sequences the wo
 - License: Apache-2.0 (add LICENSE + SPDX headers).
 - CLI: `spf13/cobra` + `viper`-free config (plain TOML via `BurntSushi/toml`); keep the dependency tree small and boring.
 - AWS: `aws-sdk-go-v2` only. All AWS calls go through narrow, hand-written interfaces (one per service concern: `OrgAPI`, `STSAPI`, `ConfigAPI`, `AccountAPI`, `IAMAPI`) so everything is testable with fakes. No mocking frameworks; hand-rolled fakes in `internal/awsfake`.
+- **The `aws-sdk-go-v2` module family is pre-approved** — the core module, `config`, `credentials`, and any per-service module (`service/organizations`, `service/iam`, …). Ratified at the AUDIT-1 review so the "ask before adding a dependency" rule does not recur once per service. `config` in particular *is* DESIGN §13's credential chain; hand-rolling credential resolution to avoid the import would be strictly worse security. Every new service module still needs its own narrow interface and fake per the rule above, and still gets a dependency-review line in the phase audit.
 
 ## Hard rules
 
@@ -33,12 +34,14 @@ Read `DESIGN.md` first; it is the source of truth. `ROADMAP.md` sequences the wo
 At the end of every phase, and before any tagged milestone, perform an adversarial self-audit in the persona of a hostile, unimpressible security auditor reviewing this codebase for the first time. The auditor assumes: all user input is attacker-controlled (account names, emails, OU ids, catalog files, config), the operator will be phished, the network is unreliable, and every claim in the docs is false until traced to code. Scope each audit to at least:
 
 - Every IAM policy string and template: least privilege, missing conditions, confused-deputy paths, ExternalId handling.
+- **Tag-based authorization, both directions.** Every `aws:ResourceTag` / `aws:RequestTag` condition must be paired with an audit of which principals can *write* that tag at the same scope. **Wherever tag-reading gates access, tag-writing is a privilege boundary.** A condition that reads a tag any grant in the same bundle can apply is not a condition. Audit the pair even when the two halves live in different files or different templates — AUDIT-1's C1 was exactly this defect, and each half was unremarkable alone. State the invariant as a test, not as a paragraph: enumerate the keys the policies read and assert no grant can write one.
 - Injection surfaces: any user-supplied value that reaches a template (CFN/TF/JSON/markdown), a shell, a path, or an ARN.
 - TOCTOU between preflight checks and mutating actions.
 - Error and log paths: credential/ARN/email leakage.
 - The evidence chain: canonicalization ambiguity, hash inputs, signature coverage, whether a record can be silently replaced.
 - The SCP packer (once it exists): can any merge WIDEN permissions.
 - gosec + dependency review, with every finding triaged in writing.
+- **The CLI surface against DESIGN §13.** List the flags each command actually has and reconcile them with §13. A flag §13 does not enumerate is an addition and fine; a flag that *contradicts* §13 — or a §13 command whose implemented behavior differs — is its own line item in the audit, not a footnote. Ratified at the AUDIT-1 review on this condition.
 
 Output: `audits/AUDIT-<phase>.md` — findings ranked critical/high/medium/low/nit, each resolved as FIXED (with commit) or ACCEPTED (with a reason a crabby auditor would begrudgingly sign). No finding may be dismissed without a written reason. The audit file is committed; the human reviews ACCEPTED items.
 
