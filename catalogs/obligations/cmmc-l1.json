@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0.0",
+  "profile": {
+    "id": "cmmc-l1",
+    "title": "CMMC 2.0 Level 1 self-assessment",
+    "description": "Fifteen practices, assessed annually by the contractor itself, each MET or NOT MET, with an annual affirmation by a senior official. The strictest regime automat models in one specific respect: no POA&M is permitted, so a single unmet practice means there is nothing to affirm.",
+    "issuing_authority": "U.S. Department of Defense (CMMC Program)"
+  },
+
+  "status": "in-force",
+
+  "citations": [
+    {
+      "id": "32 CFR Part 170",
+      "title": "Cybersecurity Maturity Model Certification (CMMC) Program",
+      "effective_date": "2024-12-16",
+      "role": "creates",
+      "note": "The CMMC Program rule. Level 1 practices are enumerated at 170.14(c)(1), which is the citation catalogs/cmmc-l1.json's control ids follow."
+    },
+    {
+      "id": "48 CFR 252.204-7021",
+      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirement",
+      "effective_date": "2024-12-16",
+      "role": "operationalizes",
+      "note": "The contract clause that makes a CMMC level a condition of award."
+    },
+    {
+      "id": "FAR 52.204-21",
+      "title": "Basic Safeguarding of Covered Contractor Information Systems",
+      "effective_date": "2016-11-30",
+      "role": "related",
+      "note": "The fifteen Level 1 practices derive from this clause's safeguarding requirements; it is the control-text source in catalogs/cmmc-l1.json's artifact.sources."
+    }
+  ],
+
+  "control_catalogs": [
+    {
+      "catalog": "cmmc-2.0-level-1",
+      "revision_policy": "pinned",
+      "revision": "CMMC 2.0 Level 1 (32 CFR 170.14(c)(1))",
+      "artifact_id": "cmmc-l1",
+      "note": "Fifteen practices. The instrument names them exactly, so there is nothing for an operator to determine about scope of controls — only about scope of system."
+    }
+  ],
+
+  "assessment": {
+    "type": "self",
+    "signed_by": [
+      "A senior official of the contractor (the affirming official)"
+    ],
+    "cadence": "annual",
+    "audited_by_issuer": "not-stated",
+    "documentation_submitted": "not-submitted",
+    "notes": "No third-party assessor is involved at Level 1; the contractor assesses itself and a senior official affirms the result. automat generates the packet that official reads and never the affirmation itself (docs/assessment-reporting.md invariant 1) — a generated document that looked like the affirmation would be a document someone could sign without having done the assessment."
+  },
+
+  "determinations": {
+    "values": ["MET", "NOT MET"],
+    "partial_credit": false,
+    "understatement_value": "NOT MET"
+  },
+
+  "poam": {
+    "permitted": false,
+    "notes": "No POA&M is permitted at Level 1. This is why an objective with neither machine evidence nor an operator determination must render NOT MET rather than 'in progress': there is no state in this regime between met and not, so 'in progress' would invent one — and the comfortable one. An operator reading four practices as 'in progress' concludes they are nearly there; the same four as NOT MET tells them there is nothing to affirm this year until those four are done."
+  },
+
+  "scoring": { "method": "none" },
+
+  "submission": {
+    "target": "SPRS (affirmation)",
+    "automat_may_format": false,
+    "notes": "The affirmation is entered by the affirming official. automat formats nothing for it."
+  },
+
+  "applicability": {
+    "trigger": "A DoD contract or subcontract containing the CMMC clause at a level of 1, where the contractor processes, stores, or transmits Federal Contract Information. Whether a given award carries the clause and at what level is a contracting question — read the award, and ask your contracts office. automat does not and cannot determine this.",
+    "hints": [
+      "The award or subcontract includes 48 CFR 252.204-7021",
+      "The solicitation or award states a required CMMC level of 1",
+      "The work involves Federal Contract Information but not Controlled Unclassified Information"
+    ],
+    "exclusions": [
+      "Acquisitions solely for commercially available off-the-shelf (COTS) items"
+    ],
+    "declared_by_operator": true
+  },
+
+  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
+
+  "sources": [
+    {
+      "id": "gen/sources/far-52.204-21.json",
+      "title": "FAR 52.204-21 Basic Safeguarding of Covered Contractor Information Systems (vendored control text)",
+      "version": "Nov 2021",
+      "sha256": "ba44e932cd1bb9c39ba145acde39bc1111e6fa8daf2e0b51ff6122cfcb6338e7",
+      "note": "The control text behind the fifteen practices, already vendored for the catalog compile. A test asserts this hash still matches the file on disk, so a re-vendor that changes the text without updating this profile fails the build rather than leaving the profile citing bytes that no longer exist."
+    },
+    {
+      "id": "gen/sources/cfr-170-crosswalk.json",
+      "title": "32 CFR 170.14(c)(1) practice-identifier crosswalk (vendored)",
+      "version": "2024-12-16",
+      "sha256": "85eb2b688159d55ed546fd7e7f4390b51fd5878625650480135fa6e58523ccd6",
+      "note": "The mapping from FAR clause paragraphs to CMMC Level 1 practice identifiers, which is what makes catalogs/cmmc-l1.json's control ids traceable to the rule."
+    }
+  ]
+}

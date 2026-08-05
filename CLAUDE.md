@@ -40,6 +40,7 @@ At the end of every phase, and before any tagged milestone, perform an adversari
 - Error and log paths: credential/ARN/email leakage.
 - The evidence chain: canonicalization ambiguity, hash inputs, signature coverage, whether a record can be silently replaced.
 - The SCP packer (once it exists): can any merge WIDEN permissions.
+- **Every obligation profile's citations and effective dates, re-verified against the primary source.** Confirm every claim automat renders into a human-facing document traces to a hashed source. **A stale legal citation is a finding, ranked no lower than medium** — it is not a documentation nit. A profile is a reading of policy that an institution acts on, and policy moves: notices are superseded, phase-in dates arrive, a class deviation pinning a revision expires. The failure mode is silent and confident, since a superseded citation renders exactly as well as a current one. Also confirm the policy caveat still appears where `docs/policy-caveat.md` requires it, and that the understatement asymmetry still holds across the whole profile set rather than per profile.
 - gosec + dependency review, with every finding triaged in writing.
 - **The CLI surface against DESIGN §13.** List the flags each command actually has and reconcile them with §13. A flag §13 does not enumerate is an addition and fine; a flag that *contradicts* §13 — or a §13 command whose implemented behavior differs — is its own line item in the audit, not a footnote. Ratified at the AUDIT-1 review on this condition.
 

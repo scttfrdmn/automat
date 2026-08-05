@@ -473,8 +473,10 @@ no bug is churn that costs review attention, which is the scarce resource here.
 
 ## For the human to review — ratification requests
 
-Three items need an explicit yes, per CLAUDE.md's "ask the human before" rule. All
-three were made during the phase; none is retroactively self-approved.
+Items 1–3 need an explicit yes, per CLAUDE.md's "ask the human before" rule; they were
+made during the phase and none is retroactively self-approved. Items 4 and 5 were made
+*after* this audit at the review's own instruction, and are recorded rather than requested
+— see each for what that distinction means.
 
 1. **Dependency: `github.com/aws/aws-sdk-go-v2/config`.** Not in CLAUDE.md's named
    set. Required by DESIGN §13's "lean on the AWS credential chain" — that chain *is*
@@ -592,6 +594,46 @@ three were made during the phase; none is retroactively self-approved.
      exempting only the automat automation role ARN". Flagged rather than silently
      reinterpreted, per CLAUDE.md; the review authorized the list, so the design text
      was the wrong half.
+
+5. **A new schema, `obligation-profile/v1`, plus three vendored profiles.** Rule 6 says
+   schema changes are ratified in the audit file. This is a *new* contract rather than a
+   change to a published one — nothing bumps, nothing migrates — but a new file in
+   `schema/` is a new promise, so it belongs here. Full reasoning in
+   `schema/CHANGELOG.md`; the security-relevant part in three lines:
+
+   - **The understatement asymmetry is now parameterized by data**, via
+     `determinations.understatement_value`. That is the field an attacker with commit
+     access to a catalog file would flip: pointing it at the *satisfied* value would make
+     automat write `MET` on its own, inverting the one invariant standing between this
+     tool and a false compliance claim, and it would validate perfectly against the
+     schema. So the invariant is a **property over the profile set**
+     (`TestTheUnderstatementAsymmetryHoldsUnderEveryProfile`), which holds for profiles
+     nobody has written yet. The check also rejects the substring trap: `OTHER THAN
+     SATISFIED` contains `SATISFIED` and is the opposite claim.
+   - **`applicability` is deliberately not evaluable** — prose plus a capped,
+     non-exhaustive hints list, with `declared_by_operator` pinned `const: true`. The
+     threat here is not an attacker, it is a well-meaning contributor: a match language
+     arrives one plausible entry at a time, and the resulting "this obligation does not
+     apply to you" would be believed precisely because the tool is right about everything
+     else. `TestApplicabilityIsNeverEvaluable` fails on predicate syntax in any
+     applicability text.
+   - **Two profiles ship with all-zero source hashes on purpose** — `dfars-7012`'s weight
+     table (Q10 decided, transcription is Phase 4 work) and both non-CMMC profiles'
+     citations. A deliberate placeholder whose deliberateness expires is exactly the
+     shape of a future finding, so `TestNoUnresolvedHashInARenderableProfile` gates it:
+     a profile listed as renderable may hold no unresolved hash, and the renderable list
+     is empty today. The weight table is deliberately **not** pre-filled with plausible
+     weights, because a plausible wrong weight is worse than an obviously absent one — it
+     produces output, and no test catches a false input to correct arithmetic. That is
+     also why Q10's decision is dual independent transcription: redundancy at the point
+     of entry is the only control that works there.
+
+   Also landed with it, and worth an auditor's attention as a *scope* change rather than a
+   code one: **CLAUDE.md's ritual now requires re-verifying every obligation profile's
+   citations and effective dates against the primary source at each phase gate, with a
+   stale legal citation ranked no lower than medium.** A profile is a reading of policy an
+   institution acts on, and a superseded citation renders exactly as well as a current
+   one — the failure is silent and confident. AUDIT-2 is the first audit that owes this.
 
 ## For the human to review — ACCEPTED items
 
@@ -795,3 +837,26 @@ Added by review item 9 (see ratification item 4 for what changed and why):
    (`docs/open-questions.md`) is the live-org half of the same question. Item 3 above is
    the `vend`-specific instance; this is the general rule, and the two should not be
    read as one item satisfied by checking one grant.
+
+Added by the obligation-profile work (ratification item 5):
+
+8. **Three unresolved hashes and an empty renderable list.** `catalogs/obligations/`
+   ships two profiles whose sources are all-zero placeholders and one weight-table
+   reference likewise. `TestNoUnresolvedHashInARenderableProfile` holds the line by
+   asserting that no profile automat may *render* carries one — with the renderable set
+   currently empty, which is the only reason the placeholders are safe. AUDIT-2 should
+   check two things and not take the test's name for either: that the renderable set is
+   still empty or else fully vendored, and that no renderer reached a profile without
+   going through that list. The failure mode is a report citing a source by sixty-four
+   zeros, which reads as provenance and is not.
+
+9. **The citation re-verification duty starts now, not at Phase 4.** CLAUDE.md's ritual
+   gained it in this change, so AUDIT-2 is the first audit that owes it. `nih-cadr-dua`
+   is where it bites hardest and should be checked first: the notice chain is recent, the
+   2026-02-26 agreement-stipulation date falls inside the phase-in so two operators can
+   legitimately be under different standards on the same day, and the 800-171 revision
+   question is unresolved *upstream* rather than by us. Also confirm the profile still
+   ships no revision default — the schema forbids the field, and the test additionally
+   rejects a revision named in `hints`, which is the shape a default takes when it comes
+   back wearing a different hat.
+

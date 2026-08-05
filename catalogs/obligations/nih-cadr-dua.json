@@ -1,0 +1,128 @@
+{
+  "schema_version": "1.0.0",
+  "profile": {
+    "id": "nih-cadr-dua",
+    "title": "NIH Controlled-Access Data — security expectations under a Data Use Agreement",
+    "description": "The obligation that arrives by agreement rather than by contract clause, and the case a CMMC-shaped model gets wrong in three ways: the trigger is the DATA SOURCE rather than a marking, the binding instrument is a Data Use Agreement rather than a procurement clause, and the control catalog's REVISION IS NOT PINNED — institutions have split, so automat requires the operator to declare it and ships no default. The scope also reaches further than a contract: it binds Approved Users and developers building or testing platforms, pipelines, tools, or interfaces that store or interact with the data, and it reaches institutional systems, third-party IT, and cloud providers.",
+    "issuing_authority": "National Institutes of Health"
+  },
+
+  "status": "phased",
+
+  "citations": [
+    {
+      "id": "NOT-OD-24-157",
+      "title": "Implementation Update for Data Management and Access Practices Under the Genomic Data Sharing Policy",
+      "effective_date": "2025-01-25",
+      "role": "creates",
+      "note": "Establishes the security expectations for users of NIH controlled-access data. Expectations effective 2025-01-25."
+    },
+    {
+      "id": "NOT-OD-25-159",
+      "title": "Security Expectations for NIH Controlled-Access Data Repositories",
+      "effective_date": "2025-01-25",
+      "role": "creates",
+      "note": "The repository-facing half of the same requirement. Recorded because a user's obligations are shaped by what their repository requires of them."
+    },
+    {
+      "id": "NIH Security Best Practices for Users of Controlled-Access Data",
+      "title": "NIH Security Best Practices for Users of Controlled-Access Data",
+      "effective_date": "2025-01-25",
+      "role": "operationalizes",
+      "note": "The document that turns the notices into practices. This is where the 800-171 alignment is stated — and where the revision is NOT stated, which is the whole reason this profile's revision_policy is operator-determined."
+    },
+    {
+      "id": "NOT-OD-24-157 (agreement stipulation date)",
+      "title": "Stipulation in new or renewed agreements",
+      "effective_date": "2026-02-26",
+      "role": "operationalizes",
+      "note": "From 2026-02-26 the expectations are stipulated in NEW OR RENEWED agreements. Users approved before that date continue under their existing agreement's standards until close-out or renewal. This is why the profile's status is `phased` and not simply `in-force`: two Approved Users at the same institution can be under different standards on the same day, distinguished only by when their agreement was signed. An operator must know which one they are, and automat cannot tell them."
+    },
+    {
+      "id": "NOT-OD-25-081",
+      "title": "Use of Generative AI with NIH Controlled-Access Data",
+      "effective_date": "2025-01-25",
+      "role": "related",
+      "note": "Treats generative AI models and their parameters trained on controlled-access data as Data Derivatives: approval required, no sharing outside Approved Users, no retention at closeout. Recorded here because it is the provision most likely to be missed by a research computing group that has otherwise done everything right — a fine-tuned model is not obviously 'data' to the person who trained it, and the retention rule reaches model artifacts an account may hold long after the source data is gone."
+    }
+  ],
+
+  "control_catalogs": [
+    {
+      "catalog": "nist-sp-800-171",
+      "revision_policy": "operator-determined",
+      "note": "NIH's notices and best-practices document align expectations with NIST SP 800-171 WITHOUT NAMING A REVISION, and institutions have split between Rev 2 and Rev 3. automat therefore ships no default and refuses to proceed without an operator determination recording who determined the revision and when, hashed into the evidence chain like any other determination. 'Most institutions use rN' is not a default and is not offered as a hint: a default here would silently pick an institution's compliance posture for it, and the person best placed to make that call — the sponsored programs office reading the actual agreement — is precisely the person a default would route around."
+    }
+  ],
+
+  "assessment": {
+    "type": "attestation-only",
+    "signed_by": [
+      "The data requestor (Principal Investigator)",
+      "The institutional IT contact or information security officer",
+      "The institutional signing official"
+    ],
+    "cadence": "on new or renewed agreement, and on material change to the environment",
+    "audited_by_issuer": "no",
+    "documentation_submitted": "on-request",
+    "notes": "Attestation-only rather than self-assessment: three named roles attest to the environment, and NIH prescribes no assessment procedure of the kind 800-171A provides for the DFARS path. NIH states it does not currently plan to actively audit, and documentation is not submitted today — but may be requested. That combination is a trap worth naming: the absence of an audit makes the attestation feel low-stakes, while 'may be requested' means the documentation has to actually exist and match the environment at the moment it is asked for."
+  },
+
+  "determinations": {
+    "values": ["SATISFIED", "OTHER THAN SATISFIED"],
+    "partial_credit": false,
+    "understatement_value": "OTHER THAN SATISFIED"
+  },
+
+  "poam": {
+    "permitted": true,
+    "requires_target_date": true,
+    "notes": "A POA&M is permitted where the environment falls short — the opposite of CMMC Level 1, on the same control catalog. Note what this means for the same finding under two profiles: an objective with no evidence renders NOT MET and blocks an affirmation under cmmc-l1, while under this profile it renders OTHER THAN SATISFIED with an eligible POA&M line. Same fact, two legitimate renderings, which is exactly why the regime is data."
+  },
+
+  "scoring": { "method": "none" },
+
+  "submission": {
+    "target": "Retained by the institution; produced to NIH or the repository on request",
+    "automat_may_format": false,
+    "notes": "Nothing is submitted to a scoring system. The attestation is made through the repository's request process."
+  },
+
+  "applicability": {
+    "trigger": "Use of data obtained from a listed NIH Controlled-Access Data Repository, under a Data Use Agreement or equivalent. The trigger is the DATA SOURCE, not a CUI marking and not a contract clause — which is why an institution can be fully outside DFARS and squarely inside this obligation. It binds Approved Users and also developers building or testing platforms, pipelines, tools, or interfaces that store or interact with that data, and it reaches institutional systems, third-party IT, and cloud providers. Whether your project is in scope is a question for your sponsored programs office and the terms of the agreement your signing official executed. automat does not and cannot determine this.",
+    "hints": [
+      "Data obtained from dbGaP",
+      "Data obtained from AnVIL",
+      "Data obtained from NCI Genomic Data Commons (GDC)",
+      "Data obtained from NHLBI BioData Catalyst",
+      "Data obtained from Gabriella Miller Kids First Data Resource",
+      "Data obtained from the NIMH Data Archive (NDA)",
+      "Data obtained from NIAGADS",
+      "Data obtained from AMP PD",
+      "Data obtained from the National COVID Cohort Collaborative (N3C)",
+      "Data obtained from FITBIR",
+      "Data obtained from TB Portals",
+      "Data obtained from BioLINCC",
+      "Data obtained from NICHD DASH",
+      "An executed Data Use Agreement or Data Use Certification is on file",
+      "The project builds or tests a platform, pipeline, tool, or interface that stores or interacts with controlled-access data",
+      "A generative AI model has been trained or fine-tuned on controlled-access data (NOT-OD-25-081 Data Derivatives)"
+    ],
+    "exclusions": [
+      "Open-access or unrestricted-access data from the same repositories",
+      "Aggregate or summary-level data released without an access agreement"
+    ],
+    "declared_by_operator": true
+  },
+
+  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
+
+  "sources": [
+    {
+      "id": "pending",
+      "title": "No citation for this profile has been retrieved and hashed yet",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "note": "The notices and the best-practices document are recorded from their published identifiers and effective dates, not from retrieved copies. Not renderable until vendored, asserted by TestNoUnresolvedHashInARenderableProfile. This profile is the one where the standing re-verification obligation bites hardest: the notice chain is recent, the 2026-02-26 stipulation date is inside the phase-in, and the revision question is unresolved upstream — three ways for a citation here to go stale between phase gates."
+    }
+  ]
+}

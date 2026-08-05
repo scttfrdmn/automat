@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0.0",
+  "profile": {
+    "id": "dfars-7012",
+    "title": "DFARS 252.204-7012 safeguarding with -7019/-7020 assessment and SPRS scoring",
+    "description": "NIST SP 800-171 applied to covered defense information under DFARS, with a self-assessment scored on the DoD methodology (110 less weighted deductions) and posted to SPRS. Unlike CMMC Level 1, a POA&M is permitted, which is the sharpest difference between two regimes that read the same control catalog.",
+    "issuing_authority": "U.S. Department of Defense"
+  },
+
+  "status": "phased",
+
+  "citations": [
+    {
+      "id": "DFARS 252.204-7012",
+      "title": "Safeguarding Covered Defense Information and Cyber Incident Reporting",
+      "effective_date": "2017-12-31",
+      "role": "creates",
+      "note": "The clause requiring NIST SP 800-171 implementation for covered defense information, plus incident reporting. The full-implementation date for 800-171 was 2017-12-31."
+    },
+    {
+      "id": "DFARS 252.204-7019",
+      "title": "Notice of NIST SP 800-171 DoD Assessment Requirements",
+      "effective_date": "2020-11-30",
+      "role": "operationalizes",
+      "note": "Requires a current (within three years) assessment posted in SPRS as a condition of award consideration."
+    },
+    {
+      "id": "DFARS 252.204-7020",
+      "title": "NIST SP 800-171 DoD Assessment Requirements",
+      "effective_date": "2020-11-30",
+      "role": "operationalizes",
+      "note": "Establishes the Basic/Medium/High assessment levels and the obligation to provide access for higher-level assessments. The self-assessment automat can contribute to is the Basic level."
+    },
+    {
+      "id": "48 CFR 252.204-7021",
+      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirement",
+      "effective_date": "2024-12-16",
+      "role": "related",
+      "note": "CMMC Phase 2 begins 2026-11-10, at which point most CUI contracts require a C3PAO-assessed Level 2 rather than a self-assessment. This profile's `phased` status is that date: the self-assessment path it models is being layered over, not withdrawn, and an operator planning past late 2026 needs to know which regime their next award falls under. Recorded as a citation rather than a separate profile because a Level 2 profile would need C3PAO assessment modeling automat has no basis for yet."
+    },
+    {
+      "id": "DoD class deviation 2024-O0013",
+      "title": "Class Deviation — NIST SP 800-171 Revision 2 for DFARS 252.204-7012",
+      "effective_date": "2024-05-02",
+      "role": "operationalizes",
+      "note": "Pins Revision 2 for DFARS purposes notwithstanding 800-171's own revision to Rev 3. This is why control_catalogs pins r2 rather than leaving the revision to the operator — the instrument answers the question that NIH's notices leave open."
+    }
+  ],
+
+  "control_catalogs": [
+    {
+      "catalog": "nist-sp-800-171",
+      "revision_policy": "pinned",
+      "revision": "Revision 2",
+      "artifact_id": "800-171r2",
+      "note": "Pinned by the class deviation above, not by automat's preference. The 800-171r2 catalog is not yet built (ROADMAP Phase 0 deferred it; docs/open-questions.md Q4 records the CPRT acquisition path), so artifact_id names the catalog this profile expects rather than one that exists today."
+    }
+  ],
+
+  "assessment": {
+    "type": "self",
+    "signed_by": [
+      "The contractor's authorized representative posting the score",
+      "A senior official where the institution's own policy requires one"
+    ],
+    "cadence": "at least every three years, and on material change",
+    "audited_by_issuer": "yes",
+    "documentation_submitted": "on-request",
+    "notes": "The Basic assessment is a self-assessment; Medium and High are performed by the government (DFARS 252.204-7020), and this profile models only the Basic level. The System Security Plan and POA&M are retained and produced on request rather than submitted with the score."
+  },
+
+  "determinations": {
+    "values": ["SATISFIED", "OTHER THAN SATISFIED"],
+    "partial_credit": false,
+    "understatement_value": "OTHER THAN SATISFIED"
+  },
+
+  "poam": {
+    "permitted": true,
+    "requires_target_date": true,
+    "notes": "Deducted requirements may carry a plan of action with a target completion date, which is posted alongside the score. Note the interaction with partial_credit: an individual requirement is still binary — SATISFIED or not — and the aggregate score is where degrees are expressed. A POA&M defers the remedy, it does not soften the determination."
+  },
+
+  "scoring": {
+    "method": "dfars-110-weighted",
+    "weight_table": {
+      "id": "dfars-800-171r2-weights",
+      "title": "NIST SP 800-171 DoD Assessment Methodology — per-requirement value table",
+      "version": "PENDING — see docs/open-questions.md Q10",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "note": "NOT YET VENDORED. Q10 is decided (dual independent transcription, hashed, named by the report) but the transcription itself is a Phase 4 deliverable and has not been performed. This entry is present so the profile's shape is reviewable; the hash is 64 zeros, and a test asserts no profile with an unresolved weight-table hash can be used for scoring. Deliberately NOT filled with plausible weights: a wrong weight is confidently wrong in the same direction on every regeneration, and no test catches a false input to correct arithmetic."
+    }
+  },
+
+  "submission": {
+    "target": "SPRS",
+    "automat_may_format": false,
+    "notes": "SPRS has no documented ingest format; scores are entered through its web application. automat emits the score plus per-requirement worked arithmetic so the operator can key it in and defend it, and formats nothing for submission."
+  },
+
+  "applicability": {
+    "trigger": "A DoD contract or subcontract containing DFARS 252.204-7012, where covered defense information is processed, stored, or transmitted on a contractor information system. For universities the usual path is a subaward or a prime award with the clause flowed down; fundamental research awards frequently do not carry it. Read the award terms and ask your sponsored programs and contracts offices. automat does not and cannot determine this.",
+    "hints": [
+      "The award or subaward includes DFARS 252.204-7012",
+      "The award includes DFARS 252.204-7019 or -7020",
+      "The award identifies covered defense information or CUI to be handled",
+      "SPRS already holds a score for the institution's CAGE code hierarchy"
+    ],
+    "exclusions": [
+      "Acquisitions solely for commercially available off-the-shelf (COTS) items"
+    ],
+    "declared_by_operator": true
+  },
+
+  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
+
+  "sources": [
+    {
+      "id": "pending",
+      "title": "No citation for this profile has been retrieved and hashed yet",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "note": "This profile's citations are recorded from published identifiers and effective dates, not from retrieved documents. The standing audit item (docs/policy-caveat.md) requires every claim automat RENDERS to trace to a hashed source, so this profile is not renderable until its citations are vendored — asserted by TestNoUnresolvedHashInARenderableProfile rather than left to discipline. Kept as an explicit unresolved entry rather than an empty list: an empty sources array would read as 'nothing to cite'."
+    }
+  ]
+}

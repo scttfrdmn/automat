@@ -6,10 +6,74 @@ consequences land on Phase 4's `verify` work itself — see "What this requires 
 `verify`" — and that part should be read before `verify` is written, because retrofitting
 it means two code paths computing one compliance claim.
 
+> automat encodes a technical reading of published policy. It is not legal advice and not a
+> compliance determination. The agreement, award terms, or contract clause your institution
+> signed governs; your sponsored programs office, contracts office, or counsel decides what
+> applies and which revision. Where policy is ambiguous — for example the NIH 800-171
+> revision question — automat records the operator's declaration rather than resolving it.
+> Policy citations carry effective dates and change; verify against the primary source
+> before relying on them. (`docs/policy-caveat.md`.)
+
 Both frameworks automat ships catalogs for define a **self-assessment process with an
 expected output**, and neither is satisfied by a tool printing "compliant". This page
 records what those processes require, what automat can honestly contribute, and the
 invariants that keep the second from overstating the first.
+
+**Amended after the review that approved this scope:** the original proposal assumed one
+assessment regime per control catalog. It needs a second axis, and everything below reads
+against it — see "The second axis" immediately following.
+
+## The second axis: obligation profiles
+
+A catalog answers **which controls**. It does not answer *under what instrument, assessed
+how, signed by whom, with gaps deferrable or not.* Those are a separate axis, and the
+reason they cannot be fields on the catalog is that **the same control catalog is assessed
+under incompatible rules by different regimes**:
+
+| | Catalog | Determinations | POA&M | Score | Signed by |
+|---|---|---|---|---|---|
+| `cmmc-l1` | CMMC 2.0 L1 (15 practices) | MET / NOT MET | **forbidden** | none | senior official |
+| `dfars-7012` | 800-171 **Rev 2**, pinned by class deviation | SATISFIED / OTHER THAN SATISFIED | permitted, dated | 110-weighted → SPRS | authorized rep |
+| `nih-cadr-dua` | 800-171, **revision not pinned** | SATISFIED / OTHER THAN SATISFIED | permitted, dated | none | PI + IT contact + signing official |
+
+The bottom two rows read the *same* control catalog and agree on almost nothing else. The
+same objective with no evidence is a blocking NOT MET under the first, and an
+OTHER-THAN-SATISFIED with an eligible POA&M line under the third. Same fact, two legitimate
+renderings.
+
+`nih-cadr-dua` is the case that matters most for this project's users and the one that
+breaks a CMMC-shaped model outright, in three ways:
+
+- **The trigger is the data source, not a marking or a clause.** The obligation arrives via
+  a **Data Use Agreement** with a listed controlled-access repository. An institution can
+  be entirely outside DFARS and squarely inside this.
+- **The scope is wider than a contract's.** It binds Approved Users *and* developers
+  building or testing platforms, pipelines, tools, or interfaces that touch the data, and it
+  reaches institutional systems, third-party IT, and cloud providers.
+- **The revision is not pinned.** NIH's notices align expectations with 800-171 without
+  naming a revision, and institutions have split. So the revision is an **operator
+  determination** — recorded with who determined it and when, hashed into the evidence chain
+  like any other determination — and **automat ships no default and refuses to proceed
+  without one**. "Most institutions use Rev N" is not a default; it is not even a hint,
+  because a default here silently picks an institution's compliance posture for it.
+
+Profiles live in `catalogs/obligations/` against
+`schema/obligation-profile-v1.schema.json`, and are **data**: there is no
+profile-specific branching in Go. A regime encoded as a `switch` on profile id cannot be
+corrected without a release, and policy moves faster than this tool will.
+
+**Applicability is never evaluable.** A profile's `applicability.trigger` is prose for a
+human plus at most a bounded, explicitly non-exhaustive `hints` list. There is no expression
+language and no predicate, because an automated "this obligation applies to you" is the most
+dangerous output this tool could produce: wrong in the permissive direction it tells an
+institution it is unregulated, and it would be believed, because it came from a tool that is
+right about everything else. The operator declares which profiles apply.
+
+`FAR Case 2017-016` — the governmentwide civilian CUI rule — is deliberately **not shipped
+as a profile**. It is still a proposed rule, and it excludes COTS items and fundamental
+research at colleges, universities, and laboratories, which is most of what this project's
+users do. The schema's `status: proposed` exists so it *can* be recorded without being
+modeled as binding; shipping it today would imply requirements institutions do not have.
 
 ## The processes, and their expected artifacts
 
@@ -94,6 +158,18 @@ exactly two determinations; adding a "NOT DETERMINED" beside them would produce 
 worksheet that is not an 800-171A worksheet. Undetermined lives in automat's layer, as the
 absence of an operator determination — which at L1 renders NOT MET (below) and at
 800-171r2 renders as an unscored requirement in the arithmetic.
+
+**The profile parameterizes this asymmetry; it does not bolt onto it.** Each regime spells
+its own values, so `determinations.understatement_value` in the profile names which member
+of that closed set automat is permitted to write on its own — `NOT MET` for `cmmc-l1`,
+`OTHER THAN SATISFIED` for the other two. That is the *only* value automat writes; the
+satisfied value comes from the determinations file or from nowhere.
+
+Because a profile can carry that field, a profile could in principle invert the invariant
+while validating perfectly against the schema. So it is asserted as a **property over the
+profile set** rather than per profile
+(`TestTheUnderstatementAsymmetryHoldsUnderEveryProfile`): the check has to hold for profiles
+nobody has written yet, which is precisely what a per-profile assertion cannot do.
 
 ## Invariant 3: the L1 wrinkle — no partial credit, no POA&M, so silence is NOT MET
 
@@ -219,11 +295,25 @@ schema to exist — only that `verify` not throw its evidence away.
 Ordered so each stage is independently useful and the L1 path is not blocked by the
 800-171 path:
 
+0. **Obligation profiles.** **Done** — `schema/obligation-profile-v1.schema.json` plus
+   `cmmc-l1`, `dfars-7012`, `nih-cadr-dua` in `catalogs/obligations/`. Data and schema only.
+   First because every stage below renders under a profile, and the citations still need
+   vendoring before anything may render from them
+   (`TestNoUnresolvedHashInARenderableProfile`).
 1. **Objectives catalog + weight table.** 800-171A objectives from NIST CPRT
    (`SP_800_171A`), vendored and hashed into `artifact.sources` like every other source.
-   DFARS weights from the DoD Assessment Methodology document, **recorded with its version
-   and hash** — the weights are load-bearing and must never be inferred. See Q10 in
-   `docs/open-questions.md`. Data-only; lands before any renderer.
+   DFARS weights from the DoD Assessment Methodology document, **recorded with its title,
+   version, and hash** — the weights are load-bearing and must never be inferred.
+
+   Q10 is **decided**: the weight table is **hand-transcribed twice, independently, and the
+   two passes diffed before commit**, the second pass done fresh from the source document
+   without consulting the first, with a note recording that they agreed. If they disagree
+   anywhere, the diff goes to review rather than being resolved by picking one. The reason is
+   that redundancy at the point of entry is the only control available against a false input
+   to correct arithmetic: a hash detects a value that *changed*, never one that was wrong
+   when first written down, and a wrong weight is confidently wrong in the same direction on
+   every regeneration. See `docs/open-questions.md` Q10. Data-only; lands before any
+   renderer.
 2. **Worksheet + scoring.** The 800-171A objective worksheet and the SPRS score with worked
    arithmetic.
 3. **L1 MET/NOT MET summary**, with the no-POA&M rule and Invariant 3 enforced.
@@ -236,12 +326,22 @@ Both need pre-approval; recorded here as the thing to ask about, not as a decisi
 
 - **`schema/assessment-result-v1.schema.json`** — the canonical result document.
 - **`schema/operator-determinations-v1.schema.json`** — id, objectives, statement, date,
-  responsible party; content-hashed into the evidence chain.
+  responsible party; content-hashed into the evidence chain. Also carries the **revision
+  determination** where a profile leaves the revision open, with who determined it and when.
+- **`schema/obligation-profile-v1.schema.json`** — **already written**, listed in
+  `schema/CHANGELOG.md` for ratification, with three profiles shipped in
+  `catalogs/obligations/`. Data and schema only; no Go types and no `assess`.
 
 ```
-automat assess --account <id> --framework cmmc-l1|800-171r2 \
+automat assess --account <id> --profile cmmc-l1|dfars-7012|nih-cadr-dua \
                --determinations <file> --out <dir>
 ```
+
+`--profile` names an obligation profile, not a catalog: the profile is what determines the
+determination vocabulary, whether a POA&M is renderable, and whether there is a score at
+all, and it names the catalog it is assessed against. Under a profile whose revision is
+operator-determined, `assess` **refuses to run** without the operator's recorded revision
+determination — it does not pick one.
 
 A separate verb rather than a `verify` flag: the two answer different questions — `verify`
 asks "does reality still match the artifact", `assess` asks "what can be claimed about this

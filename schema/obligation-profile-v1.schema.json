@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "automat.dev/schema/obligation-profile/v1",
+  "title": "automat obligation profile",
+  "description": "An obligation profile: under what instrument a control catalog is assessed, how, by whom, and whether gaps may be deferred. A catalog answers 'which controls'; this answers everything else. Several regimes invoke the SAME catalog with different assessment rules — one permits a POA&M where another forbids it — so the regime is data, not Go branching. Vendored and hashed like a catalog; every citation carries an effective date and a source hash.",
+  "type": "object",
+  "required": ["schema_version", "profile", "status", "citations", "control_catalogs", "assessment", "determinations", "poam", "scoring", "submission", "applicability", "policy_caveat", "sources"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "profile": {
+      "type": "object",
+      "required": ["id", "title", "issuing_authority"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "title": { "$ref": "#/$defs/prose" },
+        "description": { "$ref": "#/$defs/long_prose" },
+        "issuing_authority": {
+          "description": "The body whose instrument creates the obligation, e.g. 'U.S. Department of Defense (CMMC Program)' or 'National Institutes of Health'. Named because two profiles can cite the same control catalog under different authorities, and a reader needs to know whose rules a determination answers to.",
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+
+    "citations": {
+      "description": "The published instruments that create or operationalize the obligation, in the order a reader should follow them. Every entry carries an effective date and, where retrieved, a hash in `sources`. A citation with no effective date is not a citation automat will render: policy changes, and a claim with no date cannot be checked for staleness.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/citation" }
+    },
+
+    "control_catalogs": {
+      "description": "The control catalog(s) this obligation is assessed against, and critically whether the revision is fixed by the instrument or left to the operator. Some obligations name a revision; NIH's controlled-access data expectations do not, and institutions have split. See revision_policy.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/catalog_reference" }
+    },
+
+    "assessment": {
+      "type": "object",
+      "required": ["type", "signed_by", "cadence"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "Who performs the assessment. `self` is the contractor assessing itself; `third-party` requires an accredited external assessor; `attestation-only` is an assertion by named officials with no assessment procedure prescribed.",
+          "enum": ["self", "third-party", "attestation-only"]
+        },
+        "signed_by": {
+          "description": "The roles that must sign or affirm. Roles, never named individuals: a profile is vendored data shared across institutions. automat NEVER generates the signed instrument — see docs/assessment-reporting.md invariant 1 — so this field exists to tell an operator who must be involved, not to produce a signature block.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "cadence": {
+          "description": "How often the assessment or affirmation is required, as prose ('annual', 'on new or renewed agreement'). Prose because cadences are conditional in ways a duration cannot express, and a machine-readable interval invites automat to compute a due date it has no authority to assert.",
+          "$ref": "#/$defs/prose"
+        },
+        "audited_by_issuer": {
+          "description": "Whether the issuing authority states it audits compliance. Recorded because it shapes how an operator prioritizes, and because it changes: NIH states it does not currently plan to actively audit, while requesting documentation remains possible. Absent means not stated.",
+          "enum": ["yes", "no", "not-stated"]
+        },
+        "documentation_submitted": {
+          "description": "Whether assessment documentation is submitted to the issuer as a matter of course, versus retained and produced on request. Distinct from `submission`, which is about scores.",
+          "enum": ["routinely", "on-request", "not-submitted"]
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "determinations": {
+      "description": "The determination vocabulary this regime uses, and what automat's understatement renders as within it.",
+      "type": "object",
+      "required": ["values", "partial_credit", "understatement_value"],
+      "additionalProperties": false,
+      "properties": {
+        "values": {
+          "description": "The regime's closed set of determination values, spelled as the instrument spells them. automat does not add to this set: a worksheet carrying a value the standard does not define is not a worksheet for that standard.",
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "partial_credit": {
+          "description": "Whether the regime recognizes anything between satisfied and not. False at CMMC L1 (a practice is MET or NOT MET); true where a weighted score expresses degrees.",
+          "type": "boolean"
+        },
+        "understatement_value": {
+          "description": "The member of `values` that automat may write on its own, per the invariant in docs/assessment-reporting.md: automat's proposals may only ever understate compliance. The satisfied value comes from the operator's determinations file or from nowhere. This field is what makes that invariant profile-parameterized rather than hardcoded, and a property test asserts it holds across every profile shipped.",
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+
+    "poam": {
+      "description": "Whether unmet items may be deferred under a plan of action. This is the field that most sharply distinguishes regimes invoking the same catalog: CMMC Level 1 permits no POA&M at all, so an unmet practice means there is nothing to affirm, while DFARS scoring and NIH's expectations both accommodate a documented plan.",
+      "type": "object",
+      "required": ["permitted"],
+      "additionalProperties": false,
+      "properties": {
+        "permitted": { "type": "boolean" },
+        "requires_target_date": {
+          "description": "Whether a deferred item must carry a target completion date.",
+          "type": "boolean"
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "scoring": {
+      "type": "object",
+      "required": ["method"],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "description": "`none` where the regime is a determination per control with no aggregate. `dfars-110-weighted` is the DoD methodology: 110 less a weight of 5, 3, or 1 per unimplemented requirement.",
+          "enum": ["none", "dfars-110-weighted"]
+        },
+        "weight_table": {
+          "description": "The vendored weight table, referenced by hash. Required when method is not `none`, because the weights are load-bearing input to a number posted under an official's affirmation and must never be inferred. The report names the table and its hash so a wrong weight is discoverable from the output rather than only from the source tree. See docs/open-questions.md Q10.",
+          "$ref": "#/$defs/hashed_reference"
+        }
+      },
+      "allOf": [
+        {
+          "description": "A scoring method with no weight table would compute a number from weights that came from nowhere. That is the one output this project cannot produce.",
+          "if": { "properties": { "method": { "const": "dfars-110-weighted" } }, "required": ["method"] },
+          "then": { "required": ["weight_table"] },
+          "else": { "not": { "required": ["weight_table"] } }
+        }
+      ]
+    },
+
+    "submission": {
+      "type": "object",
+      "required": ["target", "automat_may_format"],
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "Where results go, as prose ('SPRS', 'retained by the institution; produced on request'). Prose because a system name is not an interface.",
+          "$ref": "#/$defs/prose"
+        },
+        "automat_may_format": {
+          "description": "Whether automat may render output shaped for the submission target. DEFAULTS FALSE AND IS EXPECTED TO STAY FALSE. A document formatted for submission is a document that can be submitted, and automat generates drafts a human reads, never the instrument they sign (docs/assessment-reporting.md invariant 1). Setting this true for any profile is a decision requiring its own review; no shipped profile sets it.",
+          "type": "boolean",
+          "default": false
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "applicability": {
+      "description": "What triggers this obligation — PROSE FOR A HUMAN. automat must never conclude that an obligation applies to an operator; the operator declares which profiles apply. There is deliberately no expression language, no predicate, no evaluable form. An automated 'this obligation applies to you' is the most dangerous output this tool could produce: wrong in the permissive direction it tells an institution it is unregulated, and it would be believed because it came from a tool that is right about everything else. The `hints` list is bounded, unordered, and explicitly non-exhaustive so it cannot be mistaken for a decision procedure.",
+      "type": "object",
+      "required": ["trigger"],
+      "additionalProperties": false,
+      "properties": {
+        "trigger": {
+          "description": "The prose statement of what brings an operator under this obligation, written for a sponsored programs officer to read.",
+          "$ref": "#/$defs/long_prose" },
+        "hints": {
+          "description": "At most a handful of concrete indicators that make the prose easier to check by hand — repository names, clause numbers, data types. NOT a match expression and NOT exhaustive: presence of a hint does not establish applicability and absence does not rule it out. Capped at 32 to keep it a reading aid rather than a rule set.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "exclusions": {
+          "description": "Categories the instrument itself excludes, as prose. Load-bearing for this audience: the proposed governmentwide civilian CUI rule excludes fundamental research at colleges, universities, and laboratories, which is most of what automat's users do.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "declared_by_operator": {
+          "description": "Always true, and required to be, so that a reader of a profile sees the rule rather than having to know it. A profile cannot opt into automatic applicability.",
+          "const": true
+        }
+      }
+    },
+
+    "status": {
+      "description": "Whether the instrument is in force. `proposed` exists because a proposed rule must be recordable without being modeled as binding: FAR Case 2017-016 is still proposed, and a tool that treated it as in force would impose requirements on institutions that do not have them. Defaults to in-force only by being required — there is no default.",
+      "enum": ["in-force", "proposed", "superseded", "phased"]
+    },
+
+    "policy_caveat": {
+      "description": "The policy caveat, in substance (docs/policy-caveat.md). REQUIRED: a profile is where automat's reading of policy is most concentrated, so a profile that does not say what kind of claim it is making is not a valid profile. Asserted by test rather than trusted.",
+      "$ref": "#/$defs/long_prose"
+    },
+
+    "sources": {
+      "description": "Every citation retrieved, with its hash — the same provenance discipline as a control artifact's sources. A citation automat renders into a human-facing document must trace to a hashed source; that is a standing audit item, and a stale citation is a finding no lower than medium.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/hashed_reference" }
+    }
+  },
+
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+
+    "prose": {
+      "description": "Single-line human text. Control characters are rejected because these strings are rendered into reports and tables, where a newline forges a row.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+
+    "long_prose": {
+      "description": "Multi-line human text. Newlines and tabs are permitted; other control characters are not.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$"
+    },
+
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+
+    "citation": {
+      "description": "One published instrument. `effective_date` is required: an undated policy claim cannot be checked for staleness, which is the whole point of recording citations rather than describing them.",
+      "type": "object",
+      "required": ["id", "title", "effective_date"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The instrument's own identifier as published: 'NOT-OD-24-157', 'DFARS 252.204-7020', 'FAR Case 2017-016'.",
+          "$ref": "#/$defs/prose"
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "effective_date": { "$ref": "#/$defs/date" },
+        "role": {
+          "description": "What this instrument does in the chain — creates the obligation, operationalizes it, or supersedes an earlier one. A chain of notices is common and a reader needs to know which one is the requirement and which is the guidance.",
+          "enum": ["creates", "operationalizes", "supersedes", "related"]
+        },
+        "uri": { "$ref": "#/$defs/prose" },
+        "note": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "catalog_reference": {
+      "description": "A control catalog this obligation is assessed against.",
+      "type": "object",
+      "required": ["catalog", "revision_policy"],
+      "additionalProperties": false,
+      "properties": {
+        "catalog": {
+          "description": "The catalog family, e.g. 'nist-sp-800-171' or 'cmmc-2.0-level-1'.",
+          "$ref": "#/$defs/prose"
+        },
+        "revision_policy": {
+          "description": "`pinned` means the instrument names a revision and automat uses it. `operator-determined` means the instrument does NOT name one — NIH's controlled-access data expectations do not, and institutions have split. In that case the revision is an operator determination recorded with who determined it and when, hashed into the evidence chain like any other determination. automat ships NO default: 'most institutions use rN' is not a default and not a hint, because a default here would silently pick an institution's compliance posture for it.",
+          "enum": ["pinned", "operator-determined"]
+        },
+        "revision": {
+          "description": "The pinned revision. Required when revision_policy is `pinned`, and FORBIDDEN when it is `operator-determined` — a revision sitting in an operator-determined profile is a default wearing a different hat.",
+          "$ref": "#/$defs/prose"
+        },
+        "artifact_id": {
+          "description": "The automat catalog id implementing this revision, where one exists.",
+          "$ref": "#/$defs/slug"
+        },
+        "note": { "$ref": "#/$defs/long_prose" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "revision_policy": { "const": "pinned" } }, "required": ["revision_policy"] },
+          "then": { "required": ["revision"] },
+          "else": { "not": { "required": ["revision"] } }
+        }
+      ]
+    },
+
+    "hashed_reference": {
+      "description": "A retrieved document, by hash. The same shape the control artifact uses for compile sources, for the same reason: a claim traceable to a hash can be re-verified, and one that is not cannot.",
+      "type": "object",
+      "required": ["id", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/prose" },
+        "title": { "$ref": "#/$defs/prose" },
+        "version": {
+          "description": "The document's own version or date designation, as published. Distinct from retrieved_at: a methodology document has a version an operator can name, and a score defended in a review is defended by version, not by when someone downloaded it.",
+          "$ref": "#/$defs/prose"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "uri": { "$ref": "#/$defs/prose" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "note": { "$ref": "#/$defs/long_prose" }
+      }
+    }
+  }
+}

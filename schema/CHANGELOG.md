@@ -188,6 +188,125 @@ Initial definition per DESIGN.md §7 and §13. No migration.
 - `placement.ou_path` is capped at five entries, mirroring the OU nesting limit
   (DESIGN.md §3, fact 10).
 
+## obligation-profile/v1 — 1.0.0 (unreleased, Phase 4 scope)
+
+New schema, added at the Phase 1 review's request alongside the Phase 4
+assessment-reporting scope (`docs/assessment-reporting.md`). **Listed here for
+maintainer ratification** under rule 6: it is a new contract rather than a change
+to a published one, so nothing is bumped and nothing migrates, but a new file in
+`schema/` is a new promise and belongs in the changelog on the way in.
+
+**Why it exists: a catalog answers "which controls" and nothing else.** It does
+not answer under what instrument, assessed how, signed by whom, or with gaps
+deferrable or not. Those are a second axis, and the reason it has to be a
+separate axis rather than a field on the catalog is that **the same control
+catalog is assessed under incompatible rules by different regimes**. NIST SP
+800-171 is the clearest case: under DFARS a shortfall may carry a plan of action
+with a target date and the aggregate is a weighted score; under NIH's
+controlled-access data expectations a plan is also permitted but there is no
+score at all; and at CMMC Level 1 — a different catalog, but the same shape of
+question — no plan is permitted whatsoever, so a single unmet practice means
+there is nothing to affirm. One catalog, three sets of rules about what a
+determination *means*.
+
+**Profiles are data. There is no profile-specific branching in Go.** A regime
+encoded as a `switch` on profile id is a regime that cannot be corrected without
+a release, and policy changes faster than this tool will. Everything a renderer
+needs to behave correctly under a regime is a field here.
+
+Notes on the choices that constrain future changes:
+
+- **`determinations.understatement_value` parameterizes the honesty asymmetry
+  rather than bolting onto it.** The invariant is directional: automat's own
+  proposals may only ever *understate* compliance. The satisfied value comes from
+  the operator's determinations file or from nowhere; the unmet value automat may
+  write itself, because being wrong in that direction costs an afternoon of
+  review while being wrong in the other direction is what an enforcement action
+  is built on. Since each regime spells its own values (`MET`/`NOT MET`,
+  `SATISFIED`/`OTHER THAN SATISFIED`), the field names which member of that
+  closed set automat is permitted to write. `determinations.values` is likewise
+  the regime's own spellings and automat does not add to it: a worksheet carrying
+  a value the standard does not define is not a worksheet for that standard.
+
+  The invariant is asserted as a **property over the profile set**, not per
+  profile — `TestTheUnderstatementAsymmetryHoldsUnderEveryProfile`. A per-profile
+  assertion would pass forever while a fourth profile added later pointed the
+  field at its satisfied value and validated perfectly against this schema. The
+  test also rejects the substring trap: `OTHER THAN SATISFIED` contains
+  `SATISFIED` and is the opposite claim.
+
+- **`applicability` is prose, and deliberately not evaluable.** There is no
+  expression language, no predicate, and no match form — `trigger` is prose
+  written for a sponsored programs officer, `hints` is capped at 32 and is
+  explicitly non-exhaustive, and `declared_by_operator` is `const: true` so a
+  profile cannot opt into automatic applicability.
+
+  An automated "this obligation applies to you" is the most dangerous output this
+  tool could produce. Wrong in the permissive direction it tells an institution
+  it is unregulated, and it would be *believed*, because it came from a tool that
+  is right about everything else. The `const: true` is there so a reader of a
+  profile sees the rule rather than having to know it, and
+  `TestApplicabilityIsNeverEvaluable` fails on predicate syntax in any
+  applicability text — a match language arrives one plausible entry at a time,
+  and the entry that starts it looks harmless.
+
+- **`revision_policy: operator-determined` FORBIDS the `revision` field.** Not
+  "makes it optional" — forbids it. NIH's notices align expectations with 800-171
+  without naming a revision, and institutions have split between Rev 2 and Rev 3.
+  automat ships no default, because a default here would silently pick an
+  institution's compliance posture for it and route around the one person — the
+  sponsored programs officer reading the actual agreement — best placed to
+  decide. A revision sitting in an operator-determined profile is a default
+  wearing a different hat, which is why the schema will not hold one.
+  `TestAnOperatorDeterminedRevisionShipsNoDefault` also rejects a revision named
+  in `hints`, since "most institutions use rN" is not a default and not even a
+  hint.
+
+- **`scoring.weight_table` is required iff `method` is not `none`, and forbidden
+  otherwise.** A scoring method with no weight table would compute a number from
+  weights that came from nowhere, and that is the one output this project cannot
+  produce: the result is posted under a senior official's affirmation. See
+  `docs/open-questions.md` Q10 for the decision on where the weights come from
+  (hand-transcribed twice, independently, and diffed before commit — no test
+  catches a false input to correct arithmetic).
+
+- **`submission.automat_may_format` defaults false and is expected to stay
+  false.** A document formatted for submission is a document that can be
+  submitted, and automat generates the packet a human reads, never the instrument
+  they sign (`docs/assessment-reporting.md` invariant 1).
+  `TestNoProfileFormatsForSubmission` fails if any shipped profile sets it, so
+  turning it on is a reviewed decision rather than a data change.
+
+- **`policy_caveat` is required.** A profile is where automat's reading of policy
+  is most concentrated, so a profile that does not say what kind of claim it is
+  making is not a valid profile. The substance is asserted phrase by phrase
+  (`docs/policy-caveat.md`, `TestEveryProfileCarriesThePolicyCaveatInSubstance`),
+  in substance rather than verbatim, since renderers wrap differently.
+
+- **`citations[].effective_date` is required.** An undated policy claim cannot be
+  checked for staleness, which is the entire point of recording citations rather
+  than describing them. A stale legal citation is an audit finding ranked no
+  lower than medium (`docs/policy-caveat.md`, and CLAUDE.md's audit ritual).
+
+- **`status` includes `proposed` and `phased`.** `proposed` exists so a proposed
+  rule can be recorded without being modeled as binding — FAR Case 2017-016 is
+  still proposed, and a tool that treated it as in force would impose
+  requirements on institutions that do not have them. `phased` covers an
+  instrument whose applicability turns on a date inside the phase-in, where two
+  operators can legitimately be under different rules on the same day.
+
+Three profiles ship in `catalogs/obligations/`: `cmmc-l1`, `dfars-7012`, and
+`nih-cadr-dua`. The set is pinned by
+`TestTheShippedProfileSetIsTheOneThatWasApproved` — adding a profile is a policy
+decision, not a data change, since a fourth profile shipped quietly is a fourth
+obligation automat implies an institution might be under.
+
+**No Go types.** The profiles were added as design-and-data ahead of `assess`,
+and a struct would be building what that decision said not to build. Every
+constraint above is tested against the published schema from raw JSON
+(`internal/artifact/obligation_profile_test.go`), each verified to fire by
+deleting it and confirming the covering case fails.
+
 ## evidence-manifest/v1 — 1.0.0 (unreleased, Phase 0)
 
 Initial definition per DESIGN.md §11. No migration.

@@ -190,13 +190,15 @@ created back to the root, and saying so in the README's blast-radius section.
 
 ---
 
-## Awaiting a maintainer decision
+## Decided by the maintainer
 
-Not a live-org question and not a code question: a question about source data whose
-authority matters more than its availability. `docs/smoke.md` does not cover these,
-because no sandbox run answers them.
+Not live-org questions and not code questions: questions about source data whose authority
+matters more than its availability. `docs/smoke.md` does not cover these, because no
+sandbox run answers them. Kept here rather than deleted once decided — the reasoning is
+the part that has to survive, since the decision looks like unnecessary ceremony to anyone
+who has not read why.
 
-### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively?
+### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively? — **DECIDED**
 
 Phase 4's score computation (`docs/assessment-reporting.md`) needs the DoD assessment
 methodology's per-requirement weights: 5, 3, or 1 subtracted from 110 for each
@@ -211,21 +213,48 @@ is right, and it would be wrong in the same direction every time it is regenerat
 is no test that catches it — the arithmetic would be correct and the input would be
 false.
 
-Three options, none picked:
+Three options were on the table: hand-transcribe and hash; find a machine-readable
+publication with real authority behind it (a third-party spreadsheet does not qualify); or
+decline to compute a score at all and emit only the worksheet.
 
-1. **Vendor a hand-transcribed weight table, hashed and committed, with the transcription
-   reviewed against the source document by a human and that review recorded** — the same
-   posture as the curated FAR source (`gen/sources/far-52.204-21.json`), which is also a
-   file a human read rather than a fetch. Honest, and the provenance is stated as
-   `curated` rather than dressed up as a retrieval.
-2. **Find a machine-readable publication of the weights.** Preferred if one exists with
-   real authority behind it; a third-party spreadsheet does not qualify.
-3. **Do not compute a score.** Emit the per-requirement satisfied/unsatisfied worksheet
-   and let the operator apply the methodology. Loses the most-requested number but
-   generates nothing automat cannot vouch for.
+**Decision: hand-transcribe, vendor, hash, and name the table by hash in the report — with
+the transcription performed TWICE, independently, and the two passes diffed before the
+table is committed.** The second pass is done fresh from the source document without
+consulting the first. Both the table and a note recording that the two passes agreed are
+committed. If the two passes disagree anywhere, the disagreement is surfaced for review
+rather than resolved by picking one.
 
-Option 1 is the current lean, on the condition that the score renderer states which weight
-table it used, by hash, in the report — so a wrong weight is discoverable from the output
-rather than only from the source tree. Note that **CMMC Level 1 needs none of this**: L1 is
-MET/NOT MET with no scoring, so Q10 gates only the 800-171 renderer and must not be
-allowed to hold up the L1 path.
+The reason the dual pass is the decision rather than a nicety is the paragraph above:
+**redundancy at the point of entry is the only control available against a false input to
+correct arithmetic.** Every other provenance mechanism in this repository detects
+*change* — a hash catches a file that was edited after review, a golden file catches a
+renderer that started emitting something different. None of them catch a value that was
+wrong when it was first written down. A hash over a mistyped weight is a perfectly valid
+hash over a wrong number, computed identically forever. So the check has to happen before
+the value enters the tree at all, and the only check that works there is doing the work
+twice and comparing.
+
+What gets recorded with the table:
+
+- The source document's **title, version or date designation, and hash** — in
+  `hashed_reference` form, so the version an operator names in a review is the version the
+  score was computed from. `retrieved_at` is not a substitute: a methodology document has a
+  version, and a score is defended by version, not by download date.
+- The **provenance stated as `curated`**, not dressed up as a retrieval — the same posture
+  as `gen/sources/far-52.204-21.json`, which is also a file a human read rather than a
+  fetch.
+- The **note that both transcription passes agreed**, with what was compared.
+
+And the renderer states which weight table it used, by hash, in the report — so a wrong
+weight is discoverable from the output rather than only from the source tree.
+
+**Status: decided, not yet done.** The transcription is a Phase 4 deliverable.
+`catalogs/obligations/dfars-7012.json` carries the weight-table reference with a
+deliberately all-zero hash and a note saying so; `TestNoUnresolvedHashInARenderableProfile`
+asserts no profile automat may render holds an unresolved hash, so the placeholder cannot
+quietly become load-bearing. The table is deliberately **not** pre-filled with plausible
+weights: a plausible wrong weight is worse than an obvious absent one, because it produces
+output.
+
+Note that **CMMC Level 1 needs none of this**: L1 is MET/NOT MET with no scoring, so Q10
+gates only the 800-171 renderer and must not be allowed to hold up the L1 path.

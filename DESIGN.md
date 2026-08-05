@@ -5,6 +5,21 @@
 
 ---
 
+> **automat encodes a technical reading of published policy. It is not legal advice and not
+> a compliance determination.** The agreement, award terms, or contract clause your
+> institution signed governs; your sponsored programs office, contracts office, or counsel
+> decides what applies and which revision. Where policy is ambiguous — for example the NIH
+> 800-171 revision question — automat records the operator's declaration rather than
+> resolving it. Policy citations carry effective dates and change; verify against the
+> primary source before relying on them.
+>
+> This paragraph is canonical (`docs/policy-caveat.md`) and held by a test, not by
+> convention: it must appear in this document, in every obligation profile, and in every
+> `assess` output. It is a different claim from the `DRAFT — NOT A SUBMISSION` marking, and
+> neither substitutes for the other.
+
+---
+
 ## 1. Problem and audience
 
 University research organizations need AWS accounts with compliance controls (CMMC 2 L1 today; 800-171, and eventually L2/L3, HIPAA, 800-53). Central IT holds the org management ("master payer") account and typically will not run Account Factory for researchers, and AWS Control Tower is too heavy a deployment for them to accept. Research computing groups need a *delegated, OU-scoped* vending capability: central IT approves a small, reviewable grant once; the research org vends thereafter without further involvement.
