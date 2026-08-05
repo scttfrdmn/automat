@@ -464,9 +464,22 @@ three were made during the phase; none is retroactively self-approved.
    import would be strictly worse security. Same SDK, same maintainer, no new
    third-party surface.
 
-2. **CLI flags added.** `--config`, `--out`, `--external-id`, `--force`, plus the
-   `setup --request` inputs. The surface is new rather than altered, but CLAUDE.md
-   requires asking before changing it either way.
+2. **CLI surface added.** Listed in full rather than summarized, since "plus the
+   `setup --request` inputs" would be asking for ratification of something not shown:
+
+   - Persistent: `--config`, `--context`.
+   - `login`: `--start-url`, `--sso-region`.
+   - `preflight`: none.
+   - `setup`: `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`,
+     `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`,
+     `--vendor-role-name`, `--external-id`, `--contact`.
+
+   The surface is new rather than altered — no flag from an earlier phase changed
+   meaning — but CLAUDE.md requires asking either way. Two are worth a second look
+   because they are the ones with security semantics: `--external-id` (documented for
+   re-sending a bundle for an already-deployed role; omitting it is the normal path
+   and generates one) and `--force` (overwrites files edited by hand, which is how an
+   operator's local correction gets silently discarded).
 
 3. **Validation changes that strictly tighten.** Per the amended rule 6 these did not
    need pre-approval, and are listed here for ratification: resolved-ExternalId

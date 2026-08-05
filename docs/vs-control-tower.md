@@ -1,6 +1,6 @@
 # automat and AWS Control Tower
 
-This page describes automat v1. Where implementation is still in progress (evidence manifests, the onboarding bundle), ROADMAP.md is authoritative; every claim here is re-verified against code before v1 ships.
+This page describes automat v1. Where implementation is still in progress (as of Phase 1: `vend`, `verify`, and evidence manifests — the onboarding bundle has shipped, see `docs/phase-1.md`), ROADMAP.md is authoritative; every claim here is re-verified against code before v1 ships.
 
 People reasonably ask how automat relates to AWS Control Tower. Short answer: they share a mechanical core — both drive the same AWS Organizations primitives — and differ in almost everything wrapped around it. This page states the overlap and the differences in both directions, so you can decide honestly. In several situations Control Tower is the better choice; automat exists for the situations where it isn't an option at all.
 
