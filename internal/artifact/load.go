@@ -134,9 +134,13 @@ func (a *Artifact) Write(path string) error {
 		return err
 	}
 
+	// A catalog is a published, committed artifact — it is meant to be
+	// world-readable, and by design contains no secrets (DESIGN §13). Writing it
+	// 0600 would break the ordinary case of a catalog read by another user or a
+	// CI job running as a different account.
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil { //nolint:gosec // see above: published artifact, not a secret
+		return fmt.Errorf("create %s: %w", dir, mkErr)
 	}
 	tmp, err := os.CreateTemp(dir, ".automat-"+filepath.Base(path)+".*")
 	if err != nil {
@@ -152,7 +156,9 @@ func (a *Artifact) Write(path string) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", tmpName, err)
 	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
+	// CreateTemp makes the file 0600; widen it to match the directory rationale
+	// above, since the temp file becomes the published catalog on rename.
+	if err := os.Chmod(tmpName, 0o644); err != nil { //nolint:gosec // published artifact, not a secret
 		return fmt.Errorf("chmod %s: %w", tmpName, err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {

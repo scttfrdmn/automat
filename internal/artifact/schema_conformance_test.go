@@ -36,8 +36,8 @@ func compileSchema(t *testing.T, name string) *jsonschema.Schema {
 		t.Fatalf("parse %s: %v", path, err)
 	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource(name, doc); err != nil {
-		t.Fatalf("add %s: %v", path, err)
+	if aerr := c.AddResource(name, doc); aerr != nil {
+		t.Fatalf("add %s: %v", path, aerr)
 	}
 	sch, err := c.Compile(name)
 	if err != nil {
