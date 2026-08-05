@@ -10,7 +10,7 @@ export CGO_ENABLED := 0
 
 GOFLAGS_BUILD := -trimpath -ldflags "-s -w -X $(PKG)/internal/version.Version=$(VERSION)"
 
-.PHONY: all build test lint fmt vet tidy clean catalogs golden smoke help
+.PHONY: all build test lint fmt vet tidy clean catalogs catalogs-check golden smoke help
 
 all: build test lint
 
@@ -33,11 +33,14 @@ tidy: ## Tidy and verify module deps
 	go mod tidy
 	go mod verify
 
-catalogs: ## Recompile vendored catalogs from cached upstream sources
+catalogs: ## Recompile vendored catalogs from the curated sources in gen/sources
 	go run ./gen/catalog -out catalogs
 
+catalogs-check: ## Verify the vendored catalogs match a fresh compile
+	go run ./gen/catalog -check
+
 golden: ## Regenerate golden files (review the diff before committing)
-	go test ./... -update
+	AUTOMAT_UPDATE_GOLDEN=1 go test ./... -count=1
 
 clean:
 	rm -rf bin dist
