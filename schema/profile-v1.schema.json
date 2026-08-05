@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "automat.dev/schema/profile/v1",
+  "title": "automat vend profile",
+  "description": "A vend profile: which control sets to compile, where the account lands, and what in-account baseline to deploy. Input to `automat vend` (DESIGN 7).",
+  "type": "object",
+  "required": ["schema_version", "profile", "control_sets", "placement", "baseline"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "profile": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+
+    "control_sets": {
+      "description": "Control set ids to compile into the artifact for this vend. Compiled by union (DESIGN 9).",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" }
+    },
+
+    "placement": {
+      "description": "Where the vended account lands. New accounts always materialize under the root and are then moved (DESIGN 3, fact 4).",
+      "type": "object",
+      "required": ["target_ou"],
+      "additionalProperties": false,
+      "properties": {
+        "target_ou": {
+          "description": "Destination OU id. The account is moved here after creation.",
+          "type": "string",
+          "pattern": "^(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32}|r-[0-9a-z]{4,32})$"
+        },
+        "create_intermediate_ous": {
+          "description": "Create missing OUs on the path. Bounded by the five-level OU nesting limit (DESIGN 3, fact 10).",
+          "type": "boolean",
+          "default": false
+        },
+        "ou_path": {
+          "description": "OU names to ensure beneath target_ou, outermost first. At most five levels total under the root.",
+          "type": "array",
+          "maxItems": 5,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    },
+
+    "account": {
+      "description": "Account creation settings.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "email_pattern": {
+          "description": "Email template; '{name}' is substituted with the account name. Each account needs a globally unique email (DESIGN 3, fact 11).",
+          "type": "string",
+          "pattern": "^[^@\\s]+@[^@\\s]+$"
+        },
+        "role_name": {
+          "description": "Name of the management-assumable role created in the child. Defaults to OrganizationAccountAccessRole (DESIGN 3, fact 6).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$",
+          "default": "OrganizationAccountAccessRole"
+        },
+        "iam_user_access_to_billing": {
+          "type": "string",
+          "enum": ["ALLOW", "DENY"],
+          "default": "ALLOW"
+        },
+        "tags": {
+          "description": "Additional tags applied at creation. automat's own conventional tags (DESIGN 14) are always applied and may not be overridden here.",
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "propertyNames": { "not": { "pattern": "^automat:" } }
+        }
+      }
+    },
+
+    "baseline": {
+      "description": "In-child work performed after assuming into the account (DESIGN 7, step 5).",
+      "type": "object",
+      "required": ["config_recorder"],
+      "additionalProperties": false,
+      "properties": {
+        "config_recorder": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "all_supported_resources": { "type": "boolean", "default": true },
+            "include_global_resource_types": { "type": "boolean", "default": true },
+            "delivery_bucket": {
+              "description": "S3 bucket for the delivery channel. Created in-account when absent.",
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+            }
+          }
+        },
+        "regions": {
+          "description": "Region posture. enable/disable are opt-in regions managed via the Account Management API; the region allowlist is enforced separately by SCP.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "home": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" },
+            "enable": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+            },
+            "disable": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+            }
+          }
+        },
+        "automation_role": {
+          "description": "Least-privilege in-account role automat uses for future verify runs, and which baseline-protection SCPs exempt (DESIGN 10).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$",
+              "default": "automat-automation"
+            },
+            "create": { "type": "boolean", "default": true }
+          }
+        },
+        "disable_org_access_role_after_vend": {
+          "description": "Whether to restrict further use of the management-assumable role once baselining completes (DESIGN 7, step 5).",
+          "type": "boolean",
+          "default": false
+        },
+        "attestations": {
+          "description": "Where procedural-control attestation stubs are written.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_dir": { "type": "string", "minLength": 1, "default": "compliance" },
+            "in_account_bucket": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+            }
+          }
+        },
+        "evidence": {
+          "description": "Where evidence manifests are stored. A local copy is always written (DESIGN 11).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_dir": { "type": "string", "minLength": 1, "default": "evidence" },
+            "in_account_bucket": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+            },
+            "management_mirror_bucket": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

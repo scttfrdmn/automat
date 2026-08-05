@@ -1,0 +1,18 @@
+# Build output
+/bin/
+/dist/
+automat
+
+# Test and coverage output
+*.test
+*.out
+coverage.*
+
+# gen/ scratch: fetched upstream sources are cached, never committed
+/gen/.cache/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

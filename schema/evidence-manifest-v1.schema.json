@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "automat.dev/schema/evidence-manifest/v1",
+  "title": "automat evidence manifest",
+  "description": "An append-only, hash-chained log of mutating operations. The chain of custody behind a 'born compliant' claim (DESIGN 11). Deliberately simple and ingestible by later systems.",
+  "type": "object",
+  "required": ["schema_version", "manifest", "records"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "manifest": {
+      "type": "object",
+      "required": ["id", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Manifest identity. Per-account manifests use the account id.",
+          "type": "string",
+          "minLength": 1
+        },
+        "account_id": { "$ref": "#/$defs/account_id" },
+        "organization_id": { "type": "string", "pattern": "^o-[a-z0-9]{10,32}$" },
+        "created_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "records": {
+      "description": "Append-only. records[0].previous_sha256 is 64 zeros; every later record chains to its predecessor's record_sha256.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+
+    "timestamp": {
+      "description": "RFC 3339 UTC timestamp, second precision, 'Z' suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+
+    "account_id": { "type": "string", "pattern": "^[0-9]{12}$" },
+
+    "record": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "timestamp",
+        "operation",
+        "operator",
+        "tool_version",
+        "previous_sha256",
+        "record_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "description": "Zero-based position in the chain.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "init",
+            "setup",
+            "account-create",
+            "account-move",
+            "ou-ensure",
+            "scp-ensure",
+            "baseline-apply",
+            "attestation-write",
+            "verify",
+            "reclaim"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["success", "failure", "parked"],
+          "default": "success"
+        },
+        "operator": {
+          "description": "The principal that performed the operation.",
+          "type": "object",
+          "required": ["arn"],
+          "additionalProperties": false,
+          "properties": {
+            "arn": { "type": "string", "minLength": 1 },
+            "account_id": { "$ref": "#/$defs/account_id" },
+            "user_id": { "type": "string" },
+            "assumed_role": {
+              "description": "The role assumed to perform this operation, when brokered (DESIGN 5).",
+              "type": "string"
+            }
+          }
+        },
+        "request_id": {
+          "description": "Vend request id. Ties records from a resumed run to the original request (DESIGN 7).",
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "account_id": { "$ref": "#/$defs/account_id" },
+            "account_name": { "type": "string" },
+            "ou_id": {
+              "type": "string",
+              "pattern": "^(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32}|r-[0-9a-z]{4,32})$"
+            },
+            "region": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+          }
+        },
+        "artifact": {
+          "description": "The control artifact this operation enforced.",
+          "type": "object",
+          "required": ["id", "content_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
+            "content_sha256": { "$ref": "#/$defs/sha256" },
+            "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+          }
+        },
+        "enforcement": {
+          "description": "What was actually attached or deployed.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scp_arns": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "conformance_pack_arn": { "type": "string", "minLength": 1 },
+            "config_rule_names": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "region_set": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+            },
+            "service_set": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z0-9-]+$" }
+            },
+            "attestation_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "error": {
+          "description": "Present when outcome is failure or parked. Carries the remediation text (CLAUDE.md rule 7).",
+          "type": "object",
+          "required": ["message"],
+          "additionalProperties": false,
+          "properties": {
+            "message": { "type": "string", "minLength": 1 },
+            "action": {
+              "description": "The AWS action that was denied or failed.",
+              "type": "string"
+            },
+            "resource": { "type": "string" },
+            "remediation": {
+              "description": "What grant or change would fix this.",
+              "type": "string"
+            }
+          }
+        },
+        "tool_version": { "type": "string", "minLength": 1 },
+        "previous_sha256": {
+          "description": "record_sha256 of the preceding record; 64 zeros for the first.",
+          "$ref": "#/$defs/sha256"
+        },
+        "record_sha256": {
+          "description": "SHA-256 over the canonicalized record with record_sha256 and signature omitted.",
+          "$ref": "#/$defs/sha256"
+        },
+        "signature": {
+          "description": "Detached signature over record_sha256. The signer is an interface; a local key now, KMS later (DESIGN 11).",
+          "type": "object",
+          "required": ["algorithm", "key_id", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "enum": ["ed25519", "aws-kms-rsassa-pss-sha-256", "aws-kms-ecdsa-sha-256"]
+            },
+            "key_id": { "type": "string", "minLength": 1 },
+            "value": {
+              "description": "Base64-encoded signature bytes.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+            }
+          }
+        }
+      }
+    }
+  }
+}
