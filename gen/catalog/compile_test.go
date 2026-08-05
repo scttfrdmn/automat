@@ -492,6 +492,83 @@ func TestUnknownParameterIsAnError(t *testing.T) {
 	}
 }
 
+// TestSourceLoaderRejectsUnknownFields proves AUDIT-0 finding H2 is fixed.
+//
+// A misspelled key in a curated source used to parse cleanly and silently drop
+// what it carried: renaming "parameters" to "parmeters" deleted a rule's
+// parameter defaults, so the rule would deploy with AWS's defaults instead of
+// the conformance pack's — a control loosened by a typo, with a valid-looking
+// catalog and a fresh content hash to match.
+func TestSourceLoaderRejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{farSourceFile, crosswalkSourceFile, awsSourceFile} {
+		data, err := os.ReadFile(filepath.Join(sourcesDir, name)) //nolint:gosec // fixed in-repo path
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if werr := os.WriteFile(filepath.Join(dir, name), data, 0o600); werr != nil {
+			t.Fatalf("write %s: %v", name, werr)
+		}
+	}
+	path := filepath.Join(dir, awsSourceFile)
+	data, err := os.ReadFile(path) //nolint:gosec // test-local temp path
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	mangled := strings.Replace(string(data), `"parameters"`, `"parmeters"`, 1)
+	if mangled == string(data) {
+		t.Fatal("test setup: no parameters key found to misspell")
+	}
+	if werr := os.WriteFile(path, []byte(mangled), 0o600); werr != nil {
+		t.Fatalf("write: %v", werr)
+	}
+
+	_, err = loadSources(dir)
+	if err == nil {
+		t.Fatal("loadSources accepted a source file with a misspelled key; the parameter defaults it " +
+			"carried would be silently dropped and the rule would deploy looser than the pack specifies")
+	}
+	if !strings.Contains(err.Error(), "parmeters") {
+		t.Errorf("error does not name the offending key: %v", err)
+	}
+}
+
+// TestSourceLoaderRequiresUpstreamProvenance proves AUDIT-0 finding H1 is fixed.
+//
+// A source whose upstream_sha256 is missing used to compile into an artifact
+// whose source note read "(sha256 )" — provenance that looks verified to a
+// reviewer while being unverifiable, which is worse than no provenance at all.
+func TestSourceLoaderRequiresUpstreamProvenance(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*sourceSet)
+		wantMsg string
+	}{
+		{"missing upstream hash", func(s *sourceSet) { s.far.Source.SHA256 = "" }, "upstream_sha256"},
+		{"malformed upstream hash", func(s *sourceSet) { s.far.Source.SHA256 = "deadbeef" }, "lowercase hex"},
+		{"missing uri", func(s *sourceSet) { s.crosswalk.Source.URI = "" }, "uri"},
+		{"missing retrieved_at", func(s *sourceSet) { s.aws.Sources[0].RetrievedAt = "" }, "retrieved_at"},
+		{"no mapping sources at all", func(s *sourceSet) { s.aws.Sources = nil }, "no upstream sources"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := loadSources(sourcesDir)
+			if err != nil {
+				t.Fatalf("load sources: %v", err)
+			}
+			tc.mutate(s)
+			err = s.check()
+			if err == nil {
+				t.Fatal("check() accepted a source with incomplete provenance; the compiled artifact would " +
+					"claim a source it cannot prove")
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("error does not name the problem (%q): %v", tc.wantMsg, err)
+			}
+		})
+	}
+}
+
 // TestSourceCheckRejectsAShortClauseList proves the invariant that guards the
 // count is not vacuous: fourteen requirements must not compile.
 func TestSourceCheckRejectsAShortClauseList(t *testing.T) {

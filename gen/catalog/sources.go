@@ -4,12 +4,16 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 )
 
@@ -115,6 +119,10 @@ func loadSources(dir string) (*sourceSet, error) {
 // missing controls or mapping rules to the wrong requirement. Better to refuse
 // to compile than to vend against a quietly wrong artifact.
 func (s *sourceSet) check() error {
+	if err := s.checkProvenance(); err != nil {
+		return err
+	}
+
 	const wantClauses = 15
 	if n := len(s.far.Clauses); n != wantClauses {
 		return fmt.Errorf("%s: found %d requirement clauses, want %d — "+
@@ -163,6 +171,61 @@ func (s *sourceSet) check() error {
 		sort.Strings(missing)
 		return fmt.Errorf("%s: mapping references %d rule(s) absent from the conformance pack: %v",
 			awsSourceFile, len(missing), missing)
+	}
+	return nil
+}
+
+// reUpstreamSHA256 matches a lowercase hex SHA-256, the only form an upstream
+// hash may take.
+var reUpstreamSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// checkProvenance refuses to compile from a source whose own provenance block is
+// incomplete.
+//
+// Without this the compiler will happily emit `(sha256 )` into an artifact's
+// source notes: the artifact then *looks* provenanced — a reviewer sees a URI and
+// a hash field — while the upstream document it claims to derive from is
+// unverifiable. Provenance that cannot be checked is worse than absent
+// provenance, because it is trusted. AUDIT-0 finding H1.
+func (s *sourceSet) checkProvenance() error {
+	blocks := []struct {
+		file string
+		u    upstream
+	}{
+		{farSourceFile, s.far.Source},
+		{crosswalkSourceFile, s.crosswalk.Source},
+	}
+	for i, u := range s.aws.Sources {
+		blocks = append(blocks, struct {
+			file string
+			u    upstream
+		}{fmt.Sprintf("%s sources[%d]", awsSourceFile, i), u})
+	}
+	if len(s.aws.Sources) == 0 {
+		return fmt.Errorf("%s records no upstream sources; the mapping's provenance is what vouches for "+
+			"every aws-mapping binding in the catalog", awsSourceFile)
+	}
+
+	for _, b := range blocks {
+		if b.u.Catalog == "" && b.u.Mapping == "" {
+			return fmt.Errorf("%s: provenance block names neither a catalog nor a mapping; "+
+				"artifact.sources needs the kind of input to record it", b.file)
+		}
+		switch {
+		case b.u.SHA256 == "":
+			return fmt.Errorf("%s: provenance block has no upstream_sha256; the compiled artifact would "+
+				"claim a source it cannot prove, which reads as verified provenance to a reviewer", b.file)
+		case !reUpstreamSHA256.MatchString(b.u.SHA256):
+			return fmt.Errorf("%s: upstream_sha256 %q is not 64 lowercase hex characters", b.file, b.u.SHA256)
+		}
+		if b.u.URI == "" {
+			return fmt.Errorf("%s: provenance block has no uri; a hash with no location cannot be re-fetched "+
+				"and re-verified", b.file)
+		}
+		if b.u.RetrievedAt == "" {
+			return fmt.Errorf("%s: provenance block has no retrieved_at; the compile timestamp is derived "+
+				"from it so that %s is reproducible", b.file, artifactID)
+		}
 	}
 	return nil
 }
@@ -223,8 +286,19 @@ func readJSONAndHash(path string, into any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read source %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, into); err != nil {
-		return "", fmt.Errorf("parse source %s: %w", path, err)
+	// Unknown fields are rejected. A misspelled key in a source file otherwise
+	// parses cleanly and silently drops what it was carrying: "parmeters"
+	// instead of "parameters" deletes a rule's parameter defaults, so the rule
+	// deploys with AWS's defaults rather than the pack's — a control loosened by
+	// a typo. AUDIT-0 finding H2.
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
+		return "", fmt.Errorf("parse source %s: %w — a misspelled or unrecognized key silently drops what "+
+			"it carries, so the loader refuses it", path, err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("parse source %s: unexpected trailing content after the JSON document", path)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
