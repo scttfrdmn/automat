@@ -36,6 +36,7 @@ Phases are ordered so the compatibility contract (schema) exists before anything
 - KMS signer for evidence manifests.
 - Docs site content: conventions.md, security-review.md ("the 60-line review" for central IT), beyond.md.
 - Manual smoke-test runbook against a sandbox org; capture answers to `docs/open-questions.md` (delegation visibility, quota edges).
+- **Re-verify `docs/vs-control-tower.md` against the implemented feature set before v1.** That page is human-owned positioning: its judgments stand as written, but every factual claim it makes about what automat does must be traced to shipped code and corrected if the implementation diverged. A positioning claim that outruns the code is the one kind of inaccuracy this project cannot afford.
 - **Accept:** a stranger with a standalone AWS account can go README → init → vend → verify without asking a human anything.
 
 ## Deferred / explicitly out of scope for v1
