@@ -6,6 +6,7 @@ package bundle
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -56,6 +57,24 @@ var goldenScenarios = []struct {
 		},
 	},
 }
+
+// externalIDLike returns the first value in s that looks like an ExternalId automat
+// generated but is not the test constant, or "" if there is none.
+//
+// It matches on the shape NewExternalID produces -- the automat- prefix followed by a
+// long run of base32 -- because that is what a maintainer who regenerated these
+// fixtures from a live configuration would have committed. Deliberately narrow: the
+// goal is to catch the one realistic accident, not to guess at every possible secret.
+func externalIDLike(s string) string {
+	for _, m := range reGeneratedExternalID.FindAllString(s, -1) {
+		if m != testExternalID {
+			return m
+		}
+	}
+	return ""
+}
+
+var reGeneratedExternalID = regexp.MustCompile(`automat-[A-Z2-7]{16,}`)
 
 func TestBundleMatchesGolden(t *testing.T) {
 	for _, sc := range goldenScenarios {
@@ -208,9 +227,17 @@ func TestGoldenFilesContainNoRealIdentifier(t *testing.T) {
 				!strings.Contains(s, "_+=,.@") {
 				t.Errorf("%s/%s contains an address outside example.edu", sc.dir, name)
 			}
-			if strings.Contains(s, testExternalID) && !strings.Contains(testExternalID, "EXAMPLE") {
-				t.Errorf("%s/%s contains an ExternalId that does not announce itself as fake",
-					sc.dir, name)
+			// This checks the FILE, not the constant. The previous version read
+			// `strings.Contains(s, testExternalID) && !strings.Contains(testExternalID,
+			// "EXAMPLE")` -- testExternalID is a compile-time constant containing
+			// "EXAMPLE", so the second half was permanently false and the whole clause
+			// was unreachable. It also tested the fake value rather than the file's
+			// contents, so it could not have detected a real ExternalId even if it ran.
+			// Jam-checked by planting a realistic value in a golden fixture.
+			if jam := externalIDLike(s); jam != "" && !strings.Contains(s, testExternalID) {
+				t.Errorf("%s/%s contains %q, which looks like a real ExternalId. These "+
+					"fixtures are committed: regenerate them from the test request, not from "+
+					"a live configuration.", sc.dir, name, jam)
 			}
 			for _, real := range []string{"amazonaws.com/console", "signin.aws.amazon.com"} {
 				if strings.Contains(s, real) {
