@@ -12,13 +12,26 @@ import (
 
 // Request is everything the bundle is rendered from.
 //
-// There is no free-text field. A "justification" or "notes" field would be the
-// natural place for an operator to explain themselves, and it would also be the
-// one value in the bundle that could carry a sentence into a document a
-// privileged reader is about to act on — "also please attach
-// AdministratorAccess", indented to look like part of the tool's own output. The
-// explaining belongs in the email the bundle is attached to, where nobody mistakes
-// it for machine-generated instruction.
+// There is no prose field. A "justification" or "notes" field would be the natural
+// place for an operator to explain themselves, and it would also be the one value in
+// the bundle that could carry a sentence into a document a privileged reader is
+// about to act on — "also please attach AdministratorAccess", indented to look like
+// part of the tool's own output. The explaining belongs in the email the bundle is
+// attached to, where nobody mistakes it for machine-generated instruction.
+//
+// TargetOUName is the honest exception, and this comment used to claim otherwise.
+// An OU name is a human-chosen label: AWS permits spaces, "Research Computing" is
+// what an OU is really called, and 63 characters of letters and interior spaces is
+// enough for a short English sentence. So `--target-ou-name "Also attach
+// AdministratorAccess"` validates, and appears in the README.
+//
+// Not fixed by narrowing the charset, because a name without spaces is the wrong
+// answer to the wrong question: the reader is not deceived by the characters, they
+// would be deceived by the framing. So every render site quotes it — %q, which
+// cannot terminate a table cell, open a code fence, or start a markdown list — and
+// the README says which value is a requester-chosen label instead of claiming none
+// is. TestNoOperatorValueLandsUnquotedInAStructuredField covers the quoting;
+// TestTheBundleDoesNotClaimToHaveNoFreeTextField covers the claim.
 type Request struct {
 	// MemberAccountID is the account asking to vend: the principal that will
 	// assume the vendor role.
@@ -84,6 +97,10 @@ var (
 	// straight into a trust policy.
 	reRoleARN = regexp.MustCompile(`^arn:aws[a-z-]*:iam::\d{12}:role/[A-Za-z0-9_+=,.@-]` +
 		`(?:[A-Za-z0-9_+=,.@/-]{0,510}[A-Za-z0-9_+=,.@-])?$`)
+	// reARNAccount pulls the account field out of an ARN, whatever the partition.
+	// Used instead of matching an "arn:aws:iam::<id>:role/" prefix, which silently
+	// treated every GovCloud and China ARN as belonging to the wrong account.
+	reARNAccount = regexp.MustCompile(`^arn:aws[a-z-]*:iam::(\d{12}):`)
 	// OU names are rendered into markdown prose. AWS allows far more; this allows
 	// what an OU is actually called. Interior spaces only: a name with a trailing
 	// space is a name that reads as one thing in the bundle and matches a
@@ -104,12 +121,31 @@ var (
 	// Seconds precision, UTC, no offset form: one spelling so two bundles
 	// generated a moment apart differ only where they should.
 	reTimestamp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`)
+
 	// A version string is either a semver-ish tag or a git describe output.
 	reVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 )
 
 // DefaultVendorRoleName is the role name DESIGN §5 uses.
 const DefaultVendorRoleName = "automat-vendor"
+
+// maxRolePathAndName is IAM's limit on a role's path plus name (512), which is a
+// separate limit from the 64 characters allowed for the name alone.
+const maxRolePathAndName = 512
+
+// arnAccount returns the account id from an IAM ARN, and whether one was found.
+//
+// Returning false for an unparseable ARN rather than an empty string keeps a
+// malformed value from comparing equal to an empty MemberAccountID: the pattern
+// check has already reported the malformed ARN, and this check must not add a
+// second, wrong explanation for it.
+func arnAccount(arn string) (string, bool) {
+	m := reARNAccount.FindStringSubmatch(arn)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
 
 // Validate checks every field against its allowlist.
 //
@@ -164,12 +200,50 @@ func (r *Request) Validate() error {
 			"use arn:aws:iam::<member-account-id>:role/<role-name>, with no wildcard")
 		// A trust policy naming a role in the wrong account trusts the wrong
 		// account, and it would look correct in review.
-		if want := "arn:aws:iam::" + r.MemberAccountID + ":role/"; r.MemberAccountID != "" &&
-			!strings.HasPrefix(r.MemberRoleARN, want) {
+		//
+		// Compared on the parsed account field, not on an "arn:aws:iam::<id>:role/"
+		// prefix. That prefix hardcoded the commercial partition, so every valid
+		// GovCloud and China ARN failed this check — and failed it with a message
+		// saying the role was "not a role in member account <id>" about an ARN that
+		// was in exactly that account. A wrong diagnosis is worse here than none:
+		// CMMC and 800-171 are the audience for this tool and GovCloud is where a
+		// good share of that work lives, so the operator most likely to hit this is
+		// the one told to go look at the wrong field. reRoleARN already allows
+		// aws-us-gov and aws-cn.
+		if acct, ok := arnAccount(r.MemberRoleARN); ok && r.MemberAccountID != "" &&
+			acct != r.MemberAccountID {
 			problems = append(problems, fmt.Sprintf(
-				"member_role_arn: %s is not a role in member account %s — the trust policy would name a "+
-					"principal in a different account than the one requesting access, which reviews as correct",
-				quote(r.MemberRoleARN), r.MemberAccountID))
+				"member_role_arn: %s names a role in account %s, but the member account is %s — the trust "+
+					"policy would name a principal in a different account than the one requesting access, "+
+					"which reviews as correct",
+				quote(r.MemberRoleARN), acct, r.MemberAccountID))
+		}
+		// A role *path* is legal in an ARN and automat has no reason to accept one
+		// with a traversal in it. Nothing here resolves the path, so this is not a
+		// traversal defense; it is that "role/../../admin" is not a name anybody
+		// means, and a reviewer skimming a trust policy reads the last component as
+		// the role. IAM would reject it at deploy time, which is the wrong place to
+		// find out: by then central IT has already approved the bundle.
+		if i := strings.Index(r.MemberRoleARN, ":role/"); i >= 0 {
+			name := r.MemberRoleARN[i+len(":role/"):]
+			for _, seg := range strings.Split(name, "/") {
+				if seg == "." || seg == ".." {
+					problems = append(problems, fmt.Sprintf(
+						"member_role_arn: %s has a %q segment in the role path — IAM would reject it, and a "+
+							"reviewer reads the last component as the role name; give the role's real path",
+						quote(r.MemberRoleARN), seg))
+					break
+				}
+			}
+			// IAM's own limits: 64 for the role name, 512 for the whole path+name.
+			// Enforced here so an over-long ARN is refused while the operator is
+			// still at the terminal, rather than at deploy time after approval.
+			if len(name) > maxRolePathAndName {
+				problems = append(problems, fmt.Sprintf(
+					"member_role_arn: the path and role name are %d characters, over IAM's %d-character "+
+						"limit — the template would be approved and then fail to deploy",
+					len(name), maxRolePathAndName))
+			}
 		}
 	}
 

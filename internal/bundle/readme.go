@@ -224,10 +224,13 @@ func README(r *Request) ([]byte, error) {
 	w("\n")
 	w("Every other value here is an account id, an OU id, or an ARN — none is secret.\n")
 	w("\n")
-	w("This bundle was generated mechanically from the requester's configuration. It\n")
-	w("contains no free-text field: nothing in it was typed as prose by the requester, so\n")
-	w("nothing in it is arguing with you. If you want the reasoning, ask %s.\n",
-		r.RequesterContact)
+	w("This bundle was generated mechanically from the requester's configuration. Every\n")
+	w("value in it is an identifier — an account id, an OU id, an ARN, a role name, an\n")
+	w("OU name — checked against a pattern and quoted where it is rendered. None of it\n")
+	w("is a paragraph the requester wrote, and nothing in it should be read as an\n")
+	w("argument for approving it. One value is a short human-chosen label, the proposed\n")
+	w("OU name, so treat that one as text the requester picked rather than as a fact.\n")
+	w("If you want the reasoning, ask %s.\n", r.RequesterContact)
 
 	return []byte(b.String()), nil
 }

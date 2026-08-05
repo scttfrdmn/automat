@@ -168,6 +168,10 @@ separately.
 
 Every other value here is an account id, an OU id, or an ARN — none is secret.
 
-This bundle was generated mechanically from the requester's configuration. It
-contains no free-text field: nothing in it was typed as prose by the requester, so
-nothing in it is arguing with you. If you want the reasoning, ask research-it@example.edu.
+This bundle was generated mechanically from the requester's configuration. Every
+value in it is an identifier — an account id, an OU id, an ARN, a role name, an
+OU name — checked against a pattern and quoted where it is rendered. None of it
+is a paragraph the requester wrote, and nothing in it should be read as an
+argument for approving it. One value is a short human-chosen label, the proposed
+OU name, so treat that one as text the requester picked rather than as a fact.
+If you want the reasoning, ask research-it@example.edu.

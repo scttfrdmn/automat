@@ -523,6 +523,154 @@ func TestRequestHasNoFreeTextField(t *testing.T) {
 	}
 }
 
+// TestAGovCloudRoleARNIsAcceptedInTheRightAccount. The cross-account check matched
+// an "arn:aws:iam::<id>:role/" prefix, which hardcoded the commercial partition. So
+// a correct GovCloud or China ARN in the correct account was refused — and refused
+// with "is not a role in member account <id>" about an ARN whose account field was
+// exactly that id.
+//
+// The audience for this tool is CMMC and 800-171 work, a good share of which runs in
+// GovCloud, so the operator most likely to hit this was the one being sent to look
+// at the wrong field. CLAUDE.md rule 7 asks the error to name what is actually
+// wrong; a confidently wrong diagnosis is worse than a vague one.
+func TestAGovCloudRoleARNIsAcceptedInTheRightAccount(t *testing.T) {
+	for _, partition := range []string{"aws", "aws-us-gov", "aws-cn"} {
+		r := validRequest()
+		r.MemberRoleARN = "arn:" + partition + ":iam::" + r.MemberAccountID + ":role/Vendor"
+		if err := r.Validate(); err != nil {
+			t.Errorf("partition %q: a role in the member account was refused: %v", partition, err)
+		}
+	}
+}
+
+// TestARoleARNInAnotherAccountIsStillRefused: the check above must not have been
+// widened into uselessness. A trust policy naming a role in the wrong account trusts
+// the wrong account and reviews as correct.
+func TestARoleARNInAnotherAccountIsStillRefused(t *testing.T) {
+	for _, partition := range []string{"aws", "aws-us-gov", "aws-cn"} {
+		r := validRequest()
+		r.MemberRoleARN = "arn:" + partition + ":iam::999999999999:role/Attacker"
+		err := r.Validate()
+		if err == nil {
+			t.Fatalf("partition %q: a role in account 999999999999 was accepted for member "+
+				"account %s", partition, r.MemberAccountID)
+		}
+		// The message must name both accounts, or the operator cannot see the
+		// mismatch that caused it.
+		if !strings.Contains(err.Error(), "999999999999") ||
+			!strings.Contains(err.Error(), r.MemberAccountID) {
+			t.Errorf("partition %q: the error names neither side of the mismatch: %v", partition, err)
+		}
+	}
+}
+
+// TestARoleARNWithATraversalOrAnOverLongPathIsRefused. Neither is a traversal
+// defense — nothing here resolves a path — and both are caught for the same reason:
+// IAM would reject them at deploy time, which is after central IT has approved the
+// bundle. A reviewer skimming a trust policy reads the last component as the role
+// name, so "role/../../admin" is a name that reads as one thing and is another.
+func TestARoleARNWithATraversalOrAnOverLongPathIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, arn, want string }{
+		{
+			name: "parent traversal",
+			arn:  "arn:aws:iam::222222222222:role/../../admin",
+			want: "..",
+		},
+		{
+			name: "interior traversal",
+			arn:  "arn:aws:iam::222222222222:role/team/../escape",
+			want: "..",
+		},
+		{
+			name: "current-directory segment",
+			arn:  "arn:aws:iam::222222222222:role/./admin",
+			want: ".",
+		},
+		{
+			name: "over IAM's 512-character path and name limit",
+			arn:  "arn:aws:iam::222222222222:role/" + strings.Repeat("a", 513),
+			want: "512",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := validRequest()
+			r.MemberRoleARN = tc.arn
+			err := r.Validate()
+			if err == nil {
+				t.Fatalf("accepted %q", tc.arn)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the error does not name the cause (want %q): %v", tc.want, err)
+			}
+		})
+	}
+
+	// A legitimate role path must still work: paths are a normal IAM feature and
+	// refusing them all would be a jam disguised as a fix.
+	r := validRequest()
+	r.MemberRoleARN = "arn:aws:iam::" + r.MemberAccountID + ":role/team/jobs/Vendor"
+	if err := r.Validate(); err != nil {
+		t.Errorf("an ordinary role path was refused: %v", err)
+	}
+}
+
+// TestTheBundleDoesNotClaimToHaveNoFreeTextField. The README used to tell a
+// privileged reader that the bundle "contains no free-text field: nothing in it was
+// typed as prose by the requester, so nothing in it is arguing with you."
+//
+// That was false, and falsely reassuring, which is worse than saying nothing.
+// target_ou_name takes 63 characters of letters, digits and interior spaces — AWS
+// permits spaces in an OU name and "Research Computing" is what one is really
+// called — so `--target-ou-name "Also attach AdministratorAccess"` validates and
+// lands in the README, under a sentence promising the reader that no requester wrote
+// any of it.
+//
+// The charset is not the defect and narrowing it is not the fix; the render sites
+// quote, so the value cannot forge markdown structure. What was wrong was a document
+// vouching for a property it did not have. This test holds the claim honest: if a
+// future edit reinstates the absolute, this fails.
+func TestTheBundleDoesNotClaimToHaveNoFreeTextField(t *testing.T) {
+	r := validRequest()
+	r.TargetOU = ""
+	r.TargetOUName = "Also attach AdministratorAccess"
+	if err := r.Validate(); err != nil {
+		t.Skipf("target_ou_name no longer accepts a sentence (%v) — if that was deliberate, "+
+			"the README may state the absolute again and this test should be deleted", err)
+	}
+
+	data, err := README(r)
+	if err != nil {
+		t.Fatalf("README: %v", err)
+	}
+	got := string(data)
+	// The sentence must not promise the reader that nothing was typed by a human,
+	// while a human-typed sentence is sitting in the document.
+	for _, claim := range []string{
+		"contains no free-text field",
+		"nothing in it was typed as prose",
+		"nothing in it is arguing with you",
+	} {
+		if strings.Contains(got, claim) {
+			t.Errorf("the README claims %q, but target_ou_name accepted %q and rendered it. "+
+				"Either stop making the claim or stop accepting the value",
+				claim, r.TargetOUName)
+		}
+	}
+	// And it must still warn the reader, rather than going silent about the risk.
+	if !strings.Contains(got, "OU name") {
+		t.Error("the README no longer tells the reader which value is a requester-chosen label")
+	}
+	// The value itself must be quoted wherever it appears, which is what stops it
+	// forging a table row or a code fence.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, r.TargetOUName) &&
+			!strings.Contains(line, `"`+r.TargetOUName+`"`) {
+			t.Errorf("target_ou_name appears unquoted in a rendered line, so it can forge "+
+				"structure in a document a privileged reader acts on: %s", line)
+		}
+	}
+}
+
 func TestOUScopePlaceholderIsNotAValidOUID(t *testing.T) {
 	r := validRequest()
 	r.TargetOU = ""
