@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
+	pgregory.net/rapid v1.3.0
 )
 
 require (
