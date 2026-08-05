@@ -4,12 +4,13 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/scttfrdmn/automat/internal/safeio"
 )
 
 // ExternalId handling.
@@ -44,6 +45,59 @@ const (
 
 var reEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// maxExternalIDFileBytes bounds the read. AWS's own ExternalId limit is 1224
+// characters; the slack above it is for trailing whitespace an editor adds. A file
+// larger than this is not an ExternalId — it is a log, a keyring database, or the
+// wrong path — and reading it unbounded is a way to exhaust memory with a value the
+// operator may have pointed somewhere by mistake.
+const maxExternalIDFileBytes = 4096
+
+// reResolvedExternalID is AWS's documented ExternalId charset and length, and it is
+// deliberately *looser* than internal/bundle's reExternalID.
+//
+// The two validate different things. bundle generates a value and so may insist on
+// its own narrow form. Here the value is being *consumed*, and it must equal
+// whatever the deployed trust policy checks — which may predate automat, or come
+// from a vendor who chose it. Refusing a `/` that AWS accepts would reject a
+// working configuration for no security gain.
+//
+// What it does refuse is what has no business in a credential: control bytes, ANSI
+// escapes, NUL padding, and anything long enough that AWS would reject it anyway.
+// Without this, `"a"` resolves and is sent to AssumeRole as a confused-deputy
+// defense, and a value carrying an escape sequence reaches a terminal.
+//
+// The length is checked in code rather than as a repeat count because RE2 caps a
+// bounded repeat at 1000, below AWS's own limit.
+var reResolvedExternalID = regexp.MustCompile(`^[A-Za-z0-9+=,.@:/_-]+$`)
+
+// maxExternalIDChars is AWS's documented ExternalId length limit.
+const maxExternalIDChars = 1224
+
+// minExternalIDChars is the point below which a value is short enough to guess.
+// It matches the floor internal/bundle enforces on the values it generates.
+const minExternalIDChars = 16
+
+// validateResolvedExternalID checks the value that is about to be sent to
+// AssumeRole. Its errors describe the shape and never echo the value.
+func validateResolvedExternalID(v, source string) error {
+	if !reResolvedExternalID.MatchString(v) || len(v) > maxExternalIDChars {
+		return fmt.Errorf("the ExternalId from %s is not a value AWS accepts: it must be at most %d "+
+			"characters of letters, digits, and _+=,.@:/- with no whitespace or control characters "+
+			"(the value read was %d characters). automat has not sent it; check that %s contains only "+
+			"the ExternalId", source, maxExternalIDChars, len(v), source)
+	}
+	// Short-but-valid is worth a distinct message: it is accepted by AWS and
+	// useless as a defense, and an operator who typed a placeholder needs to be
+	// told that rather than get an opaque AccessDenied from STS later.
+	if len(v) < minExternalIDChars {
+		return fmt.Errorf("the ExternalId from %s is only %d characters, which is short enough to "+
+			"guess — and a guessable ExternalId is worse than none, because it looks like a control. "+
+			"Generate one with `automat setup --request`, which produces 160 bits, and set the same "+
+			"value in the trust policy", source, len(v))
+	}
+	return nil
+}
+
 // validateExternalIDRef checks the reference's shape without resolving it.
 //
 // Notably it rejects a bare value. An operator who writes the ExternalId
@@ -58,7 +112,10 @@ func validateExternalIDRef(ref string) error {
 			"config file stays safe to commit and to attach to a ticket", redactRef(ref))
 	}
 	if rest == "" {
-		return fmt.Errorf("scheme %q has no target — write env:VAR_NAME or file:/path", scheme)
+		// Redacted like every other branch. "prod:LiveExternalIdValue..." reaches
+		// here, and echoing the scheme alone still discloses the shape of what the
+		// operator typed; there is nothing to gain by naming it.
+		return fmt.Errorf("%s has no target — write env:VAR_NAME or file:/path", redactRef(ref))
 	}
 	switch scheme {
 	case ExternalIDSchemeEnv:
@@ -69,7 +126,11 @@ func validateExternalIDRef(ref string) error {
 	case ExternalIDSchemeFile:
 		return nil
 	default:
-		return fmt.Errorf("unknown scheme %q — automat understands env:VAR_NAME and file:/path", scheme)
+		// The scheme is echoed but the target is not: a reference of
+		// "prod:LiveExternalIdValue123456" is most likely a value with a prefix,
+		// which is exactly the mistake this branch catches.
+		return fmt.Errorf("unknown scheme %q in %s — automat understands env:VAR_NAME and "+
+			"file:/path", scheme, redactRef(ref))
 	}
 }
 
@@ -103,6 +164,13 @@ func ResolveExternalID(ref string) (string, error) {
 				"vendor role requires is unavailable — export it in this shell, or point "+
 				"external_id_ref at a file", rest)
 		}
+		// Validated on this branch too. env: is the default form and has no file
+		// mode to check, which makes it the easier of the two to leave unguarded —
+		// and an environment variable is set by whatever launched automat, so its
+		// contents are no more trustworthy than a file's.
+		if err := validateResolvedExternalID(v, "$"+rest); err != nil {
+			return "", err
+		}
 		return v, nil
 
 	case ExternalIDSchemeFile:
@@ -110,28 +178,24 @@ func ResolveExternalID(ref string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		info, err := os.Stat(path)
-		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("no ExternalId file at %s — create it containing only the value, "+
-				"readable by you alone (chmod 600)", path)
-		}
+		// safeio, not os.Stat followed by os.ReadFile. Those are two resolutions
+		// of the same name, and whoever can write the containing directory decides
+		// which file the second one lands on — which means they choose the
+		// ExternalId, which means they choose the confused-deputy defense this
+		// value exists to be. safeio checks the descriptor it actually read from,
+		// refuses a symlink (os.Root follows one whose target is inside the
+		// directory, and ignores O_NOFOLLOW), refuses a pipe without hanging on
+		// it, and bounds the read.
+		data, err := safeio.ReadSecret(path, maxExternalIDFileBytes)
 		if err != nil {
-			return "", fmt.Errorf("stat ExternalId file %s: %w", path, err)
-		}
-		// Refusing a loose mode rather than warning about it: a warning on a
-		// value whose only job is to be unguessable is advice nobody acts on,
-		// and the fix is one chmod.
-		if perm := info.Mode().Perm(); perm&0o077 != 0 {
-			return "", fmt.Errorf("ExternalId file %s is mode %#o, readable beyond its owner — "+
-				"run: chmod 600 %s", path, perm, path)
-		}
-		data, err := os.ReadFile(path) //nolint:gosec // the operator's own referenced path
-		if err != nil {
-			return "", fmt.Errorf("read ExternalId file %s: %w", path, err)
+			return "", fmt.Errorf("the ExternalId the vendor role requires is unavailable: %w", err)
 		}
 		v := strings.TrimSpace(string(data))
 		if v == "" {
 			return "", fmt.Errorf("ExternalId file %s is empty", path)
+		}
+		if err := validateResolvedExternalID(v, path); err != nil {
+			return "", err
 		}
 		return v, nil
 	}

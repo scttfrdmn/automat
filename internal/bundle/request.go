@@ -141,8 +141,20 @@ func (r *Request) Validate() error {
 	check("org_id", r.OrgID, reOrgID, "use the o-... form from `automat preflight`")
 	check("vendor_role_name", r.VendorRoleName, reRoleName,
 		"an IAM role name may contain letters, digits, and _+=,.@- and is at most 64 characters")
-	check("external_id", r.ExternalID, reExternalID,
-		"use at least 16 characters of letters, digits, and _+=,.@:- ; automat generates one for you")
+	// Redacted rather than quoted, unlike every other field here. The others are
+	// account ids, OU ids, ARNs, and an email — the README says none of them is
+	// secret, and it is right. This one is the ExternalId, and the value reaching
+	// this branch is most likely a *working* one: AWS permits `/` and a space and
+	// this package deliberately does not, so an operator pasting a value from an
+	// existing trust policy lands here and would have it printed back at them, into
+	// a terminal, a scrollback buffer, or a CI transcript.
+	if !reExternalID.MatchString(r.ExternalID) {
+		problems = append(problems, fmt.Sprintf("external_id: %s is not accepted — use 16 to 128 "+
+			"characters of letters, digits, and _+=,.@:- ; automat generates one for you, and the "+
+			"value is not shown here because it may be a live one. AWS itself permits `/` and spaces; "+
+			"automat does not, so a value from an existing trust policy may be rejected here",
+			redactExternalID(r.ExternalID)))
+	}
 	check("requester_contact", r.RequesterContact, reEmail, "use one email address")
 	check("generated_at", r.GeneratedAt, reTimestamp, "use RFC 3339 UTC to the second, e.g. 2026-08-05T14:00:00Z")
 	check("tool_version", r.ToolVersion, reVersion, "use the value `automat version` prints")
@@ -196,6 +208,55 @@ func plural(word string, n int) string {
 		return word
 	}
 	return word + "s"
+}
+
+// redactExternalID describes a rejected ExternalId without reproducing it.
+//
+// It reports the length and the character classes present, which is what an
+// operator needs to find their own typo — a trailing newline, a stray space, a
+// pasted quote — without the value itself appearing anywhere. The length is safe
+// to disclose: it is bounded by the pattern in the first place and knowing it does
+// not help guess a 160-bit value.
+func redactExternalID(v string) string {
+	if v == "" {
+		return "an empty external_id"
+	}
+	var hasSpace, hasControl, hasOther bool
+	for _, b := range []byte(v) {
+		switch {
+		case b == ' ' || b == '\t':
+			hasSpace = true
+		case b < 0x20 || b == 0x7f:
+			hasControl = true
+		case !isAllowedExternalIDByte(b):
+			hasOther = true
+		}
+	}
+	notes := make([]string, 0, 3)
+	if hasSpace {
+		notes = append(notes, "contains a space or tab")
+	}
+	if hasControl {
+		notes = append(notes, "contains a control character, likely a stray newline")
+	}
+	if hasOther {
+		notes = append(notes, "contains a character outside the accepted set")
+	}
+	if len(notes) == 0 {
+		return fmt.Sprintf("the %d-character value given", len(v))
+	}
+	return fmt.Sprintf("the %d-character value given (it %s)", len(v), strings.Join(notes, "; it "))
+}
+
+// isAllowedExternalIDByte mirrors reExternalID's character class. It is a separate
+// function rather than a second regex so the two cannot describe different sets:
+// the test asserts they agree byte for byte.
+func isAllowedExternalIDByte(b byte) bool {
+	switch {
+	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z', b >= '0' && b <= '9':
+		return true
+	}
+	return strings.IndexByte("_+=,.@:-", b) >= 0
 }
 
 // quote renders a rejected value for an error message with %q, so a value

@@ -245,6 +245,96 @@ func TestShortExternalIDIsRejected(t *testing.T) {
 	}
 }
 
+// TestARejectedExternalIDIsNotEchoed. Every other field this validator refuses is
+// an account id, an OU id, an ARN, or an email — the README says so, and none of
+// them is secret. The ExternalId is the exception, and it goes through the same
+// `check` closure as the rest, so it was reported the same way.
+//
+// The realistic case is not a malicious value, it is a working one: AWS permits `/`
+// and a space in an ExternalId and this package deliberately does not, so a
+// legitimate value copied from an existing trust policy is *rejected and printed*.
+// internal/config/externalid.go already has redactRef written for exactly this and
+// this validator did not use it.
+func TestARejectedExternalIDIsNotEchoed(t *testing.T) {
+	// Each of these is a value AWS itself accepts, so each is one an operator may
+	// really be holding when this error fires.
+	for _, v := range []string{
+		"vendor/tenant/0123456789abcdef",
+		"a-real-looking-external-id with a space",
+		"automat-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/suffix",
+		strings.Repeat("live-secret", 20), // over the 128 limit
+	} {
+		r := validRequest()
+		r.ExternalID = v
+		err := r.Validate()
+		if err == nil {
+			t.Fatalf("expected %q to be rejected", v)
+		}
+		if strings.Contains(err.Error(), v) {
+			t.Errorf("the rejection echoes what may be a live ExternalId:\n%v", err)
+		}
+		// A prefix long enough to matter is as bad as the whole thing: it is the
+		// part an attacker would otherwise have to guess.
+		if len(v) >= 12 && strings.Contains(err.Error(), v[:12]) {
+			t.Errorf("the rejection echoes the first 12 characters of the ExternalId:\n%v", err)
+		}
+		// It must still say which field and what shape is wanted (CLAUDE.md rule 7).
+		if !strings.Contains(err.Error(), "external_id") {
+			t.Errorf("the rejection does not name the field: %v", err)
+		}
+	}
+}
+
+// TestTheRedactorAndThePatternAgreeOnEveryByte. redactExternalID describes which
+// character classes a rejected value contains, and it has its own hand-written
+// character set because a regex cannot report *why* it did not match. Two
+// descriptions of one set drift, and the drift is silent: the message would name
+// the wrong reason and send the operator looking at the wrong character.
+func TestTheRedactorAndThePatternAgreeOnEveryByte(t *testing.T) {
+	for b := 0; b < 256; b++ {
+		// A 16-character candidate differing only in this byte, so the only reason
+		// it can fail the pattern is the byte itself.
+		v := strings.Repeat("a", 15) + string([]byte{byte(b)})
+		matched := reExternalID.MatchString(v)
+		allowed := isAllowedExternalIDByte(byte(b))
+		if matched != allowed {
+			t.Errorf("byte %#02x (%q): reExternalID says %v, isAllowedExternalIDByte says %v",
+				b, string(rune(b)), matched, allowed)
+		}
+	}
+}
+
+// TestTheRedactionStillTellsTheOperatorWhatIsWrong. A redaction that says only
+// "rejected" trades one failure for another: the operator cannot see their typo and
+// has no way to find it, so they paste the value somewhere less careful to look at
+// it. The message must name the cause without reproducing the value.
+func TestTheRedactionStillTellsTheOperatorWhatIsWrong(t *testing.T) {
+	cases := []struct {
+		value string
+		want  string
+	}{
+		{"automat-AAAAAAAAAAAAAAAAAAAAAAAA ", "space or tab"},
+		{"automat-AAAAAAAAAAAAAAAAAAAAAAAA\n", "control character"},
+		{"automat-AAAAAAAAAAAAAAAAAAAA/tenant", "outside the accepted set"},
+		{"", "empty"},
+		{"tooshort", "8-character"},
+	}
+	for _, tc := range cases {
+		got := redactExternalID(tc.value)
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("redactExternalID(%q) = %q, want it to mention %q", tc.value, got, tc.want)
+		}
+		if tc.value != "" && strings.Contains(got, tc.value) {
+			t.Errorf("redactExternalID(%q) reproduced the value: %q", tc.value, got)
+		}
+		for _, bad := range []string{"\n", "\x1b", "\r", "\t"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("redactExternalID(%q) passed through %q: %q", tc.value, bad, got)
+			}
+		}
+	}
+}
+
 // TestNoPatternAdmitsAStructuralCharacter is the claim the templates rest on,
 // checked by brute force rather than by reading the regexes.
 //
