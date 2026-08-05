@@ -54,6 +54,9 @@ func (f *OrgInit) CreateOrganization(_ context.Context, in *organizations.Create
 	if err := s.err("CreateOrganization"); err != nil {
 		return nil, err
 	}
+	if err := s.before("CreateOrganization"); err != nil {
+		return nil, err
+	}
 	if f.Created {
 		return nil, &orgtypes.AlreadyInOrganizationException{
 			Message: aws.String("The provided account is already a member of an organization."),
@@ -106,6 +109,9 @@ func (f *OrgInit) EnablePolicyType(_ context.Context, in *organizations.EnablePo
 	f.Record("EnablePolicyType")
 	s := f.State
 	if err := s.err("EnablePolicyType"); err != nil {
+		return nil, err
+	}
+	if err := s.before("EnablePolicyType"); err != nil {
 		return nil, err
 	}
 	if in.PolicyType != orgtypes.PolicyTypeServiceControlPolicy {

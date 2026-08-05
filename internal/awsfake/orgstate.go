@@ -121,6 +121,36 @@ type OrgState struct {
 
 	// Errs overrides the result of a named operation, e.g. "MoveAccount".
 	Errs map[string]error
+
+	// Before runs just before a named operation takes effect, holding no lock, and
+	// its error (if any) is returned in place of the operation.
+	//
+	// This is the only way to test the discipline the whole ensure layer is built
+	// on. `internal/org` reads first AND tolerates the duplicate
+	// (docs/open-questions.md Q12), and the second half is only reachable if
+	// something changes the organization between automat's read and its write.
+	// Errs cannot express that: it fails a call, whereas the window needs a call to
+	// SUCCEED against state that moved underneath it. So a test seeds an OU, an
+	// attachment, or an account from inside Before("CreateOrganizationalUnit") and
+	// gets the real DuplicateOrganizationalUnitException from the real code path,
+	// rather than asserting against a hand-built error that proves only that
+	// errors.As works.
+	//
+	// A hook rather than a boolean per race, because the races are not enumerable:
+	// every ensure operation has one, and the interesting ones are the combinations.
+	Before map[string]func() error
+}
+
+// before runs the hook for op, if any. Callers must not hold the lock: a hook
+// that seeds state through the same OrgState would deadlock.
+func (s *OrgState) before(op string) error {
+	s.mu.Lock()
+	h := s.Before[op]
+	s.mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	return h()
 }
 
 // page returns the slice of items for the requested token, and the next token
@@ -279,6 +309,34 @@ func (s *OrgState) SeedPolicy(name, content string, tags map[string]string) stri
 		}
 	}
 	return id
+}
+
+// SeedTags adds tags to a resource without going through the API.
+//
+// For the tags automat did not write: an institution's cost-allocation keys
+// (DESIGN §14) are the operator's, and an ensure that removed unrecognized tags
+// would delete a department's chargeback labels on every vend. That is only
+// checkable if a test can start from an organization where they are present.
+func (s *OrgState) SeedTags(resourceID string, tags map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tags[resourceID] == nil {
+		s.tags[resourceID] = map[string]string{}
+	}
+	for k, v := range tags {
+		s.tags[resourceID][k] = v
+	}
+}
+
+// Reparent moves an account or OU without going through the API.
+//
+// For the inside of a Before hook, where the point is that the organization
+// changed under a call automat had already decided to make. Going through
+// MoveAccount there would recurse into the hook.
+func (s *OrgState) Reparent(childID, parentID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.parents[childID] = parentID
 }
 
 // SeedAttachment attaches a policy to a target without going through the API, so

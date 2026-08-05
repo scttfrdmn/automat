@@ -44,6 +44,17 @@ type Org struct {
 	// granted" (DESIGN §16).
 	ResourcePolicyErr error
 
+	// SCPStatus is the status ListRoots reports for the service control policy
+	// type on the root. NewOrg sets ENABLED.
+	//
+	// The empty value means the root reports NO policy types at all, which is what
+	// a root where SCPs were never enabled looks like — and it is a state worth
+	// reaching in a test, because it is the one in which CreatePolicy and
+	// AttachPolicy both succeed and nothing is enforced. PENDING_ENABLE is the
+	// other value that matters: code reading it as "on" would assert a control is
+	// live while AWS is still deciding.
+	SCPStatus orgtypes.PolicyTypeStatus
+
 	// Errs overrides the result of a named operation, e.g. "ListRoots".
 	Errs map[string]error
 }
@@ -64,6 +75,7 @@ func NewOrg(orgID, managementAccountID string) *Org {
 		ManagementEmail:     "org-management@example.edu",
 		FeatureSet:          orgtypes.OrganizationFeatureSetAll,
 		RootID:              "r-exam",
+		SCPStatus:           orgtypes.PolicyTypeStatusEnabled,
 		OUs:                 map[string]OU{},
 		Errs:                map[string]error{},
 	}
@@ -121,15 +133,18 @@ func (f *Org) ListRoots(_ context.Context, _ *organizations.ListRootsInput,
 	if !f.InOrg {
 		return nil, NotInOrganization()
 	}
-	return &organizations.ListRootsOutput{Roots: []orgtypes.Root{{
+	root := orgtypes.Root{
 		Id:   aws.String(f.RootID),
 		Arn:  aws.String("arn:aws:organizations::" + f.ManagementAccountID + ":root/" + f.OrgID + "/" + f.RootID),
 		Name: aws.String("Root"),
-		PolicyTypes: []orgtypes.PolicyTypeSummary{{
+	}
+	if f.SCPStatus != "" {
+		root.PolicyTypes = []orgtypes.PolicyTypeSummary{{
 			Type:   orgtypes.PolicyTypeServiceControlPolicy,
-			Status: orgtypes.PolicyTypeStatusEnabled,
-		}},
-	}}}, nil
+			Status: f.SCPStatus,
+		}}
+	}
+	return &organizations.ListRootsOutput{Roots: []orgtypes.Root{root}}, nil
 }
 
 // ListParents implements awsapi.OrgAPI.

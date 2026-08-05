@@ -95,6 +95,9 @@ func (f *OrgPolicy) CreatePolicy(_ context.Context, in *organizations.CreatePoli
 	if err := s.err("CreatePolicy"); err != nil {
 		return nil, err
 	}
+	if err := s.before("CreatePolicy"); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -156,6 +159,9 @@ func (f *OrgPolicy) UpdatePolicy(_ context.Context, in *organizations.UpdatePoli
 	if err := s.err("UpdatePolicy"); err != nil {
 		return nil, err
 	}
+	if err := s.before("UpdatePolicy"); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -205,6 +211,9 @@ func (f *OrgPolicy) AttachPolicy(_ context.Context, in *organizations.AttachPoli
 	f.Record("AttachPolicy")
 	s := f.State
 	if err := s.err("AttachPolicy"); err != nil {
+		return nil, err
+	}
+	if err := s.before("AttachPolicy"); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
