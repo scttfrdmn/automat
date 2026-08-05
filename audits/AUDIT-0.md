@@ -26,6 +26,8 @@ down, and four of the six were invisible to the existing test suite.
 **Result.** 6 findings: 5 high, 1 medium. All FIXED. 8 items triaged as ACCEPTED
 or out-of-scope-with-reason.
 
+**Fix commits.** H1, H2 → `409adf2`. H3, H4, H5, M1 → `fa872b8`.
+
 ---
 
 ## High
@@ -53,7 +55,7 @@ catalog that looks exactly as authoritative as a real one.
 first step of `check()`. Every provenance block must name exactly one kind, and
 carry a `uri`, a `retrieved_at`, and an `upstream_sha256` matching
 `^[0-9a-f]{64}$`. An artifact with zero AWS mapping sources is also refused.
-Each failure carries remediation naming the file and field.
+Each failure carries remediation naming the file and field. Fixed in `409adf2`.
 Tests: `TestSourceLoaderRequiresUpstreamProvenance` (5 cases).
 
 ### H2 — A misspelled key in a source file silently deleted what it carried. FIXED
@@ -72,7 +74,7 @@ This is the asymmetry that made it exploitable: the gate was on the wrong door.
 **Fix.** `readJSONAndHash` now uses a `json.Decoder` with
 `DisallowUnknownFields()` and rejects trailing content after the document. The
 error explains that a misspelled key silently drops what it carries, so the
-loader refuses it.
+loader refuses it. Fixed in `409adf2`.
 Test: `TestSourceLoaderRejectsUnknownFields`.
 
 ### H3 — `not_action` in an SCP fragment turned union into a deny-all. FIXED
@@ -94,7 +96,7 @@ or a single hand-written fragment using the shape would have done it.
 as an unknown field, so this cannot be reintroduced by a catalog. The legitimate
 uses of the shape — region and service allowlists — are separate intersected
 fields that the SCP packer renders into the `NotAction` form; a catalog author
-never writes it. Recorded in `schema/CHANGELOG.md`.
+never writes it. Recorded in `schema/CHANGELOG.md`. Fixed in `fa872b8`.
 
 ### H4 — `Allow` in an SCP fragment: schema accepted, Go warned. FIXED
 
@@ -113,6 +115,7 @@ and an `Allow` fragment is the one shape that can move the boundary the other wa
 with remediation text pointing at `scp.region_allowlist` /
 `scp.service_allowlist` as the supported way to express permission. The drift
 detector covers it: `TestGoAndSchemaAgreeOnRejection/allow_statement_effect`.
+Fixed in `fa872b8`.
 
 ### H5 — An empty set-valued parameter was accepted, and absorbs every set it meets. FIXED
 
@@ -133,8 +136,8 @@ one from being *declared*.)
 members, honoring a non-default `set_separator`. The schema rejects empty and
 whitespace-only values for both set orders, and — with the default separator —
 a value made entirely of separators; the changelog records that Go is
-authoritative on member splitting. Tests: `TestValidateRejects/set_parameter_with_no_members`
-and two drift-detector cases.
+authoritative on member splitting. Fixed in `fa872b8`. Tests:
+`TestValidateRejects/set_parameter_with_no_members` and two drift-detector cases.
 
 ---
 
@@ -173,7 +176,7 @@ one long id cannot bury the report. Applied at every structural interpolation
 site in `validate.go` and to every catalog-supplied value in `ParamConflict.Error()`.
 Test: `TestReportsCannotBeForgedByCatalogInput`, which asserts no report line
 originates anywhere but the validator and no raw escape byte survives. Verified
-to fail against the pre-fix code.
+to fail against the pre-fix code. Fixed in `fa872b8`.
 
 ---
 
