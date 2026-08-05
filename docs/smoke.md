@@ -83,12 +83,18 @@ restatement.
 | 3 | **Q8** — does `MoveAccount` honor `aws:ResourceTag` on the account? | Whether the condition binds. This one does **not** fail closed: if the tag condition is ignored, the role can move *any* account in the organization into the delegated OU, and nothing announces it. Test it directly with a deliberately untagged account. |
 | 4 | **Q12** — `MoveAccount` into the parent the account already has | Success, or the exact exception. Immediately after order 1 succeeds, re-run the same move: it costs one API call and it is the behavior every `vend --resume` depends on |
 | 5 | **Q5** — what `preflight` can detect about delegation from the member side | Whether `DescribeResourcePolicy` is readable from the member account at all; if not, preflight must be told rather than detect, and the bundle must carry that fact |
-| 6 | **Q6** — SCP quota edges under real union output | How close a real `cmmc-l1` + `800-171r2` + campus-baseline union comes to 5 SCPs / 5120 characters per target |
+| 6 | **Q6** — SCP quota edges under real union output | Now largely answered offline against `catalogs/baseline-protection.json`: the shipped set plus a profile's allowlists packs into **one** policy at 46% of the limit. What a live run still adds is what a *campus* baseline in the reserved institutional slot looks like, and whether the three usable slots survive contact with one |
+| 7 | **Q13** — `BP.IAM-1` denies re-permissioning the baseline roles, automat included | Whether the protection SCP governs automat's own `PutRolePolicy` on `automat-automation` once attached, and how long after `AttachPolicy` that becomes true. Attempt the write from the automation role and record the result, then re-run the full vend and confirm it is a no-op rather than a denied write |
 
 Q8 deserves the emphasis it has above: it is the one on this list whose bad case is
 silent. Q9 fails visibly, Q7 fails visibly, Q5 and Q6 are questions about capability
 and headroom. A tag condition that does not bind looks exactly like a tag condition
 that does.
+
+Q13 is the near miss: its bad case fails visibly but *late*. If SCP attachment has a
+propagation delay, an attach-then-write sequence succeeds on the run that establishes it
+and fails on some later run, which is why the run must attempt the denied write
+deliberately rather than conclude from a vend that happened to work.
 
 ## Phase 1 review item 7 applies here too
 

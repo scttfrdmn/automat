@@ -137,6 +137,29 @@ func TestVendoredCatalogLoadsAndVerifies(t *testing.T) {
 // against schema/, not against the Go types that produced it. An external
 // consumer reads the schema, so that is the contract the catalog must meet.
 func TestVendoredCatalogSatisfiesPublishedSchema(t *testing.T) {
+	sch := publishedSchema(t)
+
+	path := filepath.Join(catalogsDir, goldenFile)
+	data, err := os.ReadFile(path) //nolint:gosec // fixed in-repo path
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if err := sch.Validate(doc); err != nil {
+		t.Errorf("%s violates the published schema:\n%v", path, err)
+	}
+}
+
+// publishedSchema compiles schema/control-artifact-v1.schema.json.
+//
+// Shared by every catalog's schema test, because the point of those tests is the
+// contract an external consumer reads, and a second copy of this loader could end up
+// compiling a different file than the one that ships.
+func publishedSchema(t *testing.T) *jsonschema.Schema {
+	t.Helper()
 	const schemaPath = "../../schema/control-artifact-v1.schema.json"
 	sf, err := os.Open(schemaPath) //nolint:gosec // fixed in-repo path
 	if err != nil {
@@ -155,19 +178,7 @@ func TestVendoredCatalogSatisfiesPublishedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile schema: %v", err)
 	}
-
-	path := filepath.Join(catalogsDir, goldenFile)
-	data, err := os.ReadFile(path) //nolint:gosec // fixed in-repo path
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(data)))
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-	if err := sch.Validate(doc); err != nil {
-		t.Errorf("%s violates the published schema:\n%v", path, err)
-	}
+	return sch
 }
 
 // TestCatalogCoversAllFifteenRequirements pins the control set itself. CMMC

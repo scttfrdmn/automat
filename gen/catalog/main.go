@@ -25,24 +25,43 @@ func run() error {
 	check := flag.Bool("check", false, "compile and compare against the vendored catalog without writing")
 	flag.Parse()
 
-	a, err := compileFrom(*src)
-	if err != nil {
-		return err
+	// Every catalog this tool knows how to build. A list rather than a single
+	// compile, because `make catalogs-check` is only meaningful over all of them:
+	// a second catalog wired in as its own command would be a second thing to
+	// remember to run, and the one that gets forgotten is the one that goes stale.
+	targets := []func(string) (*artifact.Artifact, error){
+		compileFrom,
+		compileBaseline,
 	}
+
+	for _, compileOne := range targets {
+		a, err := compileOne(*src)
+		if err != nil {
+			return err
+		}
+		if err := emit(a, *out, *src, *check); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// emit writes a compiled catalog, or compares it against the vendored copy.
+func emit(a *artifact.Artifact, out, src string, check bool) error {
 	data, err := a.MarshalIndented()
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(*out, a.Meta.ID+".json")
+	path := filepath.Join(out, a.Meta.ID+".json")
 
-	if *check {
+	if check {
 		have, err := os.ReadFile(path) //nolint:gosec // maintainer tool reading its own output
 		if err != nil {
 			return fmt.Errorf("read vendored catalog %s: %w", path, err)
 		}
 		if string(have) != string(data) {
 			return fmt.Errorf("%s is stale: recompiling %s from %s produces different bytes; run `make catalogs`",
-				path, a.Meta.ID, *src)
+				path, a.Meta.ID, src)
 		}
 		fmt.Printf("%s up to date (%s)\n", path, a.Meta.ContentHash)
 		return nil

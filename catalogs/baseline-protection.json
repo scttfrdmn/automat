@@ -1,0 +1,219 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": {
+    "id": "baseline-protection",
+    "title": "automat baseline protection",
+    "description": "The controls that protect automat's own baseline in a vended account: the configuration recorder, the delivery channel, the conformance pack, the trail, the account's membership in its organization, the two baseline roles, and the root user. Attached at the OU with every vend (DESIGN §10). Extend it rather than replacing it: every entry is data.",
+    "sources": [
+      {
+        "catalog": "automat baseline-protection meta-control",
+        "version": "1",
+        "retrieved_at": "2026-08-05T00:00:00Z",
+        "uri": "DESIGN.md#10-baseline-protection-meta-control",
+        "sha256": "0412f8416fff7283e918ccbd69af0fccbb16abbc567710a1bcd6897ff5875ab1",
+        "note": "automat's own control set, specified by DESIGN.md §10. There is no upstream publication to hash: the sha256 is of the curated source file baseline-protection.json, and DESIGN.md §10 is version-controlled in this repository. Every control names the bullet it implements, and any action the design does not enumerate must say why it is present."
+      }
+    ],
+    "compiled_at": "2026-08-05T00:00:00Z",
+    "content_sha256": "010c37fd11f8580116d7e13c5c78d777961468b216d9aa68db2ce568232d044c"
+  },
+  "controls": [
+    {
+      "id": "BP.CFG-1",
+      "title": "The configuration recorder keeps running",
+      "statement": "No principal in the account may stop, delete, or narrow the AWS Config configuration recorder automat deploys. The recorder is the account's own evidence collection; an account that can switch it off can stop being observed without leaving a trace of having done so. [Design basis: DESIGN §10, bullet 1: config:DeleteConfigurationRecorder, config:StopConfigurationRecorder.] [Departs from the design as written: config:PutConfigurationRecorder is not in §10's list and is denied anyway. Put replaces the recorder's recording group, so a principal that cannot Stop or Delete the recorder can still narrow it to record nothing — same outcome, no denied call. Denying Stop and Delete alone is a control an attacker steps around rather than defeats.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatProtectConfigurationRecorder",
+            "effect": "Deny",
+            "action": [
+              "config:DeleteConfigurationRecorder",
+              "config:PutConfigurationRecorder",
+              "config:StopConfigurationRecorder"
+            ],
+            "resource": [
+              "*"
+            ],
+            "exempt_principals": [
+              {
+                "principal": "automat:automation-role",
+                "reason": "automat's in-account automation role establishes and re-verifies the detective baseline; a control that blocks its own installation is not a control"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.CFG-2",
+      "title": "The delivery channel stays intact",
+      "statement": "No principal in the account may delete or repoint the AWS Config delivery channel. A recorder whose delivery channel is gone or aimed somewhere the account controls is running and recording nothing an auditor will ever read. [Design basis: DESIGN §10, bullet 1: config:DeleteDeliveryChannel.] [Departs from the design as written: config:PutDeliveryChannel is not in §10's list and is denied anyway, for the same reason as PutConfigurationRecorder: Put repoints the channel at a bucket the account itself controls, which ends delivery to the evidence bucket without deleting anything.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatProtectConfigDeliveryChannel",
+            "effect": "Deny",
+            "action": [
+              "config:DeleteDeliveryChannel",
+              "config:PutDeliveryChannel"
+            ],
+            "resource": [
+              "*"
+            ],
+            "exempt_principals": [
+              {
+                "principal": "automat:automation-role",
+                "reason": "automat's in-account automation role establishes and re-verifies the detective baseline; a control that blocks its own installation is not a control"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.CFG-3",
+      "title": "The conformance pack stays deployed",
+      "statement": "No principal in the account may delete or modify the AWS Config conformance pack automat deploys from the control artifact. The pack is the detective half of the vended baseline; the account's compliance findings are only meaningful while the rule set that produces them is the one the artifact named. [Design basis: DESIGN §10, bullet 1: conformance-pack delete/modify — config:DeleteConformancePack and config:PutConformancePack are those two operations' action names.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatProtectConformancePack",
+            "effect": "Deny",
+            "action": [
+              "config:DeleteConformancePack",
+              "config:PutConformancePack"
+            ],
+            "resource": [
+              "*"
+            ],
+            "exempt_principals": [
+              {
+                "principal": "automat:automation-role",
+                "reason": "automat's in-account automation role establishes and re-verifies the detective baseline; a control that blocks its own installation is not a control"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.CT-1",
+      "title": "The trail keeps logging",
+      "statement": "No principal in the account may stop, delete, or reconfigure a CloudTrail trail, or change which events it records. The trail is the record of what was done in the account, including what was done to the rest of this baseline. [Design basis: DESIGN §10, bullet 2: cloudtrail:StopLogging, cloudtrail:DeleteTrail, cloudtrail:UpdateTrail.] [Departs from the design as written: cloudtrail:PutEventSelectors is not in §10's list and is denied anyway: event selectors decide which events reach the trail, so narrowing them silences the trail without stopping it. §10 also says the trail actions should be 'scoped to the baseline trail if one is deployed'; a shipped control set cannot name a trail ARN that does not exist until vend time, so the resource is * — which is stricter than the scoped form and therefore safe in the direction that matters, at the cost of also protecting trails the account created for itself.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatProtectCloudTrail",
+            "effect": "Deny",
+            "action": [
+              "cloudtrail:DeleteTrail",
+              "cloudtrail:PutEventSelectors",
+              "cloudtrail:StopLogging",
+              "cloudtrail:UpdateTrail"
+            ],
+            "resource": [
+              "*"
+            ],
+            "exempt_principals": [
+              {
+                "principal": "automat:automation-role",
+                "reason": "automat's in-account automation role establishes and re-verifies the detective baseline; a control that blocks its own installation is not a control"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.IAM-1",
+      "title": "The baseline roles may not be altered",
+      "statement": "No principal in the account may modify, delete, or re-permission the management-assumable role or automat's own automation role. Both roles are doors into the account that the organization, not the account, is meant to control; a principal that can rewrite either one's trust policy owns the account's relationship to its parent. [Design basis: DESIGN §10, bullet 4: iam:Update*/Delete*/Put*/Attach*/Detach* on OrganizationAccountAccessRole and the automat automation role.] [Departs from the design as written: Two departures from §10's wording, both deliberate. (1) The partition is wildcarded (arn:aws*:) rather than fixed to arn:aws, so the control also holds in GovCloud — which for a CMMC-facing tool is not a hypothetical partition. (2) It carries NO exemption. Exempting the automation role would let that role rewrite its own permissions, which is a standing privilege-escalation path and the opposite of the least privilege the role exists to demonstrate; exempting the management-assumable role is not expressible at all, because an exemption may only name a literal role ARN with a real account id (see the exempt_principal_ref pattern) and a shipped catalog does not know the account id. The consequence is written down rather than engineered around: changing either role after vend requires detaching this policy from the OU first, which is a delegated-policy-admin action that lands in the evidence chain. See docs/open-questions.md Q13.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatProtectBaselineRoles",
+            "effect": "Deny",
+            "action": [
+              "iam:Attach*",
+              "iam:Delete*",
+              "iam:Detach*",
+              "iam:Put*",
+              "iam:Update*"
+            ],
+            "resource": [
+              "arn:aws*:iam::*:role/OrganizationAccountAccessRole",
+              "arn:aws*:iam::*:role/automat-automation"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.ORG-1",
+      "title": "The account may not leave the organization",
+      "statement": "No principal in the account may remove the account from its organization. Every preventive control automat attaches is an organization policy, so an account that can leave takes its whole baseline with it — and does so in one call. [Design basis: DESIGN §10, bullet 3: organizations:LeaveOrganization.] [Departs from the design as written: Deliberately carries NO exemption, not even for automat's own automation role. automat never calls LeaveOrganization — reclaim closes an account, it does not detach one — so an exemption here would be a hole with no use, and the one hole that would undo every other control in this set at once.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatDenyLeaveOrganization",
+            "effect": "Deny",
+            "action": [
+              "organizations:LeaveOrganization"
+            ],
+            "resource": [
+              "*"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BP.ROOT-1",
+      "title": "The account root user is not a way to work",
+      "statement": "No action may be taken in the account by its root user. The root user cannot be given a permissions boundary, cannot be scoped by an IAM policy, and cannot be attributed to a person; every legitimate use of a vended research account is a role. [Design basis: DESIGN §10, bullet 5: root-user usage deny, aws:PrincipalArn = arn:aws:iam::*:root.] [Departs from the design as written: The partition is wildcarded (arn:aws*:) rather than fixed to arn:aws, so the deny also matches a GovCloud root principal. Carries no exemption, and cannot acquire one: the exempt_principal_ref pattern admits only role ARNs, which is what stops an exemption entry anywhere in a merged control set from undoing this statement.]",
+      "enforcement": [
+        "baseline-protection"
+      ],
+      "scp": {
+        "statements": [
+          {
+            "sid": "AutomatDenyRootUser",
+            "effect": "Deny",
+            "action": [
+              "*"
+            ],
+            "resource": [
+              "*"
+            ],
+            "condition": {
+              "StringLike": {
+                "aws:PrincipalArn": [
+                  "arn:aws*:iam::*:root"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

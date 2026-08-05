@@ -111,37 +111,63 @@ effects where visible". Whether a member account can read the delegation policy 
 it policy-management rights is unverified. If it cannot, preflight must be told rather than
 detect, and the onboarding bundle needs to carry that fact.
 
-### Q6 — SCP quota edges under union output — **PARTLY ANSWERED, BLOCKED ON CATALOG CONTENT**
+### Q6 — SCP quota edges under union output — **RE-MEASURED AGAINST REAL STATEMENTS; HEADROOM IS AMPLE**
 
-DESIGN §16 names the quotas (5 SCPs per target, 5120 characters each). What is unverified is
-how close a real union of `cmmc-l1` + `800-171r2` + a campus baseline comes to them, and
-therefore how aggressive the packer must be about merging Action lists.
+DESIGN §16 names the quotas (5 SCPs per target, 5120 characters each). What was unverified was
+how close a real union of `cmmc-l1` + a profile's allowlists + a campus baseline comes to them,
+and therefore how aggressive the packer must be about merging Action lists.
 
-The packer now exists and is measured, so half of this is answered: with 3 usable slots and
-4864 usable characters each, synthetic statements of one action and one condition fit about
-28 to a policy and about 85 before overflow (`TestQuotaWarningsFireBeforeTheFailure` searches
-for the boundaries rather than pinning them, since they move with the rendered form). The
-merger reduces a restated requirement to one statement, so a crosswalk between two frameworks
-costs roughly what one framework does.
+This entry previously said the question was blocked on catalog content, because no shipped
+artifact had an `scp` block. That was the wrong diagnosis: the packer's real subject was always
+`baseline-protection`, and it was a missing Phase 0 deliverable rather than a coverage gap.
+`catalogs/baseline-protection.json` now ships (DESIGN §10 as data, compiled from
+`gen/sources/baseline-protection.json`), so the numbers below are from real statements.
 
-**What is still unanswered is the input, not the packer.** `catalogs/cmmc-l1.json` carries 15
-controls and *none* of them has an `scp` block — the preventive half of the shipped catalog is
-empty, so no real artifact exercises the packer at all.
-`TestTheModelUnderstandsEveryOperatorTheCatalogsUse` logs that count (`shipped catalogs
-contribute 0 SCP-bearing controls`) rather than asserting on it, and falls back to the golden
-fixtures so it is not a test with an empty subject. Two consequences worth holding onto:
+**Measured, against the shipped set.** Seven protection controls, of which four share the
+`baseline-automation` exemption and therefore merge into one 11-action statement:
 
-- Every number above is from synthetic fixtures. A real conformance-pack-derived SCP has
-  longer action lists and more conditions, so the real per-policy statement count will be
-  lower — plausibly much lower.
-- The behavioral model's operator coverage is currently verified against fixtures automat's
-  own tests wrote. A catalog using an operator `conditionMatches` does not model would weaken
-  the property suite silently; the test is in place to catch it the moment a real SCP arrives.
+| input | statements | policies | first policy | of 5120 |
+| --- | --- | --- | --- | --- |
+| `baseline-protection` alone | 4 | 1 | 1069 | 20% |
+| `baseline-protection` + `cmmc-l1` | 4 | 1 | 1069 | 20% |
+| + a profile's allowlists (2 regions, 15 services) | 6 | 1 | 2397 | 46% |
+| + 60 allowlisted services | 6 | 1 | 2882 | 56% |
+| + 200 allowlisted services | 6 | 1 | 4422 | 86% (warns) |
 
-**Revisit when `gen/catalog` emits SCP blocks** (Phase 4's conformance-pack join). At that
-point re-measure with real statements, and treat a real union landing above ~2 of the 3 usable
-slots as a signal that the merger needs to be more aggressive about Action lists than the
-normal form is.
+`cmmc-l1` adds nothing because its SCP count is permanently zero by design
+(`TestEnforcementBreakdownIsPinned`). The realistic shipped configuration lands at 46% of one
+of three usable policies, so **the 80% warning does not fire on any realistic input** — the
+first thing that trips it is an allowlist of roughly 200 services, which is most of AWS and
+therefore not an allowlist. The synthetic figure this entry used to quote (~28 statements per
+policy) was indeed optimistic per statement: a real merged protection statement is about 700
+characters against a synthetic one's ~170. It was pessimistic per *artifact*, because the merge
+collapses far more than the synthetic fixtures let it.
+
+**The re-measurement found a live packer defect**, which is the part worth recording. Scaling
+the protection set by replicating it (renaming ids, Sids, and actions so the merger cannot
+collapse the copies) produced, at 14 copies, a single merged statement of 5036 characters —
+larger than any policy can hold. The merge groups actions by exemption set, so a catalog whose
+controls share one exemption yields one statement carrying all of their actions, and that is
+unbounded. The old error told the operator to "split the control's action list across several
+statements in the catalog", which cannot be done: the catalog *had* split them, across seven
+controls, and the merge joined them. `renderFitting` now splits an oversize Deny by halving its
+action list, which cannot widen (a Deny's action list is a disjunction, so parts over halves
+deny exactly the union) and explicitly refuses to do the same to an allowlist, where a
+`NotAction` list is a conjunction and halving would deny everything. Post-fix thresholds, from
+the same replication sweep: 10 copies → 2 policies, 19 → 3, 28 → slot overflow with the
+actionable error.
+
+**What remains open** is narrower than before and does not block anything:
+
+- Whether a Phase 4 conformance-pack-derived SCP is shaped like the protection statements
+  measured here. Those are hand-authored and dense; a generated one may carry longer action
+  lists and more conditions per statement.
+- Whether a campus baseline SCP attached in the reserved institutional slot leaves the three
+  usable ones intact in practice, which is a live-org question about who attaches what.
+
+Re-measure when `gen/catalog` emits SCP blocks from a conformance pack, and treat a real union
+landing above ~2 of the 3 usable slots as a signal that the merger needs to be more aggressive
+about action lists than the normal form is.
 
 ### Q7 — Does `MoveAccount` reliably succeed immediately after `CreateAccount`?
 
@@ -246,15 +272,60 @@ precisely because the move succeeded.
 **Phase 5 smoke runbook, alongside Q9:** after the first successful vend, re-run the move with
 the destination equal to the current parent and record the exact result.
 
+### Q13 — `BP.IAM-1` protects the baseline roles from automat as well, so what is the vend ordering?
+
+`gen/sources/baseline-protection.json`'s `BP.IAM-1` denies
+`iam:Attach*/Delete*/Detach*/Put*/Update*` on `OrganizationAccountAccessRole` and
+`automat-automation`, and it deliberately carries **no exemption** — not even for automat's own
+automation role. The reasoning is in the control's `extends_design` and it stands: a role
+exempted from a Deny on its own permissions can rewrite them, which is a standing
+privilege-escalation path, and exempting the management-assumable role is not even expressible
+(an exemption may name only a literal role ARN, and a shipped catalog does not know the account
+id yet).
+
+The consequence is an ordering constraint the vend path has to respect, and the part that is
+genuinely unverified is where the boundary of that Deny falls:
+
+- **Ordering.** The automation role must be created *and* fully permissioned before the
+  protection policy is attached at the OU. Once it is attached, `PutRolePolicy` against that
+  role is denied to every principal in the account, automat included. Note what is *not*
+  denied: `iam:CreateRole` and `iam:TagRole` are absent from the list, so creating the role is
+  fine and only re-permissioning it is blocked. A vend that attaches first and permissions
+  second parks on an `AccessDenied` that reads like a missing grant rather than automat's own
+  control.
+- **Re-running a vend against an account whose role policy must change.** Idempotent
+  re-vending is fine while the desired role policy matches what is there. If a later version of
+  automat needs a *different* automation-role policy, the ensure step cannot write it: the
+  operator has to detach the protection policy from the OU first, which is a delegated
+  policy-admin action and lands in the evidence chain. That is the intended trade, but it means
+  an automation-role policy change is a migration, not an upgrade, and Phase 5 has to say so
+  where an operator will read it.
+- **The live question.** Whether an SCP attached at the parent OU governs a call made by a role
+  in the child account *at the moment automat is establishing that same role* is the ordering
+  above answered empirically — SCPs are evaluated on the principal's account, so it should, but
+  the attach/propagation timing is exactly the kind of thing DESIGN §3 warns about. There is
+  also no documented propagation delay for SCP attachment, so an attach-then-immediately-write
+  sequence may succeed once and fail later, which is the worst version of this.
+
+**What the code assumes now:** nothing yet — no vend path exists. Task #13 must order
+role establishment before policy attachment, and must not treat an `AccessDenied` on
+`PutRolePolicy` against a baseline role as a permissions problem to report as a missing grant
+(CLAUDE.md rule 7's remediation text would send the operator to add a grant that cannot help).
+
+**Phase 5 smoke runbook:** after a successful vend, attempt `PutRolePolicy` on
+`automat-automation` from the automation role itself and record the result; then re-run the
+full vend and confirm it is a no-op rather than a denied write.
+
 ---
 
 ## Decided by the maintainer
 
 Not live-org questions and not code questions: questions about source data whose authority
-matters more than its availability. `docs/smoke.md` does not cover these, because no
-sandbox run answers them. Kept here rather than deleted once decided — the reasoning is
-the part that has to survive, since the decision looks like unnecessary ceremony to anyone
-who has not read why.
+matters more than its availability, plus the places where the design and the schema
+disagree and only the maintainer can say which is right. `docs/smoke.md` does not cover
+these, because no sandbox run answers them. Kept here rather than deleted once decided —
+the reasoning is the part that has to survive, since the decision looks like unnecessary
+ceremony to anyone who has not read why.
 
 ### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively? — **DECIDED**
 
@@ -341,3 +412,46 @@ decision with a maintainer behind it rather than a plausible-looking file that a
 citations get effective dates from the final rule, not the proposal, and the phase-gate
 citation re-verification (CLAUDE.md's audit ritual) covers it from then on. Until then the
 answer to "should we get ahead of this?" is no.
+
+### Q14 — DESIGN §7 says the profile resolves to a region set and a service set; `profile-v1` has no field for either — **NEEDS A MAINTAINER DECISION**
+
+Flagged rather than resolved, per CLAUDE.md: "when design and code disagree, stop and flag it".
+
+DESIGN §7 step 1 is "resolve profile → compiled control artifact (§8) + region set + service
+set", and step 4 attaches "control SCPs + region SCP + service SCP + baseline-protection SCP".
+The packer emits all four shapes and `catalogs/baseline-protection.json` now supplies the
+fourth. The region and service SCPs, though, are generated from `scp.region_allowlist` and
+`scp.service_allowlist`, which live on the **control artifact**, not on the profile.
+`schema/profile-v1.schema.json` has `baseline.regions.{home,enable,disable}` — opt-in region
+*enablement* via the Account Management API, which is step 5's in-child work — and its own
+description already says "the region allowlist is enforced separately by SCP". So a profile
+today cannot express either set, and §7's step 1 has nothing to resolve them from.
+
+Three readings, and they are not equivalent:
+
+1. **The design means the artifact.** "Resolve profile → artifact + region set + service set" is
+   one resolution, not three: the profile names control sets, and their allowlists intersect
+   into the sets §7 mentions. Nothing to change but §7's wording. This is the reading the code
+   currently implements, and it is the strictest — an institution cannot widen its own region
+   posture by editing a profile, only by choosing different control sets. It is also the least
+   usable: "this account is us-east-1 and us-west-2 only" is a per-account decision at most
+   institutions, and expressing it would mean authoring a control set per region combination.
+2. **The profile carries the sets, intersected with the artifact's.** Two new profile fields,
+   folded into the same `set-intersect` the merge already applies. Safe in the widening
+   direction *if* intersected rather than replacing, which is the only version worth
+   considering. This needs a `profile/v1` schema change — an addition, but a restructuring of
+   where authority for a preventive control lives, so rule 6's "ask first" applies rather than
+   the audit-driven tightening exception.
+3. **A shipped example control set carries them.** No schema change; the region and service
+   allowlist shapes get exercised and shipped, and a campus forks the example. Cheap, and it
+   dodges the question rather than answering it — the fork is the profile field, done by hand.
+
+**What the code assumes now:** reading 1, because it is what the schema permits and no code
+guesses at the others. The packer is fully implemented for all three — `regionStatement` and
+`serviceStatement` render from whatever `Merged` holds, and where the allowlists came from does
+not reach them — so this decision changes the profile schema and the vend path's step 1, not
+the packer.
+
+**Ask the maintainer before task #13's step 4 is written**, since step 4 is where the absence
+becomes visible: a vend that attaches "control SCPs + baseline-protection" and silently attaches
+no region or service SCP is a vend that does three quarters of what §7 says it does.

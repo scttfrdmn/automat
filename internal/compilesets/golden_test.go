@@ -200,9 +200,19 @@ func TestEveryGoldenScenarioIsCoveredByAFile(t *testing.T) {
 // that carry it.
 //
 // Scoped to everything the repo can hand the packer — the shipped catalogs and the
-// golden fixtures — because the shipped catalogs alone currently carry no SCP at
-// all (see the coverage log below), and a test whose subject is empty is a test
-// that cannot fail.
+// golden fixtures — because a test whose subject is empty is a test that cannot
+// fail.
+//
+// The shipped-catalog contribution used to be LOGGED rather than asserted, and the
+// comment here said why: cmmc-l1 carries no SCP at all, permanently and by design,
+// so there was nothing shipped for the model to be checked against. That is no
+// longer true. catalogs/baseline-protection.json is a shipped control set whose
+// entries are SCP-class by definition, and it is the set attached to every account
+// automat vends — so it is the last artifact whose operators should go unmodeled,
+// and the count is now an assertion. The specific failure it guards is a
+// baseline-protection statement that acquires a condition operator Denies does not
+// evaluate: the property suite would keep passing over a statement contributing
+// nothing to it.
 func TestTheModelUnderstandsEveryOperatorTheCatalogsUse(t *testing.T) {
 	var statements []Statement
 	var scpControls int
@@ -219,14 +229,17 @@ func TestTheModelUnderstandsEveryOperatorTheCatalogsUse(t *testing.T) {
 		}
 		statements = append(statements, FromArtifact(a).Statements...)
 	}
+	if scpControls == 0 || len(statements) == 0 {
+		t.Fatalf("the shipped catalogs contribute %d SCP-bearing controls and %d statements. This test's "+
+			"subject is the preventive posture automat actually ships; if the SCP-bearing catalog moved or "+
+			"stopped being globbed, this passes while checking only the fixtures below",
+			scpControls, len(statements))
+	}
 	t.Logf("shipped catalogs contribute %d SCP-bearing controls and %d statements",
 		scpControls, len(statements))
 
 	for _, sc := range goldenScenarios {
 		statements = append(statements, sc.build(t).Statements...)
-	}
-	if len(statements) == 0 {
-		t.Fatal("no statements to check, so this test asserts nothing")
 	}
 
 	if unknown := UnknownOperators(statements); len(unknown) > 0 {

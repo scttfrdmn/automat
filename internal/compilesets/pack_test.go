@@ -461,26 +461,175 @@ func TestOverflowingTheAvailableSlotsIsAnErrorNamingTheWayOut(t *testing.T) {
 	}
 }
 
-// TestAStatementTooLargeToFitAloneIsItsOwnError.
-//
-// Distinct from slot overflow, and it has to be: no amount of splitting across
-// policies helps, so the remediation is different. Merging the two cases would send
-// the operator to reorganize their OUs over a catalog problem.
-func TestAStatementTooLargeToFitAloneIsItsOwnError(t *testing.T) {
-	// One statement with enough actions to exceed a whole policy.
-	var actions []string
-	for i := 0; i < 400; i++ {
+// ---------------------------------------------------------------------------
+// Oversize statements: splitting the ones that can be split, refusing the rest
+// ---------------------------------------------------------------------------
+
+// hugeActions is an action list long enough that no single policy can hold the
+// statement carrying it.
+func hugeActions(n int) []string {
+	actions := make([]string, 0, n)
+	for i := 0; i < n; i++ {
 		actions = append(actions, fmt.Sprintf("service%03d:LongActionNameForPadding", i))
 	}
-	m := &Merged{Statements: []Statement{deny("Huge", actions, []string{"*"}, nil)}}
+	return actions
+}
+
+// TestAnOversizeDenyIsSplitByActionRatherThanRefused.
+//
+// This test used to assert the opposite — that an oversize statement is its own
+// error, with remediation telling the catalog author to split it. Re-measuring the
+// quota numbers against the real baseline-protection set showed that advice cannot
+// be followed: the merge groups actions by exemption set, so a catalog that HAS
+// split its actions across seven controls sharing one exemption gets them joined
+// back into one statement. The operator would have been sent to undo something they
+// did not do.
+//
+// So the packer splits it instead, and the invariant that matters is not the shape
+// of the output but that the split denies exactly what the unsplit statement did.
+func TestAnOversizeDenyIsSplitByActionRatherThanRefused(t *testing.T) {
+	actions := hugeActions(150)
+	st := deny("Huge", actions, []string{"*"}, nil)
+	m := &Merged{Statements: []Statement{st}}
+
+	got := mustPack(t, m, packOpts())
+	var packedStatements []Statement
+	for _, p := range got.Policies {
+		packedStatements = append(packedStatements, p.Statements...)
+	}
+	if len(packedStatements) < 2 {
+		t.Fatalf("a %d-action statement no policy can hold produced %d packed statements; it should have "+
+			"been split", len(actions), len(packedStatements))
+	}
+
+	// Behavioral equivalence, in both directions, over every action the statement
+	// named and one it did not. Asserted through Denies rather than by comparing
+	// action lists, because "the parts' actions union to the original" is the
+	// property the *implementation* has, and what has to hold is the one an account
+	// experiences.
+	for _, action := range append(actions, "service999:NotDeniedAtAll") {
+		req := Request{Principal: "arn:aws:iam::333333333333:role/researcher", Action: action, Resource: "*"}
+		if want, have := Denies([]Statement{st}, req), Denies(packedStatements, req); want != have {
+			t.Fatalf("splitting changed what the control denies: the unsplit statement denies %s = %v, "+
+				"the split parts = %v", action, want, have)
+		}
+	}
+}
+
+// TestTheSplitPartsOfAStatementHaveDistinctSids.
+//
+// Nothing in the behavioral check above reads a Sid, and the parts of a split are
+// the statements most likely to collide: they are copies of one statement differing
+// in one field. Two identical Sids in one document is MalformedPolicyDocument at
+// CreatePolicy, mid-vend, with the account already created.
+func TestTheSplitPartsOfAStatementHaveDistinctSids(t *testing.T) {
+	m := &Merged{Statements: []Statement{deny("Huge", hugeActions(150), []string{"*"}, nil)}}
+
+	seen := map[string]string{}
+	for _, p := range mustPack(t, m, packOpts()).Policies {
+		for _, st := range p.Statements {
+			if where, dup := seen[st.Sid]; dup {
+				t.Errorf("split parts in %s and %s share the Sid %q", where, p.Name, st.Sid)
+			}
+			seen[st.Sid] = p.Name
+			if st.Sid == "Huge" {
+				t.Errorf("a split part kept the original Sid %q; the parts are different statements and "+
+					"IAM requires the Sid to be unique within a document", st.Sid)
+			}
+		}
+	}
+}
+
+// TestAnOversizeAllowlistIsRefusedRatherThanSplit.
+//
+// The one statement shape splitting must NOT be applied to. An allowlist's
+// NotAction list is a conjunction — it denies everything it does not name — so two
+// statements over halves of the list deny everything outside the first half OR
+// outside the second, which is everything in the account. Splitting here would
+// produce exactly the deny-all the NotAction discipline exists to prevent, from
+// input that is merely long.
+func TestAnOversizeAllowlistIsRefusedRatherThanSplit(t *testing.T) {
+	services := make([]string, 0, 400)
+	for i := 0; i < 400; i++ {
+		services = append(services, fmt.Sprintf("averylongservicenamespace%03d", i))
+	}
+	m := &Merged{ServiceAllowlist: newAllowSet(services, "set:services")}
 
 	pe := packError(t, m, packOpts())
-	if !strings.Contains(pe.Reason, "even alone") {
-		t.Errorf("the error should distinguish 'does not fit alone' from 'does not fit in the available "+
-			"slots': %v", pe)
+	if !strings.Contains(pe.Reason, "allowlist") {
+		t.Errorf("the error does not say an allowlist is the problem: %v", pe)
 	}
-	if !strings.Contains(pe.Remediation, "split") {
-		t.Errorf("the remediation should tell the catalog author to split the statement: %v", pe)
+	if !strings.Contains(pe.Reason, "service") {
+		t.Errorf("the error does not name WHICH allowlist; both are the packer's own statements, so an "+
+			"operator reading 'shorten the allowlist' cannot tell which of their two lists to shorten: %v", pe)
+	}
+	for _, want := range []string{"shorten", "cannot be split"} {
+		if !strings.Contains(pe.Remediation, want) {
+			t.Errorf("the remediation should say %q — an operator who has just watched the packer split a "+
+				"Deny will otherwise assume this one can be split too: %v", want, pe)
+		}
+	}
+
+	// The refusal has to be the only outcome: if any pack of this input succeeded,
+	// the account it produced would deny every call.
+	if got, err := Pack(m, packOpts()); err == nil {
+		t.Fatalf("Pack accepted an unrenderable allowlist and produced %d policies", len(got.Policies))
+	}
+}
+
+// TestASingleActionStatementTooLargeToRenderIsItsOwnError.
+//
+// The floor of the recursion. A statement denying one action cannot be halved, so
+// what is oversize is its condition, resource list, or exemption list — and the
+// remediation has to name those instead of "split it", which is now what the packer
+// does automatically and therefore cannot be advice.
+func TestASingleActionStatementTooLargeToRenderIsItsOwnError(t *testing.T) {
+	var exemptions []artifact.ExemptPrincipal
+	for i := 0; i < 200; i++ {
+		exemptions = append(exemptions, exempt(
+			fmt.Sprintf("arn:aws:iam::33333333333%d:role/a-role-with-a-long-name-%03d", i%10, i),
+			fmt.Sprintf("reason %03d, stated at some length so the rendered exemption list is large", i)))
+	}
+	m := &Merged{Statements: []Statement{
+		deny("OneAction", []string{"config:StopConfigurationRecorder"}, []string{"*"}, nil, exemptions...),
+	}}
+
+	pe := packError(t, m, packOpts())
+	if !strings.Contains(pe.Reason, "single action") {
+		t.Errorf("the error should say the statement is down to one action and cannot be split further: %v", pe)
+	}
+	if !strings.Contains(pe.Reason, "config:StopConfigurationRecorder") {
+		t.Errorf("the error does not name the action, which is the only handle the operator has on which "+
+			"control in the catalog to go and look at: %v", pe)
+	}
+	for _, want := range []string{"condition", "resource", "exemption"} {
+		if !strings.Contains(pe.Remediation, want) {
+			t.Errorf("the remediation should name %q as something to narrow: %v", want, pe)
+		}
+	}
+}
+
+// TestSplittingIsOnlyDoneWhenNeeded.
+//
+// The converse, and the one that keeps the golden files meaningful. renderFitting
+// sits on the path of every statement the packer renders, so a size comparison
+// pointed the wrong way would split statements that fit — changing every Sid, every
+// document, and every ensure decision at vend time, while every behavioral test
+// still passed.
+func TestSplittingIsOnlyDoneWhenNeeded(t *testing.T) {
+	actions := []string{"config:DeleteConfigurationRecorder", "config:StopConfigurationRecorder"}
+	m := &Merged{Statements: []Statement{deny("Small", actions, []string{"*"}, nil)}}
+
+	got := mustPack(t, m, packOpts())
+	if len(got.Policies) != 1 {
+		t.Fatalf("a two-action statement produced %d policies", len(got.Policies))
+	}
+	if n := len(got.Policies[0].Statements); n != 1 {
+		t.Fatalf("a two-action statement that fits was split into %d statements", n)
+	}
+	if sid := got.Policies[0].Statements[0].Sid; sid != "Small" {
+		t.Errorf("a statement that fits had its Sid rewritten from %q to %q; the catalog's own Sid is what "+
+			"an auditor greps for", "Small", sid)
 	}
 }
 

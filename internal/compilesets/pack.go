@@ -163,20 +163,11 @@ func Pack(m *Merged, opts PackOptions) (*Packed, error) {
 
 	rendered := make([]renderedStatement, 0, len(statements))
 	for _, st := range statements {
-		body, err := renderStatement(st, opts)
+		parts, err := renderFitting(st, opts)
 		if err != nil {
 			return nil, err
 		}
-		if len(body)+policyEnvelopeSize > UsablePolicySize {
-			return nil, &PackError{
-				Reason: fmt.Sprintf("statement %q renders to %d characters, which cannot fit in a "+
-					"%d-character policy even alone", st.Sid, len(body)+policyEnvelopeSize, UsablePolicySize),
-				Remediation: "split the control's action list across several statements in the catalog, or " +
-					"narrow its condition; a single statement that does not fit cannot be packed by any means",
-				Sources: st.Origins,
-			}
-		}
-		rendered = append(rendered, renderedStatement{Statement: st, body: body, size: len(body)})
+		rendered = append(rendered, parts...)
 	}
 
 	// Decreasing by size, ties by canonical key.
@@ -230,6 +221,102 @@ type renderedStatement struct {
 	Statement
 	body string
 	size int
+}
+
+// renderFitting renders a statement, splitting its action list if the rendered
+// form does not fit in one policy.
+//
+// # Why this exists
+//
+// The merge builds statements the packer then has to fit, and it groups actions by
+// their exemption set — so an artifact whose controls share one exemption produces
+// ONE statement carrying every action they name. That is the correct normal form and
+// it is also unbounded: measuring the shipped baseline-protection set showed that
+// merging enough protection controls with a common exemption yields a single
+// statement of 5036 characters, which no policy can hold.
+//
+// Before this, that produced an error whose remediation said "split the control's
+// action list across several statements in the catalog". Unactionable, and wrong
+// about where the problem is: the catalog HAD split them, across seven controls;
+// the merge joined them. An error telling an operator to undo something they did
+// not do is worse than a crash, because they will try.
+//
+// # Why splitting cannot widen
+//
+// A Deny statement's action list is a disjunction — the statement denies action a
+// iff a is in the list — so two statements over halves of the list deny exactly the
+// union, which is the original set. Every other field is copied unchanged, so the
+// guard and the exemptions are identical in each part. This is the exact inverse of
+// what mergeStatements does when it groups actions sharing an exemption set, and it
+// is safe for the same reason that grouping is: E(guard, action) is unchanged for
+// every action.
+//
+// The split parts get their own derived Sids, since IAM requires uniqueness within
+// a document and the parts can land in the same one.
+func renderFitting(st Statement, opts PackOptions) ([]renderedStatement, error) {
+	body, err := renderStatement(st, opts)
+	if err != nil {
+		return nil, err
+	}
+	if len(body)+policyEnvelopeSize <= UsablePolicySize {
+		return []renderedStatement{{Statement: st, body: body, size: len(body)}}, nil
+	}
+
+	// An allowlist statement is not splittable. Its NotAction list is a
+	// CONJUNCTION — it denies everything not named — so two statements over halves
+	// of the list deny everything not in the first half OR not in the second,
+	// which is everything. Splitting it would be the deny-all the whole NotAction
+	// discipline exists to prevent (see Statement.NotAction), so this refuses
+	// rather than trying.
+	if st.isAllowlist() {
+		return nil, &PackError{
+			Reason: fmt.Sprintf("the %s allowlist renders to %d characters, which cannot fit in a "+
+				"%d-character policy", allowlistKind(st), len(body)+policyEnvelopeSize, UsablePolicySize),
+			Remediation: "shorten the allowlist: fewer permitted services, or fewer permitted regions. It " +
+				"cannot be split across two policies — an allowlist denies everything it does not name, so " +
+				"two halves would deny everything between them",
+			Sources: st.Origins,
+		}
+	}
+	if len(st.Action) < 2 {
+		return nil, &PackError{
+			Reason: fmt.Sprintf("statement %q renders to %d characters on a single action (%s), which cannot "+
+				"fit in a %d-character policy", st.Sid, len(body)+policyEnvelopeSize,
+				strings.Join(st.Action, ", "), UsablePolicySize),
+			Remediation: "narrow the statement's condition, resource list, or exemption list in the catalog it " +
+				"comes from; a statement denying one action cannot be split any further",
+			Sources: st.Origins,
+		}
+	}
+
+	// Halve and recurse. Halving rather than filling greedily to the budget: the
+	// rendered size is not linear in the action count (the JSON escaping and the
+	// separators are not), so a greedy fill would need its own size model, and a
+	// second size model is a second thing to be wrong. Recursion depth is
+	// log2(actions), so a 4096-action statement recurses twelve deep.
+	mid := len(st.Action) / 2
+	var out []renderedStatement
+	for _, half := range [][]string{st.Action[:mid], st.Action[mid:]} {
+		part := copyStatement(st)
+		part.Action = append([]string(nil), half...)
+		part.Sid = derivedSid(part)
+		parts, err := renderFitting(part, opts)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, parts...)
+	}
+	return out, nil
+}
+
+// allowlistKind names which allowlist a NotAction statement is, for the error
+// above. The Sid is the packer's own and says so, but an operator reading "shorten
+// the allowlist" needs to know which one.
+func allowlistKind(st Statement) string {
+	if _, ok := st.Condition["StringNotEquals"]["aws:RequestedRegion"]; ok {
+		return "region"
+	}
+	return "service"
 }
 
 // policyEnvelopeSize is the fixed cost of the document around the statements:
