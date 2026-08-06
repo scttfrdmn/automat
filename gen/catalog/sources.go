@@ -235,6 +235,22 @@ func (s *sourceSet) checkProvenance() error {
 // Both layers appear: the curated file automat's compiler actually read, and the
 // upstream publication it was derived from. A reviewer can therefore verify the
 // chain without trusting the compiler.
+//
+// # Which document each hash is of, said in the entry (AUDIT-2)
+//
+// sha256 is the hash of the CURATED FILE, and uri names the UPSTREAM publication.
+// Those are different documents, and the entry has one hash field and one uri
+// field, so the note has to close the gap — otherwise a reviewer fetches the uri,
+// hashes what comes back, gets a different value, and concludes the provenance is
+// wrong. That is F6's failure mode in the classification profiles, found in the same
+// audit, and it reached this compiler too: the two catalog entries named only the
+// upstream ("curated from <uri> (sha256 ...)"), so nothing in the artifact said
+// which bytes sha256 was over. The mapping entries already named their file.
+//
+// Both hashes stay recorded. The upstream one cannot become the sha256 field: the
+// compiler never reads the upstream document — a curated file is a human
+// transcription of it — so an artifact whose sha256 named bytes the compiler did not
+// read would be a hash nothing in the build can check. What is fixed is the label.
 func (s *sourceSet) artifactSources() []sourceEntry {
 	out := []sourceEntry{
 		{
@@ -243,8 +259,10 @@ func (s *sourceSet) artifactSources() []sourceEntry {
 			uri:         s.far.Source.URI,
 			retrievedAt: s.far.Source.RetrievedAt,
 			sha256:      s.farHash,
-			note: fmt.Sprintf("verbatim requirement text; curated from %s (sha256 %s)",
-				s.far.Source.URI, s.far.Source.SHA256),
+			note: fmt.Sprintf("verbatim requirement text. This entry's sha256 is of the curated file "+
+				"gen/sources/%s, which is what the compiler read; it was transcribed from %s "+
+				"(upstream sha256 %s), which is what the uri points at",
+				farSourceFile, s.far.Source.URI, s.far.Source.SHA256),
 		},
 		{
 			catalog:     s.crosswalk.Source.Catalog,
@@ -252,8 +270,10 @@ func (s *sourceSet) artifactSources() []sourceEntry {
 			uri:         s.crosswalk.Source.URI,
 			retrievedAt: s.crosswalk.Source.RetrievedAt,
 			sha256:      s.crosswalkHash,
-			note: fmt.Sprintf("control identifiers and 800-171 R2 crosswalk; curated from %s (sha256 %s)",
-				s.crosswalk.Source.URI, s.crosswalk.Source.SHA256),
+			note: fmt.Sprintf("control identifiers and 800-171 R2 crosswalk. This entry's sha256 is of the "+
+				"curated file gen/sources/%s, which is what the compiler read; it was transcribed "+
+				"from %s (upstream sha256 %s), which is what the uri points at",
+				crosswalkSourceFile, s.crosswalk.Source.URI, s.crosswalk.Source.SHA256),
 		},
 	}
 	for _, u := range s.aws.Sources {
@@ -263,8 +283,11 @@ func (s *sourceSet) artifactSources() []sourceEntry {
 			uri:         u.URI,
 			retrievedAt: u.RetrievedAt,
 			sha256:      s.awsHash,
-			note: fmt.Sprintf("enforcement mapping; curated join in %s from %s (sha256 %s)",
-				awsSourceFile, u.URI, u.SHA256),
+			note: fmt.Sprintf("enforcement mapping. This entry's sha256 is of the curated join "+
+				"gen/sources/%s, which is what the compiler read and which is SHARED by every "+
+				"mapping entry — two entries carrying the same hash is that join, not a "+
+				"duplicate. It was built from %s (upstream sha256 %s), which is what the uri "+
+				"points at", awsSourceFile, u.URI, u.SHA256),
 		})
 	}
 	return out

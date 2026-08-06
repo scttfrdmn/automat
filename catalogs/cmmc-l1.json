@@ -11,7 +11,7 @@
         "retrieved_at": "2026-08-04T00:00:00Z",
         "uri": "https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170",
         "sha256": "85eb2b688159d55ed546fd7e7f4390b51fd5878625650480135fa6e58523ccd6",
-        "note": "control identifiers and 800-171 R2 crosswalk; curated from https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170 (sha256 4df7572a76794b236c0d5f9fb1d2ff814d8c973cf2d030067d00f9c0b0fb2680)"
+        "note": "control identifiers and 800-171 R2 crosswalk. This entry's sha256 is of the curated file gen/sources/cfr-170-crosswalk.json, which is what the compiler read; it was transcribed from https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-32.xml?part=170 (upstream sha256 4df7572a76794b236c0d5f9fb1d2ff814d8c973cf2d030067d00f9c0b0fb2680), which is what the uri points at"
       },
       {
         "catalog": "FAR 52.204-21",
@@ -19,7 +19,7 @@
         "retrieved_at": "2026-08-04T00:00:00Z",
         "uri": "https://www.acquisition.gov/far/52.204-21",
         "sha256": "ba44e932cd1bb9c39ba145acde39bc1111e6fa8daf2e0b51ff6122cfcb6338e7",
-        "note": "verbatim requirement text; curated from https://www.acquisition.gov/far/52.204-21 (sha256 69eb760fae80b42b55a76f5bf055bb4ee1564fa90d7b613b011644dfca13ce5d)"
+        "note": "verbatim requirement text. This entry's sha256 is of the curated file gen/sources/far-52.204-21.json, which is what the compiler read; it was transcribed from https://www.acquisition.gov/far/52.204-21 (upstream sha256 69eb760fae80b42b55a76f5bf055bb4ee1564fa90d7b613b011644dfca13ce5d), which is what the uri points at"
       },
       {
         "mapping": "aws-config-conformance-pack-cmmc-2.0-level-1",
@@ -27,7 +27,7 @@
         "retrieved_at": "2026-08-04T00:00:00Z",
         "uri": "https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml",
         "sha256": "f314618e48bbfabe2963f307ffe88166e3e9e3dc4ba6adbb6ecba0346b16e740",
-        "note": "enforcement mapping; curated join in aws-config-cmmc-l1.json from https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml (sha256 193b61321756eb018f78d2a70d08fdc772b79489ea188f0d374834a3635d0427)"
+        "note": "enforcement mapping. This entry's sha256 is of the curated join gen/sources/aws-config-cmmc-l1.json, which is what the compiler read and which is SHARED by every mapping entry — two entries carrying the same hash is that join, not a duplicate. It was built from https://raw.githubusercontent.com/awslabs/aws-config-rules/master/aws-config-conformance-packs/Operational-Best-Practices-for-CMMC-2.0-Level-1.yaml (upstream sha256 193b61321756eb018f78d2a70d08fdc772b79489ea188f0d374834a3635d0427), which is what the uri points at"
       },
       {
         "mapping": "aws-config-developer-guide-cmmc-2.0-level-1-mapping",
@@ -35,7 +35,7 @@
         "retrieved_at": "2026-08-04T00:00:00Z",
         "uri": "https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html",
         "sha256": "f314618e48bbfabe2963f307ffe88166e3e9e3dc4ba6adbb6ecba0346b16e740",
-        "note": "enforcement mapping; curated join in aws-config-cmmc-l1.json from https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html (sha256 943efa9d9ddda0ce17f98468322fdd5f5410da1da549f525236dff967cd0f50a)"
+        "note": "enforcement mapping. This entry's sha256 is of the curated join gen/sources/aws-config-cmmc-l1.json, which is what the compiler read and which is SHARED by every mapping entry — two entries carrying the same hash is that join, not a duplicate. It was built from https://docs.aws.amazon.com/config/latest/developerguide/operational-best-practices-for-cmmc_2.0_level_1.html (upstream sha256 943efa9d9ddda0ce17f98468322fdd5f5410da1da549f525236dff967cd0f50a), which is what the uri points at"
       }
     ],
     "compiled_at": "2026-08-04T00:00:00Z",

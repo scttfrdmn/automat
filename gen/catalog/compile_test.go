@@ -4,6 +4,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -501,6 +503,79 @@ func TestUnknownParameterIsAnError(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "no declared union order") {
 		t.Errorf("error does not explain the problem: %v", err)
 	}
+}
+
+// TestEverySourceHashIsAttributedToTheFileItIsOf is AUDIT-2's provenance finding.
+//
+// A source entry has one sha256 and one uri, and they are of DIFFERENT documents:
+// sha256 is the curated file the compiler read, uri is the upstream publication a
+// human transcribed it from. That is deliberate — the compiler never fetches the
+// upstream, so a sha256 over bytes it did not read would be a hash nothing in the
+// build can check — but it is not self-evident from the entry. A reviewer who fetches
+// the uri, hashes the response, and compares concludes the provenance is broken.
+//
+// So every entry's note must name the file its sha256 is of. Asserted over the
+// compiled artifact rather than over the compiler's struct, because the artifact is
+// what a reviewer reads.
+//
+// The same defect in the classification profiles is AUDIT-2 F6, where the media type
+// and the uri disagreed; it is checked there by
+// TestEveryShippedSourceIsHashedAndDated. Two layers, because two audits found the
+// two halves and neither check would have found the other.
+func TestEverySourceHashIsAttributedToTheFileItIsOf(t *testing.T) {
+	path := filepath.Join(catalogsDir, goldenFile)
+	a, err := artifact.Load(path, artifact.LoadOptions{})
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
+	if len(a.Meta.Sources) == 0 {
+		t.Fatal("the vendored catalog records no sources, so this test verified nothing")
+	}
+
+	// The curated files whose bytes a sha256 in this artifact can be of. A hash of
+	// anything else is either an upstream document the compiler never read or a file
+	// that is not in the repository.
+	onDisk := map[string]string{}
+	for _, name := range []string{farSourceFile, crosswalkSourceFile, awsSourceFile} {
+		data, rerr := os.ReadFile(filepath.Join(sourcesDir, name)) //nolint:gosec // fixed in-repo path
+		if rerr != nil {
+			t.Fatalf("read %s: %v", name, rerr)
+		}
+		sum := sha256.Sum256(data)
+		onDisk[hex.EncodeToString(sum[:])] = name
+	}
+
+	for i, s := range a.Meta.Sources {
+		name, ok := onDisk[s.SHA256]
+		if !ok {
+			t.Errorf("sources[%d] (%s) carries sha256 %s, which is not any curated file in %s.\n\n"+
+				"A compiled artifact's source hash must be of bytes the compiler actually read. If "+
+				"this is an upstream hash it belongs in the note, where the upstream hash already "+
+				"goes: the compiler does not fetch upstream documents, so nothing in the build could "+
+				"ever check it.", i, sourceLabel(s), s.SHA256, sourcesDir)
+			continue
+		}
+		// And the entry must SAY so. The hash being correct is not the same as a
+		// reviewer being able to tell what it is correct about.
+		if !strings.Contains(s.Note, name) {
+			t.Errorf("sources[%d] (%s) hashes the curated file %s, but its note does not name it:\n"+
+				"  uri:  %s\n  note: %s\n\n"+
+				"The uri points at a different document than the hash is of. A reviewer fetches the "+
+				"uri, hashes it, gets a different value, and concludes the provenance is wrong — "+
+				"which is AUDIT-2 F6's failure mode. Name the hashed file in the note.",
+				i, sourceLabel(s), name, s.URI, s.Note)
+		}
+	}
+}
+
+// sourceLabel is a source entry's human name, whichever kind it is.
+func sourceLabel(s artifact.Source) string {
+	for _, v := range []string{s.Catalog, s.Mapping, s.Artifact} {
+		if v != "" {
+			return v
+		}
+	}
+	return "unlabeled"
 }
 
 // TestSourceLoaderRejectsUnknownFields proves AUDIT-0 finding H2 is fixed.
