@@ -97,17 +97,36 @@ The README must explain the blast-radius argument in CISO-legible terms: the rol
 
 ## 7. Vend flow
 
-`automat vend --profile <profile.json> --name <acct> --email <addr>` (email may come from a configured pattern, e.g. `research-admin+{name}@dept.edu`):
+### 7a. The three profiles, and why the vend input is the *environment* profile
 
-1. Resolve profile → compiled control artifact (§8) + region set + service set.
+"Profile" named three unrelated documents, and evidence records name one of them by
+id and content hash (§11) — which makes that field ambiguous to exactly the auditor
+it exists for. The vend input is therefore the **environment profile**
+(`environment-profile/v1`):
+
+| document | schema | what it is |
+| --- | --- | --- |
+| **environment profile** | `environment-profile/v1` | the per-vend input below: control sets, regions, services, placement, baseline. The thing being *built*. |
+| obligation profile | `obligation-profile/v1` | `cmmc-l1`, `dfars-7012`, `nih-cadr-dua` — under what instrument an obligation applies. A *policy* artifact. |
+| classification profile | (not yet built) | an institution's own data levels. A *policy* artifact. |
+
+"Environment" is the higher-ed idiom already in use for a resource rated to hold data
+at a level, and it is the document `vend`, `verify`, and later `assess` all consume.
+There is also a fourth, unrenameable sense: the **AWS credential profile**
+(`config.toml`'s `profile`, and `login --profile`). `--profile` stays reserved for
+that, because it is AWS-standard everywhere else an operator works.
+
+`automat vend --environment-profile <file.json> --name <acct> --email <addr>` (email may come from a configured pattern, e.g. `research-admin+{name}@dept.edu`):
+
+1. Resolve the environment profile → compiled control artifact (§8) + region set + service set.
 2. Broker/native `CreateAccount` with mandatory tags; poll `DescribeCreateAccountStatus`.
-3. `MoveAccount` into the target OU (creating intermediate OUs if the profile says so, within depth limits).
+3. `MoveAccount` into the target OU (creating intermediate OUs if the environment profile says so, within depth limits).
 4. Ensure OU-level SCPs match the artifact (idempotent create/attach via delegated permissions): control SCPs + region SCP + service SCP + **baseline-protection SCP** (§10).
 5. Assume `OrganizationAccountAccessRole` into the child:
-   - Enable/disable opt-in regions per profile (Account Management API).
+   - Enable/disable opt-in regions per the environment profile (Account Management API).
    - Deploy detective baseline: Config recorder, delivery channel, conformance pack from the artifact's config-rule set.
    - Create attestation stubs for procedural controls (local `compliance/` output + optional S3 in-account).
-   - Create the automat automation role in-account (least privilege for future `verify`), then optionally disable further use of `OrganizationAccountAccessRole` per profile.
+   - Create the automat automation role in-account (least privilege for future `verify`), then optionally disable further use of `OrganizationAccountAccessRole` per the environment profile.
 6. Write the **evidence manifest** (§11) and print a birth certificate: account ID, OU, control artifact hash, enforcement summary.
 
 Ordering matters: controls attach before the account is handed to anyone — "born compliant" is a claim the manifest can back.
@@ -194,14 +213,14 @@ Represent as `enforcement: baseline-protection` entries in the artifact, not har
 
 Every mutating operation appends a record; `vend` writes a per-account manifest:
 
-- Content: timestamp, operator principal, operation, account/OU IDs, control artifact id + `content_sha256`, the vend profile id + `content_sha256` + the attestations over it that verified, SCP ARNs attached, conformance pack ARN, region/service sets, tool version.
+- Content: timestamp, operator principal, operation, account/OU IDs, control artifact id + `content_sha256`, the environment profile id + `content_sha256` + the attestations over it that verified, SCP ARNs attached, conformance pack ARN, region/service sets, tool version.
 - Canonical JSON, hash-chained (each record includes previous record's hash), signed (start with a local key; design the signer as an interface so KMS signing is a drop-in).
 - Stored: in-account S3 (created at vend) and/or the vending account; local copy always.
 - Purpose: the "born compliant" chain of custody. The format lives in `schema/` beside the control artifact and is deliberately simple, append-only, and ingestible by future systems. (Internal note, not for docs: shaped so an evidence kernel can adopt it later. No external product named anywhere.)
 
 ### 11a. Cosigning and freshness — provenance only
 
-Profile documents (both `profile/v1` and `obligation-profile/v1`) may carry an optional
+Profile documents (both `environment-profile/v1` and `obligation-profile/v1`) may carry an optional
 `signatures[]` array, and must carry a required `review_by` date. Both exist because a
 profile is a *reading of policy an institution acts on*, and the two ways such a
 document goes wrong are that nobody will say where it came from, and that it silently
@@ -236,7 +255,7 @@ cover (so extending it is a change no earlier attestation vouches for), and `ver
 **warns** when it has lapsed — warns, rather than fails, because a lapsed review date is
 a statement about the document, not about the account.
 
-At vend time the evidence record names the profile by id and content hash, its
+At vend time the evidence record names the environment profile by id and content hash, its
 `review_by`, and the set of attestations that **verified** — identity and role. Not the
 attestations merely *present in the file*: copying those would be manufacturing
 assurance out of a document's own claims about itself. In v1 that set is always empty,
@@ -250,7 +269,7 @@ answer rather than an absent question.
 - Policy layer: attached SCPs still match the artifact (by name + content hash tag).
 - Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift).
 - Procedural layer: attestation stubs present; staleness vs. declared frequency.
-- Freshness layer: **warn** when the profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
+- Freshness layer: **warn** when the environment profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
 - Structural honesty: for each control set, print the enforcement-class breakdown ("X of Y controls enforced/monitored by this tool; N require documented process; M require continuous evidence collection outside this tool's scope"). Computed from the artifact — this is also how the tool states its limits for L2+ catalogs without ever pitching anything.
 
 Exit codes suitable for cron/CI.
@@ -258,7 +277,7 @@ Exit codes suitable for cron/CI.
 ## 13. CLI surface (cobra)
 
 ```
-automat login        # SSO device flow (ssooidc) or standard credential chain; profile-aware
+automat login        # SSO device flow (ssooidc) or standard credential chain; credential-profile-aware
 automat preflight    # three-state classification + permission report
 automat init         # STANDALONE only: CreateOrganization(ALL) + research OU
 automat setup        # MANAGEMENT: apply delegation + create vendor role for a member acct

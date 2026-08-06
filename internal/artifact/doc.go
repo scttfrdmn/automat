@@ -1,7 +1,7 @@
 // Copyright 2026 Scott Friedman
 // SPDX-License-Identifier: Apache-2.0
 
-// Package artifact defines the control artifact, vend profile, and evidence
+// Package artifact defines the control artifact, environment profile, and evidence
 // manifest types, and the load/validate/canonicalize/hash operations over them.
 //
 // Its role in the vend pipeline is to be the contract everything else speaks.

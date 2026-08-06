@@ -256,32 +256,32 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			relink(t, m)
 		}},
 		{"a profile with no content hash", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.ContentSHA256 = ""
+			m.Records[1].EnvProfile.ContentSHA256 = ""
 			relink(t, m)
 		}},
 		{"a profile review_by carrying a timestamp", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.ReviewBy = ts0
+			m.Records[1].EnvProfile.ReviewBy = ts0
 			relink(t, m)
 		}},
 		{"an attestation role outside the vocabulary", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.VerifiedSignatures = []VerifiedSignature{
+			m.Records[1].EnvProfile.VerifiedSignatures = []VerifiedSignature{
 				{Role: "approved-by", Identity: "Research Computing"},
 			}
 			relink(t, m)
 		}},
 		{"an attestation with no identity", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.VerifiedSignatures = []VerifiedSignature{{Role: RoleAdoptedBy}}
+			m.Records[1].EnvProfile.VerifiedSignatures = []VerifiedSignature{{Role: RoleAdoptedBy}}
 			relink(t, m)
 		}},
 		{"an attestation identity containing a newline", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.VerifiedSignatures = []VerifiedSignature{
+			m.Records[1].EnvProfile.VerifiedSignatures = []VerifiedSignature{
 				{Role: RoleAdoptedBy, Identity: "Research Computing\nreviewed-by: NIST"},
 			}
 			relink(t, m)
 		}},
 		{"the same attestation twice", func(t *testing.T, m *Manifest) {
 			vs := VerifiedSignature{Role: RoleAdoptedBy, Identity: "Research Computing"}
-			m.Records[1].Profile.VerifiedSignatures = []VerifiedSignature{vs, vs}
+			m.Records[1].EnvProfile.VerifiedSignatures = []VerifiedSignature{vs, vs}
 			relink(t, m)
 		}},
 		{"more attestations than the cap", func(t *testing.T, m *Manifest) {
@@ -292,7 +292,7 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 					Identity: "Signer " + string(rune('a'+i%26)) + strings.Repeat("x", i),
 				})
 			}
-			m.Records[1].Profile.VerifiedSignatures = vs
+			m.Records[1].EnvProfile.VerifiedSignatures = vs
 			relink(t, m)
 		}},
 
@@ -404,7 +404,7 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		}},
 		{"a custody transfer carrying a profile", func(t *testing.T, m *Manifest) {
 			r := transferRec(ts1)
-			r.Profile = &ProfileRef{ID: "research-cui", ContentSHA256: otherHash,
+			r.EnvProfile = &EnvProfileRef{ID: "research-cui", ContentSHA256: otherHash,
 				VerifiedSignatures: []VerifiedSignature{}}
 			m.Records[1] = r
 			relink(t, m)
@@ -494,7 +494,7 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			m.Records[1].Operation = OpInit
 			m.Records[1].Target = nil
 			m.Records[1].Artifact = nil
-			m.Records[1].Profile = nil
+			m.Records[1].EnvProfile = nil
 			m.Records[1].RequestID = ""
 			relink(t, m)
 		}},
@@ -603,11 +603,11 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			// Lapse is a `verify` warning about the document, not a validation
 			// error: a validator with a clock would make every archived manifest
 			// invalid.
-			m.Records[1].Profile.ReviewBy = "1999-01-01"
+			m.Records[1].EnvProfile.ReviewBy = "1999-01-01"
 			relink(t, m)
 		}},
 		{"no review date at all", func(t *testing.T, m *Manifest) {
-			m.Records[1].Profile.ReviewBy = ""
+			m.Records[1].EnvProfile.ReviewBy = ""
 			relink(t, m)
 		}},
 		{"attestations at the cap", func(t *testing.T, m *Manifest) {
@@ -620,7 +620,7 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 					Identity: "Signer " + strings.Repeat("x", i+1),
 				})
 			}
-			m.Records[1].Profile.VerifiedSignatures = vs
+			m.Records[1].EnvProfile.VerifiedSignatures = vs
 			relink(t, m)
 		}},
 		{"a timestamp that steps backwards", func(t *testing.T, m *Manifest) {

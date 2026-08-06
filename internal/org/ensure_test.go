@@ -196,7 +196,7 @@ func TestEnsureOUDenialIsParkable(t *testing.T) {
 //
 // A path one level too deep that is checked lazily fails halfway and leaves the
 // shallow levels behind — the account then lands in an OU carrying none of the
-// policies the profile asked for, which is the parked case with extra steps and no
+// policies the environment profile asked for, which is the parked case with extra steps and no
 // name. The assertion is therefore on the call recorder, not on the error.
 func TestEnsureOUPathRefusesTooDeepBeforeCreatingAnything(t *testing.T) {
 	tests := []struct {
@@ -697,7 +697,7 @@ func TestEnsurePlacementSurvivesBothReadingsOfMoveToSamePlace(t *testing.T) {
 
 // TestEnsurePlacementRemediationNamesTheRightFix. A bad destination is a config
 // error, and the message has to say where the account actually is — because it is
-// now somewhere carrying policies the profile did not ask for.
+// now somewhere carrying policies the environment profile did not ask for.
 func TestEnsurePlacementRemediationNamesTheRightFix(t *testing.T) {
 	f := newFixture(t)
 	acct := f.State.SeedAccount("lab", testEmail, testRoot)

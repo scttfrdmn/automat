@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "automat.dev/schema/profile/v1",
-  "title": "automat vend profile",
-  "description": "A vend profile: which control sets to compile, where the account lands, and what in-account baseline to deploy. Input to `automat vend` (DESIGN 7).",
+  "$id": "automat.dev/schema/environment-profile/v1",
+  "title": "automat environment profile",
+  "description": "An ENVIRONMENT profile: which control sets to compile, where the account lands, what behavior is permitted inside it, and what in-account baseline to deploy. Input to `automat vend` (DESIGN 7). Named 'environment' rather than 'profile' because automat has three unrelated document types that were all called profiles — this one, obligation profiles (which regime, assessed how), and classification profiles (which institutional data level) — and an evidence record naming 'profile id + content hash' was ambiguous to exactly the auditor it exists for. 'Environment' is also the idiom higher ed already uses for a resource rated to hold data at a level. Obligation and classification profiles are POLICY artifacts; the environment profile is the thing being BUILT.",
   "type": "object",
-  "required": ["schema_version", "profile", "review_by", "control_sets", "placement", "baseline"],
+  "required": ["schema_version", "environment_profile", "review_by", "control_sets", "placement", "baseline"],
   "additionalProperties": false,
 
   "properties": {
@@ -13,7 +13,7 @@
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
 
-    "profile": {
+    "environment_profile": {
       "type": "object",
       "required": ["id", "title"],
       "additionalProperties": false,
@@ -25,12 +25,12 @@
     },
 
     "review_by": {
-      "description": "The date by which this profile must be re-read against the posture it claims to deploy. REQUIRED, with no default. A vend profile names control sets, a placement, and a baseline; left alone it keeps vending the posture someone approved once, and every account it produces looks as current as the day it was written. `verify` warns once this date has passed. The field is inside the document, so it is covered by the content hash recorded in the evidence manifest and by any attestation over it — extending the date is a change no earlier attestation vouches for.",
+      "description": "The date by which this environment profile must be re-read against the posture it claims to deploy. REQUIRED, with no default. An environment profile names control sets, a placement, a permitted-behavior boundary, and a baseline; left alone it keeps vending the posture someone approved once, and every account it produces looks as current as the day it was written. `verify` warns once this date has passed. The field is inside the document, so it is covered by the content hash recorded in the evidence manifest and by any attestation over it — extending the date is a change no earlier attestation vouches for.",
       "$ref": "#/$defs/date"
     },
 
     "signatures": {
-      "description": "Optional attestations over this document's content hash (see $defs/attestation). PROVENANCE ONLY: an attestation says who stood behind this document in what capacity — typically a central IT office recording `adopted-by` on the profile it publishes for departments to vend against — and never that its contents are correct, applicable, or approved for a given use. Trust is an operator determination; automat ships no trust anchor, no default accepted identity, and no verification in v1.",
+      "description": "Optional attestations over this document's content hash (see $defs/attestation). PROVENANCE ONLY: an attestation says who stood behind this document in what capacity — typically a central IT office recording `adopted-by` on the environment profile it publishes for departments to vend against — and never that its contents are correct, applicable, or approved for a given use. Trust is an operator determination; automat ships no trust anchor, no default accepted identity, and no verification in v1.",
       "type": "array",
       "maxItems": 16,
       "uniqueItems": true,

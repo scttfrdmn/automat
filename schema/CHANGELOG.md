@@ -180,6 +180,15 @@ than canonicalization drifting — the distinction that test exists to make.
 
 ## profile/v1 — 1.0.0 (unreleased, Phase 0)
 
+> **Superseded in part** — see "The rename: `profile/v1` becomes
+> `environment-profile/v1`" below. This schema is now
+> `schema/environment-profile-v1.schema.json` with `$id`
+> `automat.dev/schema/environment-profile/v1`, and its top-level `profile` member
+> is `environment_profile`. Every constraint recorded in this section still holds;
+> only the names moved. The section stands as written because a changelog records
+> what was said at the time; this marker is here so a reader does not take the old
+> names at face value.
+
 Initial definition per DESIGN.md §7 and §13. No migration.
 
 - `account.tags` forbids keys matching `^automat:` — automat's conventional tags
@@ -536,6 +545,10 @@ handful — an author, an adopting institution, maybe a reviewer.
 
 ### `evidence_manifest.record.profile` — what the vend recorded
 
+> **Superseded in part** — the field is now `record.environment_profile` and the
+> `$def` is `environment_profile_reference`. See the rename section at the end of
+> this file. Everything below still describes the field's shape and reasoning.
+
 An optional `profile` object on a record: `id`, `content_sha256`,
 `verified_signatures[]` (all three required *within* the object), plus optional
 `schema_version` and `review_by`.
@@ -742,3 +755,44 @@ between the two `$defs` cannot be quietly collapsed later.
 One rule 7 defect surfaced in the same pass and is fixed: the Go validator's
 `successor_manifest_id` problem carried an **empty `Fix` string** — a validation
 failure with nowhere to go, which rule 7 exists to forbid.
+
+## The rename: `profile/v1` becomes `environment-profile/v1`
+
+Pre-publication, and a rename only — **no constraint changes, no version bump**.
+Nothing has emitted or consumed a `profile/v1` document, so there is nothing to
+migrate. Landed at the maintainer's direction on Q14.
+
+| before | after |
+| --- | --- |
+| `schema/profile-v1.schema.json` | `schema/environment-profile-v1.schema.json` |
+| `$id automat.dev/schema/profile/v1` | `$id automat.dev/schema/environment-profile/v1` |
+| top-level member `profile` | `environment_profile` |
+| `evidence-manifest` `record.profile` | `record.environment_profile` |
+| `evidence-manifest` `$defs/profile_reference` | `$defs/environment_profile_reference` |
+| Go `evidence.ProfileRef` / `Record.Profile` | `evidence.EnvProfileRef` / `Record.EnvProfile` |
+
+**Why a rename is worth a changelog section.** "Profile" named three unrelated
+documents — the per-vend input (DESIGN §7), obligation profiles (`cmmc-l1`,
+`dfars-7012`, `nih-cadr-dua`), and the institutional classification profiles not
+yet built — and there is a fourth sense the tool cannot rename, the **AWS
+credential profile** (`config.toml`'s `profile`, `login --profile`). An evidence
+record's whole job is to name the document it ran under by id and content hash. A
+field called `profile` in that record is ambiguous to exactly the auditor it exists
+for, and DESIGN §7 further spelled the vend input `--profile` — the same flag name
+as the credential profile, in the same tool. `vend`'s input flag is now
+`--environment-profile`; `--profile` stays reserved for the AWS sense, because that
+is what it means in every other tool the operator uses.
+
+"Environment" rather than some new coinage because it is the idiom already in use
+for a resource rated to hold data at a level, and because it names the right thing:
+obligation and classification profiles are **policy** artifacts, while the
+environment profile is the thing being **built**. It is also the document `vend`,
+`verify`, and later `assess` all consume.
+
+**This moved every record hash.** The manifest field name is inside the record
+hash, so `internal/evidence/testdata/golden/manifest.json` was regenerated and its
+diff is exactly the rename: the field name, then the `record_sha256`,
+`previous_sha256`, and signature values that must follow it. Nothing else changed —
+which is what the golden file exists to make visible. Canonicalization itself did
+not change, so this is not the release-note-breaks-every-manifest-on-disk case that
+test's failure message warns about; there are no manifests on disk to break.

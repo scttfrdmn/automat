@@ -23,7 +23,7 @@ import (
 func TestAppendRefusesUnverifiedSignatures(t *testing.T) {
 	m := newTestManifest()
 	rec := vendRec(OpSCPEnsure, ts0)
-	rec.Profile.VerifiedSignatures = []VerifiedSignature{
+	rec.EnvProfile.VerifiedSignatures = []VerifiedSignature{
 		{Role: RoleAdoptedBy, Identity: "Research Computing"},
 	}
 
@@ -54,10 +54,10 @@ func TestAppendRefusesUnverifiedSignatures(t *testing.T) {
 func TestTheEmptySetIsTheNormalValue(t *testing.T) {
 	m := newTestManifest()
 	rec := vendRec(OpSCPEnsure, ts0)
-	rec.Profile.VerifiedSignatures = nil // the shape a caller that never touched it produces
+	rec.EnvProfile.VerifiedSignatures = nil // the shape a caller that never touched it produces
 	stored := mustAppend(t, m, rec, nil)
 
-	if stored.Profile.VerifiedSignatures == nil {
+	if stored.EnvProfile.VerifiedSignatures == nil {
 		t.Error("verified_signatures is nil after Append; it must be an empty slice, because nil " +
 			"marshals to null where the schema requires an array")
 	}
@@ -72,12 +72,13 @@ func TestTheEmptySetIsTheNormalValue(t *testing.T) {
 	}
 }
 
-// TestAVendRecordNamesItsProfileByHash: a record naming only the profile id is a
+// TestAVendRecordNamesItsEnvProfileByHash: a record naming only the environment
+// profile id is a
 // record whose subject can be edited afterwards.
-func TestAVendRecordNamesItsProfileByHash(t *testing.T) {
+func TestAVendRecordNamesItsEnvProfileByHash(t *testing.T) {
 	m := newTestManifest()
 	rec := vendRec(OpSCPEnsure, ts0)
-	rec.Profile.ContentSHA256 = ""
+	rec.EnvProfile.ContentSHA256 = ""
 
 	_, err := m.Append(rec, nil)
 	if err == nil {
@@ -90,21 +91,21 @@ func TestAVendRecordNamesItsProfileByHash(t *testing.T) {
 
 // TestReviewByIsCopiedNotComputed pins the field's shape: a date, verbatim from the
 // profile. An evidence record has to be readable years later without its inputs —
-// an auditor should be able to see that the profile behind an account was already
+// an auditor should be able to see that the environment profile behind an account was already
 // past review when it was vended, without needing the file.
 func TestReviewByIsCopiedNotComputed(t *testing.T) {
 	m := newTestManifest()
 	rec := vendRec(OpSCPEnsure, ts0)
 	stored := mustAppend(t, m, rec, nil)
-	if stored.Profile.ReviewBy != "2026-11-10" {
-		t.Errorf("review_by = %q, want the profile's own value verbatim", stored.Profile.ReviewBy)
+	if stored.EnvProfile.ReviewBy != "2026-11-10" {
+		t.Errorf("review_by = %q, want the environment profile's own value verbatim", stored.EnvProfile.ReviewBy)
 	}
 
 	// A lapsed date is not a validation failure — Phase 4's verify warns. A
 	// validator with a clock would make every archived manifest invalid.
 	stale := newTestManifest()
 	old := vendRec(OpSCPEnsure, ts0)
-	old.Profile.ReviewBy = "1999-01-01"
+	old.EnvProfile.ReviewBy = "1999-01-01"
 	if _, err := stale.Append(old, nil); err != nil {
 		t.Errorf("a long-lapsed review date must still be recordable — lapse is a verify warning "+
 			"about the document, not a statement about the account:\n%v", err)
@@ -114,7 +115,7 @@ func TestReviewByIsCopiedNotComputed(t *testing.T) {
 	// custody_transfer.effective_date is: the two are different kinds of claim.
 	bad := newTestManifest()
 	wrong := vendRec(OpSCPEnsure, ts0)
-	wrong.Profile.ReviewBy = ts0
+	wrong.EnvProfile.ReviewBy = ts0
 	if _, err := bad.Append(wrong, nil); err == nil {
 		t.Error("Append accepted a timestamp in review_by")
 	}
@@ -148,13 +149,13 @@ func TestTheRoleVocabularyIsClosedInGoToo(t *testing.T) {
 	// Once verification exists the field must be usable, so the shape has to
 	// validate — checked here rather than through Append, which refuses any
 	// non-empty set in v1 by design.
-	pr := &ProfileRef{ID: "research-cui", ContentSHA256: someHash,
+	pr := &EnvProfileRef{ID: "research-cui", ContentSHA256: someHash,
 		VerifiedSignatures: []VerifiedSignature{
 			{Role: RoleAdoptedBy, Identity: "Research Computing"},
 			{Role: RoleAuthoredBy, Identity: "Office of the CISO", VerifiedAgainst: "trust.toml"},
 		}}
 	var p problems
-	pr.validate("profile", &p)
+	pr.validate("environment_profile", &p)
 	if len(p.list) != 0 {
 		t.Errorf("an identity-and-role pair must validate; the field has to be usable once "+
 			"verification exists:\n%v", p.list)
@@ -174,8 +175,8 @@ func TestTheRoleVocabularyIsClosedInGoToo(t *testing.T) {
 	for _, tc := range bad {
 		t.Run(tc.name, func(t *testing.T) {
 			var p problems
-			(&ProfileRef{ID: "research-cui", ContentSHA256: someHash,
-				VerifiedSignatures: []VerifiedSignature{tc.sig}}).validate("profile", &p)
+			(&EnvProfileRef{ID: "research-cui", ContentSHA256: someHash,
+				VerifiedSignatures: []VerifiedSignature{tc.sig}}).validate("environment_profile", &p)
 			if len(p.list) == 0 {
 				t.Errorf("the validator accepted %s", tc.name)
 			}

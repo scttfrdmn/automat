@@ -167,12 +167,12 @@ func TestACustodyTransferMustCarryItsPayload(t *testing.T) {
 		{
 			// Added with the cosigning fields, for the same reason artifact and
 			// enforcement were already forbidden.
-			"a profile reference",
+			"an environment-profile reference",
 			func(r *Record) {
-				r.Profile = &ProfileRef{ID: "research-cui", ContentSHA256: otherHash,
+				r.EnvProfile = &EnvProfileRef{ID: "research-cui", ContentSHA256: otherHash,
 					VerifiedSignatures: []VerifiedSignature{}}
 			},
-			"a transfer runs under no profile",
+			"a transfer runs under no environment profile",
 		},
 	}
 

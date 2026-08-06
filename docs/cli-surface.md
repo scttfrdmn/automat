@@ -40,7 +40,7 @@ shipped command is absent from §13.**
 | Scope | Flags | In §13? |
 |---|---|---|
 | Persistent | `--config`, `--context` | Implied by §13's config paragraph |
-| `login` | `--start-url`, `--sso-region` | Implied by "profile-aware" / SSO |
+| `login` | `--start-url`, `--sso-region` | Implied by "credential-profile-aware" / SSO |
 | `preflight` | none | — |
 | `setup` | `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`, `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`, `--vendor-role-name`, `--contact` | §13 names none of these |
 
@@ -79,8 +79,16 @@ diffing two audits.
 
 Plus `org`, `region`, `profile`, `sso_start_url`, `sso_region`, and the top-level
 `context` / `default_context`. Additions, not substitutions — `region` and `profile`
-are what "profile-aware" in §13's `login` line requires, and the two `sso_*` keys are
-what let `login` work without re-typing a start URL.
+are what "credential-profile-aware" in §13's `login` line requires, and the two `sso_*`
+keys are what let `login` work without re-typing a start URL.
+
+**`profile` here is the AWS credential profile and nothing else.** It is the fourth
+sense of the word DESIGN §7a enumerates, and the one that cannot be renamed because it
+is AWS-standard in every other tool the operator uses. `vend`'s input document is the
+**environment profile**, reached by `--environment-profile`; the two must never share a
+flag name. §13 line 100 originally spelled the vend input `--profile`, which would have
+put both meanings on one flag in one tool — DESIGN §7a now resolves that, and this row
+is the CLI-side half of the same fix.
 
 **§13's "never store secrets" holds literally.** `external_id_ref` stores a *reference*
 (`env:VAR`, `file:/path`), resolved at assume time by `config.ResolveExternalID` and

@@ -68,7 +68,7 @@ func goldenManifest(t *testing.T) *Manifest {
 			Region:      "us-east-1",
 		},
 		Artifact: &DocRef{ID: "cmmc-l1", ContentSHA256: someHash, SchemaVersion: "1.0.0"},
-		Profile: &ProfileRef{
+		EnvProfile: &EnvProfileRef{
 			ID: "research-cui", ContentSHA256: otherHash, SchemaVersion: "1.0.0",
 			ReviewBy:           "2026-11-10",
 			VerifiedSignatures: []VerifiedSignature{},
@@ -81,13 +81,13 @@ func goldenManifest(t *testing.T) *Manifest {
 	// the sets deliberately supplied out of order so the golden file records that
 	// canonicalization sorts them.
 	apply := Record{
-		Timestamp: "2026-08-05T00:00:02Z",
-		Operation: OpBaselineApply,
-		Operator:  create.Operator,
-		RequestID: "req-abc123",
-		Target:    &Target{AccountID: "444455556666", Region: "us-east-1"},
-		Artifact:  create.Artifact,
-		Profile:   create.Profile,
+		Timestamp:  "2026-08-05T00:00:02Z",
+		Operation:  OpBaselineApply,
+		Operator:   create.Operator,
+		RequestID:  "req-abc123",
+		Target:     &Target{AccountID: "444455556666", Region: "us-east-1"},
+		Artifact:   create.Artifact,
+		EnvProfile: create.EnvProfile,
 		Enforcement: &Enforcement{
 			SCPARNs: []string{
 				"arn:aws:organizations::111122223333:policy/o-abc1234567/service_control_policy/p-region2",
@@ -107,14 +107,14 @@ func goldenManifest(t *testing.T) *Manifest {
 	// one an operator reads six weeks later, so the golden file pins its whole shape
 	// including the remediation text (CLAUDE.md rule 7).
 	parked := Record{
-		Timestamp: "2026-08-05T00:00:03Z",
-		Operation: OpSCPEnsure,
-		Outcome:   OutcomeParked,
-		Operator:  create.Operator,
-		RequestID: "req-abc123",
-		Target:    &Target{AccountID: "444455556666", OUID: "ou-abc1-12345678"},
-		Artifact:  create.Artifact,
-		Profile:   create.Profile,
+		Timestamp:  "2026-08-05T00:00:03Z",
+		Operation:  OpSCPEnsure,
+		Outcome:    OutcomeParked,
+		Operator:   create.Operator,
+		RequestID:  "req-abc123",
+		Target:     &Target{AccountID: "444455556666", OUID: "ou-abc1-12345678"},
+		Artifact:   create.Artifact,
+		EnvProfile: create.EnvProfile,
 		Err: &RecordError{
 			Message: "attaching the baseline-protection policy to ou-abc1-12345678 was denied",
 			Action:  "organizations:AttachPolicy",

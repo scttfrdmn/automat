@@ -58,10 +58,12 @@ const (
 // AllOutcomes is the closed set.
 var AllOutcomes = []Outcome{OutcomeSuccess, OutcomeFailure, OutcomeParked}
 
-// Role is the capacity an attestation over a profile document was made in.
+// Role is the capacity an attestation over a profile document was made in —
+// environment or obligation; the vocabulary is shared.
 //
-// The same closed five-value vocabulary the profile schemas use, and the reason
-// it is closed is that these are four unrelated claims of wildly different
+// The same closed five-value vocabulary the environment and obligation profile
+// schemas use, and the reason it is closed is that these are four unrelated
+// claims of wildly different
 // weight: "X wrote this", "Y adopted it for its own use", "Z read it", and "the
 // format validated". A reader shown one undifferentiated checkmark infers the
 // strongest available, which is how "the JSON parsed" becomes "the university
@@ -104,22 +106,22 @@ type Meta struct {
 // Field order matters only for MarshalIndented's readability; hashing goes
 // through canonical form, which sorts keys.
 type Record struct {
-	Sequence    int          `json:"sequence"`
-	Timestamp   string       `json:"timestamp"`
-	Operation   Operation    `json:"operation"`
-	Outcome     Outcome      `json:"outcome,omitempty"`
-	Operator    Operator     `json:"operator"`
-	RequestID   string       `json:"request_id,omitempty"`
-	Target      *Target      `json:"target,omitempty"`
-	Artifact    *DocRef      `json:"artifact,omitempty"`
-	Profile     *ProfileRef  `json:"profile,omitempty"`
-	Enforcement *Enforcement `json:"enforcement,omitempty"`
-	Err         *RecordError `json:"error,omitempty"`
-	Custody     *Custody     `json:"custody_transfer,omitempty"`
-	ToolVersion string       `json:"tool_version"`
-	PreviousSHA string       `json:"previous_sha256"`
-	RecordSHA   string       `json:"record_sha256"`
-	Signature   *Signature   `json:"signature,omitempty"`
+	Sequence    int            `json:"sequence"`
+	Timestamp   string         `json:"timestamp"`
+	Operation   Operation      `json:"operation"`
+	Outcome     Outcome        `json:"outcome,omitempty"`
+	Operator    Operator       `json:"operator"`
+	RequestID   string         `json:"request_id,omitempty"`
+	Target      *Target        `json:"target,omitempty"`
+	Artifact    *DocRef        `json:"artifact,omitempty"`
+	EnvProfile  *EnvProfileRef `json:"environment_profile,omitempty"`
+	Enforcement *Enforcement   `json:"enforcement,omitempty"`
+	Err         *RecordError   `json:"error,omitempty"`
+	Custody     *Custody       `json:"custody_transfer,omitempty"`
+	ToolVersion string         `json:"tool_version"`
+	PreviousSHA string         `json:"previous_sha256"`
+	RecordSHA   string         `json:"record_sha256"`
+	Signature   *Signature     `json:"signature,omitempty"`
 }
 
 // Operator is the principal that performed the operation.
@@ -149,16 +151,21 @@ type DocRef struct {
 	SchemaVersion string `json:"schema_version,omitempty"`
 }
 
-// ProfileRef names the vend profile in force, plus the attestations over it that
-// were VERIFIED — never the ones merely present in the file (DESIGN §11a).
-type ProfileRef struct {
+// EnvProfileRef names the ENVIRONMENT profile in force, plus the attestations over
+// it that were VERIFIED — never the ones merely present in the file (DESIGN §11a).
+//
+// Named for the document type rather than just "profile" because automat has
+// three — environment, obligation, classification — and a record that says only
+// "profile" leaves the auditor it exists for to guess which kind of claim it is
+// making. The environment profile is the one `vend` consumes.
+type EnvProfileRef struct {
 	ID            string `json:"id"`
 	ContentSHA256 string `json:"content_sha256"`
 	SchemaVersion string `json:"schema_version,omitempty"`
-	// ReviewBy is the profile's own review-by date, copied rather than looked up:
-	// an evidence record has to be readable years later without its inputs, so an
-	// auditor can see the profile was already past review when the account was
-	// vended without needing the file.
+	// ReviewBy is the environment profile's own review-by date, copied rather than
+	// looked up: an evidence record has to be readable years later without its
+	// inputs, so an auditor can see the environment profile was already past review
+	// when the account was vended without needing the file.
 	ReviewBy string `json:"review_by,omitempty"`
 	// VerifiedSignatures is REQUIRED in the wire form and an EMPTY SLICE IS THE
 	// NORMAL VALUE: automat verifies nothing in v1, so it records the empty set.
@@ -169,11 +176,11 @@ type ProfileRef struct {
 	VerifiedSignatures []VerifiedSignature `json:"verified_signatures"`
 }
 
-// VerifiedSignature is one attestation over a profile that verified: the identity
-// and the capacity it attested in, and nothing else.
+// VerifiedSignature is one attestation over an environment profile that verified:
+// the identity and the capacity it attested in, and nothing else.
 //
-// PROVENANCE ONLY. Recording an entry here says who stood behind the profile
-// document, never that the profile is correct, applicable to this account, or
+// PROVENANCE ONLY. Recording an entry here says who stood behind the environment
+// profile document, never that it is correct, applicable to this account, or
 // approved for this use. What made the identity acceptable is an operator
 // determination against a trust policy the operator maintains; automat ships no
 // trust anchor and no default accepted identity, so this never means "automat

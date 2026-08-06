@@ -498,10 +498,10 @@ func exemptions(t *testing.T, a *Artifact) ExemptPrincipals {
 // TestSchemasDeclareStableIdentity guards the fields external consumers key off.
 func TestSchemasDeclareStableIdentity(t *testing.T) {
 	want := map[string]string{
-		"control-artifact-v1.schema.json":   "automat.dev/schema/control-artifact/v1",
-		"profile-v1.schema.json":            "automat.dev/schema/profile/v1",
-		"evidence-manifest-v1.schema.json":  "automat.dev/schema/evidence-manifest/v1",
-		"obligation-profile-v1.schema.json": "automat.dev/schema/obligation-profile/v1",
+		"control-artifact-v1.schema.json":    "automat.dev/schema/control-artifact/v1",
+		"environment-profile-v1.schema.json": "automat.dev/schema/environment-profile/v1",
+		"evidence-manifest-v1.schema.json":   "automat.dev/schema/evidence-manifest/v1",
+		"obligation-profile-v1.schema.json":  "automat.dev/schema/obligation-profile/v1",
 	}
 	for name, wantID := range want {
 		t.Run(name, func(t *testing.T) {

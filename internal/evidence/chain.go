@@ -122,23 +122,26 @@ func (m *Manifest) Append(rec Record, signer Signer) (*Record, error) {
 // A record listing signatures it did not check manufactures assurance out of a
 // document's own claims about itself, which is precisely the failure the role
 // vocabulary exists to prevent. Refused at the writer rather than left to caller
-// discipline: the tempting bug is a caller that copies profile.signatures into
+// discipline: the tempting bug is a caller that copies the environment profile's
+// own signatures list into
 // this field because both are lists of the same shape, and it would produce
 // records that validate and read exactly like verified ones.
 //
 // When verification lands, this function is what changes, and its replacement must
 // take its input from a verifier rather than from a caller.
 func (m *Manifest) refuseUnverifiedSignatures(rec *Record) error {
-	if rec.Profile == nil || len(rec.Profile.VerifiedSignatures) == 0 {
+	if rec.EnvProfile == nil || len(rec.EnvProfile.VerifiedSignatures) == 0 {
 		return nil
 	}
 	return fmt.Errorf("refusing to append record %d to manifest %s: it claims %d verified "+
-		"attestation(s) over profile %s, and automat verifies nothing in this version — it loads no "+
+		"attestation(s) over environment profile %s, and automat verifies nothing in this version — it "+
+		"loads no "+
 		"trust policy, resolves no key, and ships no trust anchor. The empty set is the honest and "+
-		"only correct value here; attestations present in a profile but unverified must not be copied "+
+		"only correct value here; attestations present in an environment profile but unverified must "+
+		"not be copied "+
 		"into a record, because a record listing signatures it did not check manufactures assurance "+
 		"out of a document's own claims about itself (DESIGN §11a)",
-		rec.Sequence, safe(m.Meta.ID), len(rec.Profile.VerifiedSignatures), safe(rec.Profile.ID))
+		rec.Sequence, safe(m.Meta.ID), len(rec.EnvProfile.VerifiedSignatures), safe(rec.EnvProfile.ID))
 }
 
 // VerifyChain recomputes every record's hash, checks every link, and checks the

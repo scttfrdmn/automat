@@ -19,7 +19,7 @@ import (
 // artifact.clone gives: a hand-written deep copy silently misses a field added to
 // the types later, and here that miss would be a canonicalization that mutated
 // the caller's record through a shared pointer. Every pointer member below —
-// Target, Artifact, Profile, Enforcement, Err, Custody — is one a shallow copy
+// Target, Artifact, EnvProfile, Enforcement, Err, Custody — is one a shallow copy
 // would share, and canonicalize writes through three of them.
 func (r Record) clone() (Record, error) {
 	raw, err := json.Marshal(&r)
@@ -66,12 +66,12 @@ func (r *Record) canonicalize() {
 		r.Enforcement.ServiceSet = canonStrings(r.Enforcement.ServiceSet)
 		r.Enforcement.AttestationIDs = canonStrings(r.Enforcement.AttestationIDs)
 	}
-	if r.Profile != nil {
+	if r.EnvProfile != nil {
 		// Normalized to non-nil rather than to nil: the wire form has no omitempty
 		// on this field, so nil would marshal as `null` and fail the schema, which
 		// requires an array. The empty set is v1's answer and it must be written
 		// as one.
-		r.Profile.VerifiedSignatures = canonSignatures(r.Profile.VerifiedSignatures)
+		r.EnvProfile.VerifiedSignatures = canonSignatures(r.EnvProfile.VerifiedSignatures)
 	}
 	if r.Target != nil && *r.Target == (Target{}) {
 		r.Target = nil
@@ -98,7 +98,7 @@ func canonStrings(in []string) []string {
 // canonSignatures sorts by role then identity and dedupes, mapping nil to an
 // empty non-nil slice.
 //
-// Non-nil for the reason ProfileRef.VerifiedSignatures documents: the field has no
+// Non-nil for the reason EnvProfileRef.VerifiedSignatures documents: the field has no
 // omitempty, so nil marshals as `null` where the schema requires an array. This
 // is the one place in automat where an empty collection is deliberately *not*
 // normalized to nil, because here the empty set is a recorded answer rather than
@@ -135,7 +135,7 @@ func canonSignatures(in []VerifiedSignature) []VerifiedSignature {
 // omitting the signature is what lets a record be signed after it is hashed: the
 // signature is over the hash, so including it would be circular.
 func CanonicalRecordJSON(r Record) ([]byte, error) {
-	// Deep copy: canonicalize writes through Enforcement, Profile, and Target, so
+	// Deep copy: canonicalize writes through Enforcement, EnvProfile, and Target, so
 	// a shallow copy would edit the caller's record while claiming not to.
 	dup, err := r.clone()
 	if err != nil {

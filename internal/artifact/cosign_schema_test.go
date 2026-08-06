@@ -16,7 +16,8 @@ import (
 
 // Cosigning and freshness (DESIGN §11a): `review_by` on both profile document
 // types, an optional `signatures[]` array of attestation predicates, and the
-// evidence record's `profile` block naming the profile that was vended under and
+// evidence record's `environment_profile` block naming the document that was vended
+// under and
 // the attestations that verified.
 //
 // No Go types and no verification — that scope was explicitly excluded, and a
@@ -31,10 +32,11 @@ import (
 // everything. Every case below was verified to fire by deleting the constraint it
 // covers and confirming the case fails.
 
-// The two profile document types share the attestation vocabulary, so most cases
-// below run against both. Held as a list rather than duplicated per file.
+// The two profile document types — environment and obligation — share the
+// attestation vocabulary, so most cases below run against both. Held as a list
+// rather than duplicated per file.
 var profileSchemaFiles = []string{
-	"profile-v1.schema.json",
+	"environment-profile-v1.schema.json",
 	"obligation-profile-v1.schema.json",
 }
 
@@ -42,15 +44,16 @@ var profileSchemaFiles = []string{
 // Fixtures
 // ---------------------------------------------------------------------------
 
-// minimalVendProfile is the smallest document profile-v1 accepts, as a map so a
-// case can add or delete one key without restating the rest.
-func minimalVendProfile() map[string]any {
+// minimalEnvironmentProfile is the smallest document environment-profile-v1
+// accepts, as a map so a case can add or delete one key without restating the
+// rest.
+func minimalEnvironmentProfile() map[string]any {
 	return map[string]any{
-		"schema_version": "1.0.0",
-		"profile":        map[string]any{"id": "example", "title": "Example"},
-		"review_by":      "2027-01-01",
-		"control_sets":   []any{"cmmc-l1"},
-		"placement":      map[string]any{"target_ou": "ou-abcd-11111111"},
+		"schema_version":      "1.0.0",
+		"environment_profile": map[string]any{"id": "example", "title": "Example"},
+		"review_by":           "2027-01-01",
+		"control_sets":        []any{"cmmc-l1"},
+		"placement":           map[string]any{"target_ou": "ou-abcd-11111111"},
 		"baseline": map[string]any{
 			"config_recorder": map[string]any{"enabled": true},
 		},
@@ -79,8 +82,8 @@ func minimalObligationProfile(t *testing.T) map[string]any {
 // a case written once runs against both.
 func profileFixture(t *testing.T, schemaFile string) map[string]any {
 	t.Helper()
-	if schemaFile == "profile-v1.schema.json" {
-		return minimalVendProfile()
+	if schemaFile == "environment-profile-v1.schema.json" {
+		return minimalEnvironmentProfile()
 	}
 	return minimalObligationProfile(t)
 }
@@ -592,7 +595,7 @@ func TestTheSchemaCannotCheckAnAttestationsOwnHash(t *testing.T) {
 
 // TestTheAttestationDefinitionIsIdenticalInBothSchemas.
 //
-// profile-v1 and obligation-profile-v1 each carry their own copy of the
+// environment-profile-v1 and obligation-profile-v1 each carry their own copy of the
 // definition, because a JSON Schema $ref across files would make one published
 // contract depend on another being fetchable. The cost of that choice is two
 // copies, and the risk is that they drift — a sixth role added to one, a
@@ -656,18 +659,18 @@ func mustMarshalCanonical(t *testing.T, v any) string {
 }
 
 // ---------------------------------------------------------------------------
-// The evidence record's profile block
+// The evidence record's environment-profile block
 // ---------------------------------------------------------------------------
 
-// profileRecord is a vend record carrying the profile block. Written as a string
-// alongside the fixtures in evidence_schema_test.go so the two files' cases read
-// the same way.
-const profileRecord = `{
+// envProfileRecord is a vend record carrying the environment-profile block.
+// Written as a string alongside the fixtures in evidence_schema_test.go so the two
+// files' cases read the same way.
+const envProfileRecord = `{
   "sequence": 0,
   "timestamp": "2026-08-05T00:00:00Z",
   "operation": "baseline-apply",
   "operator": { "arn": "arn:aws:iam::111122223333:role/automat-operator" },
-  "profile": {
+  "environment_profile": {
     "id": "genomics-restricted",
     "content_sha256": "` + hashA + `",
     "schema_version": "1.0.0",
@@ -679,14 +682,14 @@ const profileRecord = `{
   "record_sha256": "` + hashB + `"
 }`
 
-// TestAVendRecordNamesTheProfileByHash is what makes "vended under this profile"
-// checkable rather than a label. A record naming only the id is a record whose
-// subject can be edited afterwards.
-func TestAVendRecordNamesTheProfileByHash(t *testing.T) {
+// TestAVendRecordNamesTheEnvProfileByHash is what makes "vended under this
+// environment profile" checkable rather than a label. A record naming only the id
+// is a record whose subject can be edited afterwards.
+func TestAVendRecordNamesTheEnvProfileByHash(t *testing.T) {
 	sch := compileSchema(t, "evidence-manifest-v1.schema.json")
 
-	if err := validateManifest(t, sch, manifest(profileRecord)); err != nil {
-		t.Fatalf("a record carrying a profile reference must validate:\n%v", err)
+	if err := validateManifest(t, sch, manifest(envProfileRecord)); err != nil {
+		t.Fatalf("a record carrying an environment-profile reference must validate:\n%v", err)
 	}
 
 	cases := []struct {
@@ -695,25 +698,25 @@ func TestAVendRecordNamesTheProfileByHash(t *testing.T) {
 	}{
 		{
 			"no content hash",
-			dropLine(t, profileRecord, `"content_sha256":`),
+			dropLine(t, envProfileRecord, `"content_sha256":`),
 		},
 		{
 			"no id",
-			dropLine(t, profileRecord, `"id": "genomics-restricted"`),
+			dropLine(t, envProfileRecord, `"id": "genomics-restricted"`),
 		},
 		{
 			// The field that must not be omissible; see the test below.
 			"no verified_signatures",
-			dropLine(t, profileRecord, `"verified_signatures":`),
+			dropLine(t, envProfileRecord, `"verified_signatures":`),
 		},
 		{
 			"a content hash that is not a hash",
-			strings.Replace(profileRecord, `"content_sha256": "`+hashA+`"`,
+			strings.Replace(envProfileRecord, `"content_sha256": "`+hashA+`"`,
 				`"content_sha256": "sha256:whatever"`, 1),
 		},
 		{
 			"a review_by carrying a timestamp",
-			strings.Replace(profileRecord, `"review_by": "2027-01-01"`,
+			strings.Replace(envProfileRecord, `"review_by": "2027-01-01"`,
 				`"review_by": "2027-01-01T00:00:00Z"`, 1),
 		},
 		{
@@ -721,7 +724,7 @@ func TestAVendRecordNamesTheProfileByHash(t *testing.T) {
 			// silently vanished would leave a record claiming less provenance
 			// than the writer intended, with nothing to notice it.
 			"a misspelled key",
-			strings.Replace(profileRecord, `"content_sha256": "`+hashA+`"`,
+			strings.Replace(envProfileRecord, `"content_sha256": "`+hashA+`"`,
 				`"content_sha_256": "`+hashA+`"`, 1),
 		},
 	}
@@ -752,11 +755,11 @@ func TestVerifiedSignaturesAreEmptyUntilVerificationExists(t *testing.T) {
 	sch := compileSchema(t, "evidence-manifest-v1.schema.json")
 
 	// The normal v1 value.
-	if err := validateManifest(t, sch, manifest(profileRecord)); err != nil {
+	if err := validateManifest(t, sch, manifest(envProfileRecord)); err != nil {
 		t.Fatalf("an empty verified_signatures set must be valid — it is what v1 always writes:\n%v", err)
 	}
 
-	withRole := strings.Replace(profileRecord, `"verified_signatures": []`,
+	withRole := strings.Replace(envProfileRecord, `"verified_signatures": []`,
 		`"verified_signatures": [{ "role": "adopted-by", "identity": "Research Computing" }]`, 1)
 	if err := validateManifest(t, sch, manifest(withRole)); err != nil {
 		t.Fatalf("an identity-and-role pair must be valid; the field has to be usable once "+
@@ -795,7 +798,7 @@ func TestVerifiedSignaturesAreEmptyUntilVerificationExists(t *testing.T) {
 	}
 	for _, tc := range bad {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := strings.Replace(profileRecord, `"verified_signatures": []`,
+			doc := strings.Replace(envProfileRecord, `"verified_signatures": []`,
 				`"verified_signatures": `+tc.body, 1)
 			if err := validateManifest(t, sch, manifest(doc)); err == nil {
 				t.Errorf("the schema accepted verified_signatures with %s", tc.name)
@@ -804,31 +807,32 @@ func TestVerifiedSignaturesAreEmptyUntilVerificationExists(t *testing.T) {
 	}
 }
 
-// TestACustodyTransferCarriesNoProfile extends the existing rule that a transfer
+// TestACustodyTransferCarriesNoEnvProfile extends the existing rule that a transfer
 // record carries no artifact and no enforcement. A transfer deploys nothing, and a
 // second document reference beside custody_transfer.final_artifact leaves the
 // reader to guess which one is the baseline being handed over — which is the whole
 // thing final_artifact exists to state unambiguously.
-func TestACustodyTransferCarriesNoProfile(t *testing.T) {
+func TestACustodyTransferCarriesNoEnvProfile(t *testing.T) {
 	sch := compileSchema(t, "evidence-manifest-v1.schema.json")
 
 	smuggled := strings.Replace(transferRecord, `"tool_version": "0.1.0",`,
-		`"profile": { "id": "genomics-restricted", "content_sha256": "`+hashA+`", `+
+		`"environment_profile": { "id": "genomics-restricted", "content_sha256": "`+hashA+`", `+
 			`"verified_signatures": [] }, "tool_version": "0.1.0",`, 1)
 	if err := validateManifest(t, sch, manifest(vendRecord, smuggled)); err == nil {
-		t.Error("the schema accepted a profile reference on a custody-transfer record; a transfer " +
+		t.Error("the schema accepted an environment-profile reference on a custody-transfer record; " +
+			"a transfer " +
 			"deploys nothing, and two document references in one record leave the reader to guess " +
 			"which is the baseline being handed over")
 	}
 }
 
-// TestAnOrdinaryRecordMayOmitTheProfile keeps the optionality real. Not every
-// record has a profile behind it — `init` predates one — and a required field
-// would push whatever writes those records into inventing a value.
-func TestAnOrdinaryRecordMayOmitTheProfile(t *testing.T) {
+// TestAnOrdinaryRecordMayOmitTheEnvProfile keeps the optionality real. Not every
+// record has one behind it — `init` predates it — and a required field would push
+// whatever writes those records into inventing a value.
+func TestAnOrdinaryRecordMayOmitTheEnvProfile(t *testing.T) {
 	sch := compileSchema(t, "evidence-manifest-v1.schema.json")
 	if err := validateManifest(t, sch, manifest(vendRecord)); err != nil {
-		t.Fatalf("a record with no profile block must remain valid:\n%v", err)
+		t.Fatalf("a record with no environment_profile block must remain valid:\n%v", err)
 	}
 }
 

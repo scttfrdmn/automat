@@ -411,7 +411,7 @@ func (e *Ensurer) EnsurePlacement(ctx context.Context, accountID, destination st
 	case isCode(err, "DestinationParentNotFoundException"):
 		return nil, fmt.Errorf("cannot move account %s: no root or OU with id %s exists in this "+
 			"organization. Correct `ou` in the config file, or ask for the right OU id — the account "+
-			"is now under %s, carrying whatever policies are attached there and none of the profile's",
+			"is now under %s, carrying whatever policies are attached there and none of the environment profile's",
 			accountID, destination, current)
 	default:
 		return nil, e.denied(err, "organizations:MoveAccount", destination)

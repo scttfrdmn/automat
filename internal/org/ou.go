@@ -100,11 +100,11 @@ func (e *Ensurer) EnsureOU(ctx context.Context, parent, name string) (string, *A
 // EnsureOUPath ensures a chain of OUs below parent, returning the id of the
 // deepest one.
 //
-// DESIGN §7 step 3 allows creating intermediate OUs "if the profile says so,
+// DESIGN §7 step 3 allows creating intermediate OUs "if the environment profile says so,
 // within depth limits". The depth limit is checked before anything is created,
 // because a path that is one level too deep fails halfway and leaves the shallow
 // levels behind — the account then lands in an OU that carries none of the
-// policies the profile asked for, which is the parked case with extra steps.
+// policies the environment profile asked for, which is the parked case with extra steps.
 //
 // In ModePlan the walk stops at the first level that would be created: nothing
 // below it can be read, so the plan reports VerbUnknown for the deeper levels
@@ -128,7 +128,7 @@ func (e *Ensurer) EnsureOUPath(ctx context.Context, parent string, names []strin
 		return "", nil, fmt.Errorf("cannot ensure an organizational unit path %d levels deep: AWS permits "+
 			"%d levels of OU below the root (DESIGN §3, fact 10), and this path has %d — shorten it in the "+
 			"profile before vending, because a path that fails halfway leaves the account in an OU with "+
-			"none of the policies the profile asked for",
+			"none of the policies the environment profile asked for",
 			len(names), MaxOUDepth, len(names))
 	}
 	// The remaining budget below parent, so a path that fits on its own but not
@@ -140,7 +140,7 @@ func (e *Ensurer) EnsureOUPath(ctx context.Context, parent string, names []strin
 	case depth >= 0 && depth+len(names) > MaxOUDepth:
 		return "", nil, fmt.Errorf("cannot ensure %d more organizational unit levels under %s: it is "+
 			"already %d levels below the root and AWS permits %d (DESIGN §3, fact 10) — either shorten "+
-			"the path in the profile or vend into a shallower parent",
+			"the path in the environment profile or vend into a shallower parent",
 			len(names), parent, depth, MaxOUDepth)
 	}
 
@@ -198,7 +198,7 @@ func (e *Ensurer) findOU(ctx context.Context, parent, name string) (string, erro
 			if isCode(err, "ParentNotFoundException") {
 				return "", fmt.Errorf("cannot look for organizational unit %q: no root or OU with id %s "+
 					"exists in this organization — correct the parent id, which comes from `ou` in the "+
-					"config file or from the profile's OU path", name, parent)
+					"config file or from the environment profile's OU path", name, parent)
 			}
 			return "", e.denied(err, "organizations:ListOrganizationalUnitsForParent", parent)
 		}

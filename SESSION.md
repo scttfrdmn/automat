@@ -8,7 +8,7 @@ Scope was Phase 0 only, stopping at a review checkpoint. `make build test lint` 
 | Deliverable | State |
 |---|---|
 | Repo scaffolding (module, Go 1.24, Apache-2.0, `.gitignore`, `.golangci.yml`, Makefile) | done |
-| `schema/` — control artifact, profile, evidence manifest + CHANGELOG | done |
+| `schema/` — control artifact, environment profile, evidence manifest + CHANGELOG | done |
 | `internal/artifact` — Go types, canonicalize, content hash, load/validate, round-trip tests | done |
 | `gen/` compiler + `catalogs/cmmc-l1.json` + golden test | done |
 | `gen/MAPPING-NOTES.md` — 15 enforcement rationales **for your review** | done |

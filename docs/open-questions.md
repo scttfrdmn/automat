@@ -413,7 +413,48 @@ citations get effective dates from the final rule, not the proposal, and the pha
 citation re-verification (CLAUDE.md's audit ritual) covers it from then on. Until then the
 answer to "should we get ahead of this?" is no.
 
-### Q14 — DESIGN §7 says the profile resolves to a region set and a service set; `profile-v1` has no field for either — **NEEDS A MAINTAINER DECISION**
+### ~~Q14 — DESIGN §7 says the profile resolves to a region set and a service set; `profile-v1` has no field for either~~ — **DECIDED: reading 2, plus a rename**
+
+**Decision (maintainer, Q14).** DESIGN §7 is correct and the schema gains the fields —
+**reading 2**, the sets carried on the document and composed by **intersection** with what
+the control sets require. And first, a rename: `profile/v1` is now
+**`environment-profile/v1`**, because "profile" named three unrelated documents and evidence
+records name one of them by id and content hash, which made that field ambiguous to exactly
+the auditor it exists for. See DESIGN §7a for the four senses (the fourth, the AWS credential
+profile, is why `vend`'s flag is `--environment-profile` and `--profile` stays reserved), and
+`schema/CHANGELOG.md` for the rename's field-by-field record.
+
+What the decision requires beyond "add two fields", each of which is a constraint rather
+than a nicety:
+
+- **Both sets are ALLOWLISTS**, enforced by `aws:RequestedRegion` / service deny SCPs, and
+  each carries its **exemption list as catalog DATA, never hardcoded** — the same pattern as
+  `exempt_principals`. The global services (IAM, STS, Organizations, Route 53, Support,
+  billing/Cost Explorer, Health, …) must be exempt from a region deny; getting that list
+  wrong bricks the account.
+- **Opt-in region *enablement* stays a separate field from the SCP allowlist.** One is a
+  boundary (what a principal may call), the other an account-level Account Management API
+  action at baseline time. An operator can legitimately want a region enabled but not
+  permitted, or permitted-in-policy while never enabled. `baseline.regions.{home,enable,
+  disable}` already is that separate field; it is not the allowlist and must not become it.
+- **The narrowing invariant.** The environment profile may only ever *narrow* relative to
+  what the control sets require. Union of controls, intersection of permitted behavior —
+  the union law again. The packer's can-any-merge-widen property coverage gains region and
+  service **sets** as subjects, not only statements.
+- **The empty-set guard.** AUDIT-0's H5 found the empty set is the absorbing element of the
+  meet; here the consequence is concrete — an empty allowlist denies everything and bricks a
+  freshly vended account *after* create and move have already succeeded. So `minItems: 1` at
+  the schema layer **and** an intersection that evaluates to empty is a hard error at
+  **plan** time, naming which inputs produced the emptiness. Never a silent deny-all, never
+  discovered at apply. Golden-tested.
+- **`verify` must be able to check it** (Phase 4): the shape has to be checkable against
+  attached region/service SCPs, not merely emittable.
+- The schema also gains the environment profile's references to obligation profile ids, a
+  classification level once item C lands, and the operator determinations DESIGN requires be
+  recorded and hashed — these are what the manifest's environment-profile record points at.
+
+Reading 1 was what the code implemented and is now superseded; the analysis of all three
+readings is kept below because the decision is only legible against the alternatives.
 
 Flagged rather than resolved, per CLAUDE.md: "when design and code disagree, stop and flag it".
 
@@ -422,7 +463,7 @@ set", and step 4 attaches "control SCPs + region SCP + service SCP + baseline-pr
 The packer emits all four shapes and `catalogs/baseline-protection.json` now supplies the
 fourth. The region and service SCPs, though, are generated from `scp.region_allowlist` and
 `scp.service_allowlist`, which live on the **control artifact**, not on the profile.
-`schema/profile-v1.schema.json` has `baseline.regions.{home,enable,disable}` — opt-in region
+`schema/environment-profile-v1.schema.json` (then `profile-v1`) has `baseline.regions.{home,enable,disable}` — opt-in region
 *enablement* via the Account Management API, which is step 5's in-child work — and its own
 description already says "the region allowlist is enforced separately by SCP". So a profile
 today cannot express either set, and §7's step 1 has nothing to resolve them from.
@@ -439,7 +480,7 @@ Three readings, and they are not equivalent:
 2. **The profile carries the sets, intersected with the artifact's.** Two new profile fields,
    folded into the same `set-intersect` the merge already applies. Safe in the widening
    direction *if* intersected rather than replacing, which is the only version worth
-   considering. This needs a `profile/v1` schema change — an addition, but a restructuring of
+   considering. This needs an `environment-profile/v1` schema change — an addition, but a restructuring of
    where authority for a preventive control lives, so rule 6's "ask first" applies rather than
    the audit-driven tightening exception.
 3. **A shipped example control set carries them.** No schema change; the region and service
@@ -452,6 +493,6 @@ guesses at the others. The packer is fully implemented for all three — `region
 not reach them — so this decision changes the profile schema and the vend path's step 1, not
 the packer.
 
-**Ask the maintainer before task #13's step 4 is written**, since step 4 is where the absence
+**Asked and answered before task #13's step 4 was written**, since step 4 is where the absence
 becomes visible: a vend that attaches "control SCPs + baseline-protection" and silently attaches
 no region or service SCP is a vend that does three quarters of what §7 says it does.

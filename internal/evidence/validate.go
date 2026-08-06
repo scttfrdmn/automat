@@ -215,7 +215,7 @@ func (r *Record) validate(path string, p *problems) {
 
 	r.Target.validate(path+".target", p)
 	r.Artifact.validate(path+".artifact", p)
-	r.Profile.validate(path+".profile", p)
+	r.EnvProfile.validate(path+".environment_profile", p)
 	r.Enforcement.validate(path+".enforcement", p)
 	r.Err.validate(path+".error", p)
 	r.Signature.validate(path+".signature", p)
@@ -282,9 +282,9 @@ func (r *Record) validateCustodyPairing(path string, p *problems) {
 		p.add(path+".enforcement", "is present on a custody-transfer record",
 			"a transfer deploys nothing")
 	}
-	if r.Profile != nil {
-		p.add(path+".profile", "is present on a custody-transfer record",
-			"a transfer runs under no profile; the artifact in force is "+
+	if r.EnvProfile != nil {
+		p.add(path+".environment_profile", "is present on a custody-transfer record",
+			"a transfer runs under no environment profile; the artifact in force is "+
 				"custody_transfer.final_artifact")
 	}
 }
@@ -329,14 +329,14 @@ func (d *DocRef) validate(path string, p *problems) {
 	}
 }
 
-func (pr *ProfileRef) validate(path string, p *problems) {
+func (pr *EnvProfileRef) validate(path string, p *problems) {
 	if pr == nil {
 		return
 	}
 	(&DocRef{ID: pr.ID, ContentSHA256: pr.ContentSHA256, SchemaVersion: pr.SchemaVersion}).validate(path, p)
 	if pr.ReviewBy != "" && !reDate.MatchString(pr.ReviewBy) {
 		p.add(path+".review_by", fmt.Sprintf("%s is not a YYYY-MM-DD date", safe(pr.ReviewBy)),
-			"a review date is a policy fact, not an event time; copy the profile's own value verbatim")
+			"a review date is a policy fact, not an event time; copy the environment profile's own value verbatim")
 	}
 	if len(pr.VerifiedSignatures) > maxVerifiedSignatures {
 		p.add(path+".verified_signatures", fmt.Sprintf("has %d entries; the schema permits %d",

@@ -7,7 +7,7 @@
 // Its role in the vend pipeline is step 6, and it is the only step whose output
 // outlives the vend. Every mutating operation appends a record naming the
 // operator, the operation, the target, the control artifact by content hash, the
-// vend profile by content hash, and what was actually attached. `verify` reads
+// environment profile by content hash, and what was actually attached. `verify` reads
 // the chain back later and asks whether reality still matches it.
 //
 // # What the chain is for, stated narrowly
@@ -66,10 +66,11 @@
 //
 // # Provenance only
 //
-// A record's profile reference carries the attestations over that profile which
+// A record's environment-profile reference carries the attestations over that
+// document which
 // automat *verified* — never the ones merely present in the file. In v1 automat
 // verifies nothing and records the empty set, and Append refuses a record that
 // claims otherwise (DESIGN §11a). The manifest's own `signature` block is a
 // different thing entirely: that is automat signing its own record with the
-// operator's key, and it says nothing about any profile.
+// operator's key, and it says nothing about any profile of any kind.
 package evidence

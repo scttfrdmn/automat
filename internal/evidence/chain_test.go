@@ -27,7 +27,7 @@ func newTestManifest() *Manifest {
 	return NewManifest(acct, acct, "o-abc1234567", ts0)
 }
 
-// vendRec is an ordinary successful record with the profile reference every record
+// vendRec is an ordinary successful record with the environment-profile reference every record
 // a vend writes must carry.
 func vendRec(op Operation, timestamp string) Record {
 	return Record{
@@ -37,7 +37,7 @@ func vendRec(op Operation, timestamp string) Record {
 		RequestID: "req-abc123",
 		Target:    &Target{AccountID: acct, OUID: "ou-abc1-12345678"},
 		Artifact:  &DocRef{ID: "cmmc-l1", ContentSHA256: someHash, SchemaVersion: "1.0.0"},
-		Profile: &ProfileRef{
+		EnvProfile: &EnvProfileRef{
 			ID: "research-cui", ContentSHA256: otherHash, SchemaVersion: "1.0.0",
 			ReviewBy: "2026-11-10", VerifiedSignatures: []VerifiedSignature{},
 		},
