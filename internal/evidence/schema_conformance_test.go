@@ -157,6 +157,12 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		{"missing schema version", func(_ *testing.T, m *Manifest) { m.SchemaVersion = "" }},
 		{"non-semver schema version", func(_ *testing.T, m *Manifest) { m.SchemaVersion = "1.0" }},
 		{"empty manifest id", func(_ *testing.T, m *Manifest) { m.Meta.ID = "" }},
+		{"a manifest id containing a space", func(_ *testing.T, m *Manifest) {
+			m.Meta.ID = "physics cui enclave"
+		}},
+		{"a manifest id containing a shell metacharacter", func(_ *testing.T, m *Manifest) {
+			m.Meta.ID = "444455556666`whoami`"
+		}},
 		{"bad account id in the header", func(_ *testing.T, m *Manifest) { m.Meta.AccountID = "4444" }},
 		{"bad organization id", func(_ *testing.T, m *Manifest) { m.Meta.OrganizationID = "org-1" }},
 		{"missing created_at", func(_ *testing.T, m *Manifest) { m.Meta.CreatedAt = "" }},
@@ -363,6 +369,14 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			m.Records[1] = r
 			relink(t, m)
 		}},
+		{"a custody transfer whose successor id is not typeable", func(t *testing.T, m *Manifest) {
+			// Rule 8's longest fuse: the reader of this pointer is a successor auditor
+			// years from now holding nothing but the record.
+			r := transferRec(ts1)
+			r.Custody.SuccessorManifestID = "rc central 444455556666; rm -rf ."
+			m.Records[1] = r
+			relink(t, m)
+		}},
 		{"a custody transfer whose effective_date is a timestamp", func(t *testing.T, m *Manifest) {
 			r := transferRec(ts1)
 			r.Custody.EffectiveDate = ts1
@@ -410,6 +424,20 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			relink(t, m)
 			m.Records[1].Signature = &Signature{
 				Algorithm: string(AlgEd25519), KeyID: "", Value: "AAAA",
+			}
+		}},
+		{"a signature key id containing whitespace", func(t *testing.T, m *Manifest) {
+			// The verifier's own remediation text tells the operator to supply the key
+			// the record names, so a key id has to be a thing they can type.
+			relink(t, m)
+			m.Records[1].Signature = &Signature{
+				Algorithm: string(AlgEd25519), KeyID: "my signing key", Value: "AAAA",
+			}
+		}},
+		{"a signature key id containing a shell metacharacter", func(t *testing.T, m *Manifest) {
+			relink(t, m)
+			m.Records[1].Signature = &Signature{
+				Algorithm: string(AlgEd25519), KeyID: "k1;curl evil.example", Value: "AAAA",
 			}
 		}},
 		{"a signature value that is not base64", func(t *testing.T, m *Manifest) {
@@ -550,6 +578,25 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 				Algorithm: string(AlgKMSRSAPSS256),
 				KeyID:     "arn:aws:kms:us-east-1:111122223333:key/abcd1234-0000-0000-0000-000000000000",
 				Value:     "QUJDREVG",
+			}
+		}},
+		{"a KMS key ARN as the key id", func(t *testing.T, m *Manifest) {
+			// The reason round_trip_ref is a separate $def from round_trip_id: a key id
+			// automat does not mint cannot be reduced to a plain id, and a pattern that
+			// rejected the colons and slashes of an ARN would make rule 8 unimplementable
+			// for the KMS signer rather than enforced.
+			relink(t, m)
+			m.Records[1].Signature = &Signature{
+				Algorithm: string(AlgKMSECDSA256),
+				KeyID: "arn:aws:kms:us-gov-west-1:111122223333:key/" +
+					"abcd1234-0000-0000-0000-000000000000",
+				Value: "QUJDREVG",
+			}
+		}},
+		{"a key id that is a bare KMS alias", func(t *testing.T, m *Manifest) {
+			relink(t, m)
+			m.Records[1].Signature = &Signature{
+				Algorithm: string(AlgKMSECDSA256), KeyID: "alias/automat-evidence", Value: "QUJDREVG",
 			}
 		}},
 		{"a lapsed review date", func(t *testing.T, m *Manifest) {

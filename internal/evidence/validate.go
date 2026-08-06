@@ -79,11 +79,23 @@ var (
 	reRegion    = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	reService   = regexp.MustCompile(`^[a-z0-9-]+$`)
 	reBase64    = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
-	// A request id is the one value in a record a human copies back onto a command
-	// line, as `vend --resume <request-id>`. Narrower than prose on purpose: a
-	// quote or a metacharacter in it turns a record into a suggestion that the
-	// operator mistype a command against their own organization.
-	reRequestID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+	// Round-trip fields (CLAUDE.md rule 8): identities automat WRITES that a person
+	// is expected to read back and type. Narrower than prose, and not for injection
+	// reasons — argument construction is the CLI's problem. This refuses to record a
+	// value whose purpose is to travel through human hands into a shell.
+	//
+	// reRoundTripID covers ids automat mints: manifest.id, request_id,
+	// successor_manifest_id. reRoundTripRef covers references it does not mint and so
+	// cannot reduce to a plain id — a KMS key ARN has colons and slashes — and admits
+	// exactly the punctuation those forms need and no character that could end a
+	// shell word.
+	reRoundTripID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+	// 256 rather than the 2048 an ARN may reach: Go's regexp caps a repeat count at
+	// 1000, so the wider bound is not expressible here, and a bound the Go layer
+	// cannot state is a bound the schema must not state either — rule 8 wants both
+	// layers to agree. 256 clears every real key reference (a KMS key ARN is ~90
+	// characters, an alias far less) with room to spare.
+	reRoundTripRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/+=@-]{0,255}$`)
 	// Prose fields are printed back in reports, and a control byte in one forges a
 	// line of that report. Refused here rather than escaped at every render site.
 	reProse = regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`)
@@ -135,9 +147,11 @@ func (mt *Meta) validate(p *problems) {
 		p.add("manifest.id", "is empty",
 			"a per-account manifest uses the account id, so a manifest found on its own says "+
 				"which account it is about")
-	} else if !reProse.MatchString(mt.ID) || len(mt.ID) > maxProse {
-		p.add("manifest.id", fmt.Sprintf("%s is not printable single-line text", safe(mt.ID)),
-			"the id is printed in every report this manifest appears in")
+	} else if !reRoundTripID.MatchString(mt.ID) {
+		p.add("manifest.id", fmt.Sprintf("%s is not a usable manifest id", safe(mt.ID)),
+			"use letters, digits, dot, dash, and underscore: this id is printed in every report "+
+				"this manifest appears in and is what a person names it by, so it has to survive "+
+				"being retyped and being selected by double-click")
 	}
 	if mt.AccountID != "" && !reAccountID.MatchString(mt.AccountID) {
 		p.add("manifest.account_id", fmt.Sprintf("%s is not a 12-digit AWS account id", safe(mt.AccountID)),
@@ -183,7 +197,7 @@ func (r *Record) validate(path string, p *problems) {
 		p.add(path+".tool_version", fmt.Sprintf("%s is empty or not printable single-line text",
 			safe(r.ToolVersion)), "use the value `automat version` prints")
 	}
-	if r.RequestID != "" && !reRequestID.MatchString(r.RequestID) {
+	if r.RequestID != "" && !reRoundTripID.MatchString(r.RequestID) {
 		p.add(path+".request_id", fmt.Sprintf("%s is not a usable request id", safe(r.RequestID)),
 			"use letters, digits, dot, dash, and underscore: an operator has to retype this value "+
 				"as `automat vend --resume <request-id>`, and a shell metacharacter in it is a "+
@@ -450,9 +464,13 @@ func (c *Custody) validate(path string, p *problems) {
 				"takes effect, so it is a date and not this record's timestamp")
 	}
 	c.FinalArtifact.validate(path+".final_artifact", p)
-	if c.SuccessorManifestID != "" &&
-		(!reProse.MatchString(c.SuccessorManifestID) || len(c.SuccessorManifestID) > maxProse) {
-		p.add(path+".successor_manifest_id", "is not printable single-line text", "")
+	if c.SuccessorManifestID != "" && !reRoundTripID.MatchString(c.SuccessorManifestID) {
+		p.add(path+".successor_manifest_id",
+			fmt.Sprintf("%s is not a usable manifest id", safe(c.SuccessorManifestID)),
+			"use letters, digits, dot, dash, and underscore: this is the pointer a successor "+
+				"auditor follows years from now holding nothing but this record, so it has to be "+
+				"a thing they can type — or omit it, since a transfer out of automat's scope has "+
+				"no successor manifest and inventing one is a false claim of continuity")
 	}
 }
 
@@ -464,9 +482,12 @@ func (s *Signature) validate(path string, p *problems) {
 		p.add(path+".algorithm", fmt.Sprintf("%s is not a signing algorithm", safe(s.Algorithm)),
 			"the set is closed at "+joinAlgorithms())
 	}
-	if s.KeyID == "" || !reProse.MatchString(s.KeyID) {
-		p.add(path+".key_id", fmt.Sprintf("%s is empty or not printable single-line text", safe(s.KeyID)),
-			"a signature nobody can locate a key for is unverifiable in a way that looks verifiable")
+	if s.KeyID == "" || !reRoundTripRef.MatchString(s.KeyID) {
+		p.add(path+".key_id", fmt.Sprintf("%s is empty or not a usable key reference", safe(s.KeyID)),
+			"a signature nobody can locate a key for is unverifiable in a way that looks verifiable; "+
+				"a key id may be an ARN, so colons and slashes are fine, but a key-id mismatch is "+
+				"refused with remediation text telling the operator to supply the key the record "+
+				"names — a value they cannot retype makes that instruction useless")
 	}
 	if !reBase64.MatchString(s.Value) {
 		p.add(path+".value", "is not base64",

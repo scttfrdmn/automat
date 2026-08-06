@@ -398,9 +398,11 @@ tested against the published schema from raw JSON
 (`internal/artifact/evidence_schema_test.go`), each one verified to fire by
 deleting it and confirming the covering case fails.
 
-*(Superseded in part: `internal/evidence` now implements this, and the
-terminality gap named above is enforced in Go. See "The Go implementation of
-evidence-manifest/v1" below.)*
+> **Superseded in part** — see "The Go implementation of evidence-manifest/v1"
+> below. `internal/evidence` now implements this schema, and the terminality gap
+> named in the paragraph above is enforced in Go. The statement stands as written
+> because a changelog records what was said at the time; this marker is here so a
+> reader does not take it at face value.
 
 ## Pre-publication change to three schemas: cosigning and freshness
 
@@ -590,8 +592,13 @@ tested against the published schemas from raw JSON
 (`internal/artifact/cosign_schema_test.go`), each verified to fire by deleting it
 and confirming the covering case fails.
 
-*(Superseded in part: `internal/evidence` now implements the manifest half. See
-below.)*
+> **Superseded in part** — see "The Go implementation of evidence-manifest/v1"
+> below. The manifest half now has Go types, and the Go-side obligation named
+> above ("that an attestation was verified before being recorded in a manifest")
+> is discharged at the writer. Verification, trust-policy loading, and the
+> registry remain unimplemented, so the substance of this paragraph still holds.
+> The statement stands as written; this marker is here so a reader does not take
+> it at face value.
 
 ## Pre-publication change to evidence-manifest/v1: `request_id` is patterned
 
@@ -684,6 +691,54 @@ Writing that test found two divergences, both fixed rather than accepted:
    `schema/` file changed.
 2. `request_id` had no pattern, per the section above.
 
-Both strictly tighten validation, so rule 6 permits them without pre-approval and
-requires them to be ratified. Carried in ROADMAP's Phase 2 AUDIT-2 list until
-`audits/AUDIT-2.md` is written.
+Both strictly tighten validation, so rule 6 permitted them without pre-approval
+and required them to be ratified. **Both ratified at the task #12 review**, and
+the `request_id` reasoning was elevated into a standing rule rather than left as
+a note about one field: **CLAUDE.md rule 8** now requires a character-class
+pattern at both the schema and Go layers on any value automat writes that is
+designed to be read back by a person and typed onto a command line, and the audit
+ritual must *enumerate* those fields rather than spot-check them. The
+generalization is the point — `request_id` survived Phase 0 unpatterned because
+"non-empty string" is what a round-trip field looks like from inside the writer,
+and nothing had asked which fields were round-trip fields.
+
+Carried in ROADMAP's Phase 2 AUDIT-2 list until `audits/AUDIT-2.md` is written,
+so the audit records the decision rather than rediscovering the change.
+
+### The rule 8 sweep, run immediately on this schema
+
+Rule 8 requires audits to *enumerate* round-trip fields rather than spot-check
+them, so the sweep was run on this schema at once instead of being deferred to
+AUDIT-2 — a rule generalized from a finding and then not applied to the file the
+finding came from is a rule that has already failed. It found three more, all
+pre-publication, all strictly tightening, and all now sharing two new `$defs`:
+
+- **`$defs/round_trip_id`** — for identities automat mints. `manifest.id` and
+  `custody_transfer.successor_manifest_id` join `records[].request_id` here. Both
+  were `minLength: 1`. `successor_manifest_id` is the one with the longest fuse:
+  the person who follows that pointer is a successor auditor years later holding
+  nothing but the record, and a pointer they cannot type is not a pointer.
+- **`$defs/round_trip_ref`** — for identities automat does **not** mint and so
+  cannot reduce to a plain id. `signature.key_id` was `minLength: 1` and may be a
+  KMS key ARN or an alias, so it needs colons and slashes. It is also the field
+  with the sharpest claim on rule 8: a key-id mismatch is *refused* rather than
+  reported as a bad signature, and the refusal text tells the operator to supply
+  the key the record names — automat has actively instructed a person to retype
+  this value, which makes an untypeable one a defect in the remediation, not in
+  the field.
+
+The two `$defs` are separate because collapsing them would force a choice between
+rejecting every ARN and admitting whitespace. `round_trip_ref` is bounded at 256
+rather than the 2048 an ARN may formally reach: Go's regexp engine caps a repeat
+count at 1000, and **a bound the Go validator cannot express is one this schema
+must not express either** — rule 8 is only meaningful if both layers state the
+same thing, so the tighter, mutually expressible bound wins over the formally
+correct one. Every real key reference clears it with room to spare.
+
+Both directions are pinned by `evidence.TestGoAndSchemaAgreeOnRejection`, and the
+accept side keeps a KMS key ARN and a bare `alias/...` valid so the distinction
+between the two `$defs` cannot be quietly collapsed later.
+
+One rule 7 defect surfaced in the same pass and is fixed: the Go validator's
+`successor_manifest_id` problem carried an **empty `Fix` string** — a validation
+failure with nowhere to go, which rule 7 exists to forbid.

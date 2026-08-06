@@ -28,19 +28,32 @@ validation land without pre-approval, and requires it to be ratified. This is th
 list AUDIT-2 must work through; each item names where the reasoning lives, so the
 audit records a decision rather than rediscovering the change.
 
-- **`evidence-manifest/v1`: `records[].request_id` gained a pattern**
-  (`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`, previously `minLength: 1` only).
-  Pre-publication, so no version bump; after publication it would be a major one.
-  It is the single field in a record a human copies back onto a command line as
-  `vend --resume <request-id>`, which is why it is worth narrowing rather than
-  tidying. Reasoning in `schema/CHANGELOG.md`.
-- **The Go enforcement-set validator was tightened to match the published schema.**
-  `Enforcement.validate` checked only `scp_arns` for empty members and none of the
-  five arrays for duplicates, while the schema has declared `uniqueItems` and
-  `minLength: 1` on all of them since Phase 0. No `schema/` file changed. Found by
-  reading the schema in full while writing
-  `internal/evidence/schema_conformance_test.go` — i.e. by the test's preparation
-  rather than by the test.
+- **RATIFIED at the task #12 review — `evidence-manifest/v1`:
+  `records[].request_id` gained a pattern** (`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`,
+  previously `minLength: 1` only). Pre-publication, so no version bump; after
+  publication it would be a major one. It is the single field in a record a human
+  copies back onto a command line as `vend --resume <request-id>`, which is why it
+  is worth narrowing rather than tidying. Reasoning in `schema/CHANGELOG.md`. The
+  reasoning generalizes and is now **CLAUDE.md rule 8**; AUDIT-2 must run rule 8's
+  enumeration sweep over every round-trip field, not merely confirm this one.
+- **RATIFIED at the task #12 review — the Go enforcement-set validator was
+  tightened to match the published schema.** `Enforcement.validate` checked only
+  `scp_arns` for empty members and none of the five arrays for duplicates, while
+  the schema has declared `uniqueItems` and `minLength: 1` on all of them since
+  Phase 0. No `schema/` file changed. Found by reading the schema in full while
+  writing `internal/evidence/schema_conformance_test.go` — i.e. by the test's
+  preparation rather than by the test. Ratified on the reasoning that "three SCPs
+  attached" and "two SCPs, one listed twice" are different claims to someone
+  counting them.
+- **RATIFIED at the task #12 review — three more round-trip fields patterned under
+  the new rule 8.** `manifest.id`, `custody_transfer.successor_manifest_id`, and
+  `signature.key_id` were all `minLength: 1`; they now share `$defs/round_trip_id`
+  and `$defs/round_trip_ref`. Found by running rule 8's enumeration sweep on the
+  schema the rule was generalized *from*, rather than deferring it — a rule not
+  applied to its own source file has already failed. Reasoning in
+  `schema/CHANGELOG.md`. AUDIT-2 still owes the sweep over the other three
+  schemas and over what the CLI and error paths print, since a field becomes a
+  round-trip field the moment a remediation message tells someone to type it.
 - **substrate#577** (root has no stable identity) as evidence the emulator probe
   paid for itself independent of the migration decision. See Phase 3 below.
 

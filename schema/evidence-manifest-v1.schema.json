@@ -20,8 +20,7 @@
       "properties": {
         "id": {
           "description": "Manifest identity. Per-account manifests use the account id.",
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/round_trip_id"
         },
         "account_id": { "$ref": "#/$defs/account_id" },
         "organization_id": { "type": "string", "pattern": "^o-[a-z0-9]{10,32}$" },
@@ -62,6 +61,18 @@
       "minLength": 1,
       "maxLength": 1024,
       "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+
+    "round_trip_id": {
+      "description": "An identity automat WRITES that a person is expected to read back and type — onto a command line, into a ticket, into a search box. Narrower than prose on purpose, and the reason is not injection: argument construction is the CLI's problem and stays there. This refuses to RECORD a value whose whole purpose is to travel through human hands into a shell. Two failure modes and the duller one is not the lesser: a value carrying a quote or a metacharacter is a record that suggests a different command than the one it appears to, and a value carrying whitespace cannot be selected by double-click, so the operator retypes it and gets it wrong. Used by manifest.id, records[].request_id, and custody_transfer.successor_manifest_id.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+    },
+
+    "round_trip_ref": {
+      "description": "Same concern as round_trip_id, for identities automat does not mint and so cannot constrain to a plain id: an ARN, a KMS key id, a path-like reference. Admits the punctuation those forms actually require (colon, slash, plus, equals, at) and no more — in particular no whitespace, quote, backtick, dollar, semicolon, pipe, ampersand, or angle bracket. A KMS key ARN must round-trip through a `--key` flag unmangled; a value that could end a shell word must not. Bounded at 256 rather than the 2048 an ARN may formally reach, because Go's regexp engine caps a repeat count at 1000 and a bound the Go validator cannot express is one this schema must not express either — rule 8 is only meaningful if both layers state the same thing. 256 clears every real key reference with room to spare.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/+=@-]{0,255}$"
     },
 
     "profile_reference": {
@@ -144,9 +155,8 @@
           }
         },
         "successor_manifest_id": {
-          "description": "Identity of the manifest that continues the record, when the successor keeps one. Optional: a transfer out of automat's scope entirely has no successor manifest, and inventing one would be a false claim of continuity.",
-          "type": "string",
-          "minLength": 1
+          "description": "Identity of the manifest that continues the record, when the successor keeps one. Optional: a transfer out of automat's scope entirely has no successor manifest, and inventing one would be a false claim of continuity. The round-trip field with the longest fuse: the person who follows this pointer is a successor auditor years later, holding nothing but this record.",
+          "$ref": "#/$defs/round_trip_id"
         }
       }
     },
@@ -207,9 +217,8 @@
           }
         },
         "request_id": {
-          "description": "Vend request id. Ties records from a resumed run to the original request (DESIGN 7). Patterned like every other id in this schema, and for a sharper reason: this is the one value in a record that a human copies back onto a command line as `vend --resume <request-id>`. A request id containing a space, a quote, or a shell metacharacter is a record that invites the operator to mistype a command against their own organization, and one containing whitespace alone is a record whose id cannot be selected by double-click.",
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+          "description": "Vend request id. Ties records from a resumed run to the original request (DESIGN 7). The original round-trip field, and still the clearest case: a parked record exists precisely so an operator can read it weeks later and re-run `automat vend --resume <request-id>`.",
+          "$ref": "#/$defs/round_trip_id"
         },
         "target": {
           "type": "object",
@@ -310,7 +319,10 @@
               "type": "string",
               "enum": ["ed25519", "aws-kms-rsassa-pss-sha-256", "aws-kms-ecdsa-sha-256"]
             },
-            "key_id": { "type": "string", "minLength": 1 },
+            "key_id": {
+              "description": "The key the record was signed by. A round-trip reference rather than a plain id because it may be a KMS key ARN, and because a key-id mismatch is REFUSED rather than reported as a bad signature — the remediation text tells the operator to supply the key the record names, so this value is one automat has actively asked a person to retype.",
+              "$ref": "#/$defs/round_trip_ref"
+            },
             "value": {
               "description": "Base64-encoded signature bytes.",
               "type": "string",
