@@ -9,48 +9,18 @@ Read `DESIGN.md` first; it is the source of truth. `ROADMAP.md` sequences the wo
 - License: Apache-2.0 (add LICENSE + SPDX headers).
 - CLI: `spf13/cobra` + `viper`-free config (plain TOML via `BurntSushi/toml`); keep the dependency tree small and boring.
 - AWS: `aws-sdk-go-v2` only. All AWS calls go through narrow, hand-written interfaces (one per service concern: `OrgAPI`, `STSAPI`, `ConfigAPI`, `AccountAPI`, `IAMAPI`) so everything is testable with fakes. No mocking frameworks; hand-rolled fakes in `internal/awsfake`.
-- **The `aws-sdk-go-v2` module family is pre-approved** — the core module, `config`, `credentials`, and any per-service module (`service/organizations`, `service/iam`, …). Ratified at the AUDIT-1 review so the "ask before adding a dependency" rule does not recur once per service. `config` in particular *is* DESIGN §13's credential chain; hand-rolling credential resolution to avoid the import would be strictly worse security. Every new service module still needs its own narrow interface and fake per the rule above, and still gets a dependency-review line in the phase audit.
-
-## Testing against AWS: two tools, neither replacing the other
-
-`internal/awsfake` and an AWS emulator test different things, and a package moves to
-the emulator only when the emulator can express what that package's tests actually
-assert.
-
-**The fakes test automat's REACTION to adversarial state transitions.** `OrgState`'s
-`Before` hook exists because ensure semantics must survive the organization moving
-underneath a call that has already been decided on — read-first-and-tolerate is
-built entirely on that TOCTOU window (docs/open-questions.md Q12). Expressing it
-requires a call to **succeed** against state that changed mid-flight. A fault
-controller that fails calls cannot host those tests; failing a call is the one thing
-the window is not.
-
-**The emulator tests that automat's REQUESTS are well-formed and IAM-enforced**
-against a real authorization path — that a policy document is accepted, that a
-condition key actually gates the call, that a trust policy admits the principal
-automat assumes. Hand-rolled fakes say yes because they were written to say yes.
-
-Keep both. Do not migrate a package to the emulator because the emulator exists;
-migrate when its tests' subject is expressible there, and say in the commit which
-of the two things the moved tests were testing.
-
-**Emulator integration lives in a SEPARATE GO MODULE** (`test/integration/go.mod`),
-run from its own make target and never from the default `make test` gate. Not a
-style preference: a dependency's `go` directive floor propagates to everyone who
-runs `go install` on the main module, regardless of which files import it — so
-test-only *in intent* is not test-only *in effect* within one module. automat's
-floor stays at 1.24 and the emulator stays out of automat's dependency graph.
+- **The `aws-sdk-go-v2` module family is pre-approved** — core, `config`, `credentials`, and any per-service module. Ratified at AUDIT-1 so the "ask before adding a dependency" rule does not recur once per service. Every new service module still needs its own narrow interface and fake, and a dependency-review line in the phase audit.
 
 ## Hard rules
 
-1. **Never call real AWS in tests or CI.** Unit + fake-based tests only. Provide a separate `make smoke` target (documented, manual, requires explicit `AUTOMAT_SMOKE_PROFILE`) for live testing; it must be read-only except in an explicitly named sandbox org. An emulator is not real AWS and is not covered by this rule — see the section above for where it may run.
+1. **Never call real AWS in tests or CI.** Unit + fake-based tests only. `make smoke` (documented, manual, requires explicit `AUTOMAT_SMOKE_PROFILE`) is for live testing; read-only except in an explicitly named sandbox org. An emulator is not real AWS and is not covered by this rule — see `docs/testing-strategy.md`.
 2. **The load-bearing AWS facts in DESIGN.md §3 are constraints, not suggestions.** If SDK behavior seems to contradict one, surface it in the PR description rather than coding around it.
 3. **No product/vendor references** other than AWS anywhere in code, docs, schema, tags, or CLI output (DESIGN.md §15).
 4. **Idempotency everywhere.** Every mutating command must be safely re-runnable; `vend` is resumable by request id. Prefer "ensure" semantics (create-or-verify) over "create".
 5. **Destructive operations** (anything that closes accounts, detaches policies, deletes) require `--yes` and print a plan first. Phase 5 concern mostly, but the plumbing (plan/apply split) should exist from Phase 2.
-6. **Schema stability:** `schema/` files are versioned contracts. Any change to a published schema bumps the version and adds a migration note in `schema/CHANGELOG.md`. Audit-driven changes that **strictly tighten** validation may be made without pre-approval, but must be listed in the audit file for ratification. Anything that loosens or restructures still requires asking first.
-7. Errors are values with remediation text: every permission failure must say *which* action, *which* resource, and *what grant would fix it* — that reporting is a headline feature, not logging.
-8. **Round-trip fields carry a character-class pattern at both layers.** Any value automat *writes* that is designed to be read back by a person and typed onto a command line — request ids, account aliases, OU names, profile ids, resume tokens — must be patterned in the JSON Schema **and** in the Go validator. This is **not injection prevention**: argument construction remains the CLI's problem and stays there. It is refusing to *record* a value whose whole purpose is to travel through human hands into a shell. Two failure modes, and the duller one is not the lesser: a value carrying a quote or a metacharacter is a record that suggests a different command than the one it appears to, and a value carrying whitespace cannot be selected by double-click, so the operator retypes it and gets it wrong. Generalized from the `request_id` finding in task #12 (`schema/CHANGELOG.md`), where the field was the only id in the manifest without a pattern precisely because "non-empty string" is what it looks like from inside the writer.
+6. **Schema stability:** `schema/` files are versioned contracts. Any change bumps the version and adds a migration note in `schema/CHANGELOG.md`. Audit-driven changes that **strictly tighten** validation may be made without pre-approval, but must be listed in the audit file for ratification. Anything that loosens or restructures still requires asking first.
+7. **Errors are values with remediation text:** every permission failure must say *which* action, *which* resource, and *what grant would fix it* — that reporting is a headline feature, not logging.
+8. **Round-trip fields carry a character-class pattern at both layers.** Any value automat *writes* that is designed to be read back by a person and typed onto a command line — request ids, account aliases, OU names, profile ids, resume tokens — must be patterned in the JSON Schema **and** in the Go validator. This is **not injection prevention**: argument construction remains the CLI's problem and stays there. It is refusing to *record* a value whose whole purpose is to travel through human hands into a shell. Two failure modes, and the duller one is not the lesser: a value carrying a quote or metacharacter is a record that suggests a different command than the one it appears to, and a value carrying whitespace cannot be selected by double-click, so the operator retypes it and gets it wrong.
 
 ## Quality bar
 
@@ -59,24 +29,18 @@ floor stays at 1.24 and the emulator stays out of automat's dependency graph.
 - Golden-file tests for: onboarding bundle output, compiled artifacts, evidence manifests, SCP packer output.
 - Every package has a doc comment explaining its role in the vend pipeline.
 - `make build test lint` green before any commit. Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
+- Testing strategy — fakes vs. emulator, and which tests belong where: `docs/testing-strategy.md`.
 
 ## Security audit ritual
 
-At the end of every phase, and before any tagged milestone, perform an adversarial self-audit in the persona of a hostile, unimpressible security auditor reviewing this codebase for the first time. The auditor assumes: all user input is attacker-controlled (account names, emails, OU ids, catalog files, config), the operator will be phished, the network is unreliable, and every claim in the docs is false until traced to code. Scope each audit to at least:
+At the end of every phase, and before any tagged milestone, perform an adversarial
+self-audit as a hostile, unimpressible security auditor. Output `audits/AUDIT-<phase>.md`
+with findings ranked critical/high/medium/low/nit, each FIXED (with commit) or ACCEPTED
+(with a written reason). No finding may be dismissed without one.
 
-- Every IAM policy string and template: least privilege, missing conditions, confused-deputy paths, ExternalId handling.
-- **Tag-based authorization, both directions.** Every `aws:ResourceTag` / `aws:RequestTag` condition must be paired with an audit of which principals can *write* that tag at the same scope. **Wherever tag-reading gates access, tag-writing is a privilege boundary.** A condition that reads a tag any grant in the same bundle can apply is not a condition. Audit the pair even when the two halves live in different files or different templates — AUDIT-1's C1 was exactly this defect, and each half was unremarkable alone. State the invariant as a test, not as a paragraph: enumerate the keys the policies read and assert no grant can write one.
-- Injection surfaces: any user-supplied value that reaches a template (CFN/TF/JSON/markdown), a shell, a path, or an ARN.
-- **Round-trip fields, enumerated rather than spot-checked (rule 8).** List every value automat writes that a person is expected to read back and type — request ids, account aliases, OU names, profile ids, resume tokens, anything a remediation string tells the operator to retype — and confirm each is patterned in both the schema and the Go validator. Enumeration is the point: the failure mode is a field nobody classified as a round-trip field, which is how `request_id` survived Phase 0 unpatterned while every other id in the same file had a pattern. A field newly *printed* in a remediation message becomes a round-trip field at that moment even though its schema did not change, so the sweep runs over what the CLI and error paths emit, not only over `schema/`.
-- TOCTOU between preflight checks and mutating actions.
-- Error and log paths: credential/ARN/email leakage.
-- The evidence chain: canonicalization ambiguity, hash inputs, signature coverage, whether a record can be silently replaced.
-- The SCP packer (once it exists): can any merge WIDEN permissions.
-- **Every obligation profile's citations and effective dates, re-verified against the primary source.** Confirm every claim automat renders into a human-facing document traces to a hashed source. **A stale legal citation is a finding, ranked no lower than medium** — it is not a documentation nit. A profile is a reading of policy that an institution acts on, and policy moves: notices are superseded, phase-in dates arrive, a class deviation pinning a revision expires. The failure mode is silent and confident, since a superseded citation renders exactly as well as a current one. Also confirm the policy caveat still appears where `docs/policy-caveat.md` requires it, and that the understatement asymmetry still holds across the whole profile set rather than per profile.
-- gosec + dependency review, with every finding triaged in writing.
-- **The CLI surface against DESIGN §13.** List the flags each command actually has and reconcile them with §13. A flag §13 does not enumerate is an addition and fine; a flag that *contradicts* §13 — or a §13 command whose implemented behavior differs — is its own line item in the audit, not a footnote. Ratified at the AUDIT-1 review on this condition.
-
-Output: `audits/AUDIT-<phase>.md` — findings ranked critical/high/medium/low/nit, each resolved as FIXED (with commit) or ACCEPTED (with a reason a crabby auditor would begrudgingly sign). No finding may be dismissed without a written reason. The audit file is committed; the human reviews ACCEPTED items.
+**Full scope and the reasoning behind each item: `docs/audit-ritual.md`.** Read it before
+starting an audit — the tag-authorization, round-trip-field, and citation-re-verification
+items each exist because something got missed once.
 
 ## Layout
 
