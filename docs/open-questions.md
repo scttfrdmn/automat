@@ -755,3 +755,39 @@ is a corroboration, not a proof: an account coinciding on both the address and t
 still adopted. `TestVendWillNotAdoptAnAccountItWasNotAskedToVend` asserts both halves,
 including the still-adopted case, so the check cannot be read as the guarantee this
 question is about.
+
+### Q20 — what does real IAM do with a control character in an ARN inside an attached SCP?
+
+AUDIT-2's accepted finding L4. An adversarial pass constructed a resource ARN carrying a
+`\u0001` byte and asked what happens when a policy containing it is *attached* to an OU.
+Three outcomes are all plausible and they differ in the direction that matters:
+
+1. `AttachPolicy` refuses the document, and the vend fails loudly at a point where the plan
+   has already printed. Fine.
+2. The document attaches and the byte is preserved literally, so the statement matches
+   nothing and a guard silently does not apply — a Deny that never fires reads in the console
+   exactly like one that does.
+3. The document attaches and something normalizes or strips the byte, so the statement
+   matches something **other** than what the catalog wrote.
+
+Only (1) is safe, (2) and (3) are both silent, and no fake can tell them apart: `awsfake`
+answers whatever it was written to answer, which would be my guess about IAM rather than IAM.
+CLAUDE.md rule 1 forbids finding out in CI, and a live answer needs an org where attaching a
+deliberately malformed policy is acceptable — the sandbox `make smoke` names.
+
+**Not currently reachable through automat.** Rule 8's character-class patterns refuse the
+value at both the JSON Schema and the Go validator, so no automat-authored path produces such
+an ARN. What is unverified is what would happen if one arrived another way: a hand-edited
+catalog loaded with `SkipValidate`, or a future artifact field that grows a resource list
+without inheriting the pattern.
+
+**Why it is not fixed rather than asked.** The only available fix is to guess IAM's behavior
+and code to the guess, and a guess wearing a defense's clothing is worse than the open
+question — it would be indistinguishable from a verified control to the next reader. So this
+follows CLAUDE.md's working-style rule: note the uncertainty, keep the validator, keep going.
+
+**A second, related item parked here rather than in its own question.** Nothing shipped today
+can point `internal/catalog.Options.FS` at an attacker-controlled tree — every caller passes
+the embedded FS. If **vendored-only is load-bearing** rather than incidental, it should be
+written down as a control with a test, not left as a property of the current call sites. A
+field whose safety depends on who happens to call it is one refactor from not being safe.
