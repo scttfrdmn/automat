@@ -3,19 +3,19 @@
   "artifact": {
     "id": "baseline-protection",
     "title": "automat baseline protection",
-    "description": "The controls that protect automat's own baseline in a vended account: the configuration recorder, the delivery channel, the conformance pack, the trail, the account's membership in its organization, the two baseline roles, and the root user. Attached at the OU with every vend (DESIGN §10). Extend it rather than replacing it: every entry is data.",
+    "description": "The controls that protect automat's own baseline in a vended account: the configuration recorder, the delivery channel, the conformance pack, the trail, the account's membership in its organization, the two baseline roles, and the root user. Attached at the OU with every vend (DESIGN §10). Extend it rather than replacing it: every entry is data. This control set also supplies the artifact's region_deny_exempt_services list, which is the services a region Deny must not cover. These service namespaces answer on endpoints AWS reports as us-east-1, so a Deny on every action outside a region allowlist denies every call to them from anywhere — including the IAM, STS, and Organizations calls automat itself makes to build the baseline, and including the calls an operator would make to undo a mistake. AWS's own region-restriction guidance carries this exemption list for the same reason. The list lives HERE, as data automat's own always-attached control set supplies, rather than compiled into the binary: a list only the binary knows is a control whose scope cannot be reviewed and cannot be corrected without a release, and this one bricks accounts when wrong. It is INTERSECTED under union, which is forced rather than chosen — a Deny over NotAction[a] concatenated with a Deny over NotAction[b] denies everything except a and b's intersection.",
     "sources": [
       {
         "catalog": "automat baseline-protection meta-control",
         "version": "1",
         "retrieved_at": "2026-08-05T00:00:00Z",
         "uri": "DESIGN.md#10-baseline-protection-meta-control",
-        "sha256": "0412f8416fff7283e918ccbd69af0fccbb16abbc567710a1bcd6897ff5875ab1",
+        "sha256": "be35843f8e274ef90955d741ab7dd892ae399c03401f82f1ff04d45c5b05d864",
         "note": "automat's own control set, specified by DESIGN.md §10. There is no upstream publication to hash: the sha256 is of the curated source file baseline-protection.json, and DESIGN.md §10 is version-controlled in this repository. Every control names the bullet it implements, and any action the design does not enumerate must say why it is present."
       }
     ],
     "compiled_at": "2026-08-05T00:00:00Z",
-    "content_sha256": "010c37fd11f8580116d7e13c5c78d777961468b216d9aa68db2ce568232d044c"
+    "content_sha256": "142f22fd68b538ca05400b527a523618fe3b40896e7441d1622cf873b86d361f"
   },
   "controls": [
     {
@@ -215,5 +215,33 @@
         ]
       }
     }
+  ],
+  "region_deny_exempt_services": [
+    "access-analyzer",
+    "account",
+    "acm",
+    "aws-marketplace",
+    "aws-portal",
+    "budgets",
+    "ce",
+    "cloudfront",
+    "config",
+    "cur",
+    "directconnect",
+    "globalaccelerator",
+    "health",
+    "iam",
+    "kms",
+    "networkmanager",
+    "organizations",
+    "pricing",
+    "route53",
+    "route53domains",
+    "shield",
+    "sts",
+    "support",
+    "trustedadvisor",
+    "waf",
+    "wellarchitected"
   ]
 }

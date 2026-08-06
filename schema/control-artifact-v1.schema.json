@@ -33,7 +33,10 @@
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
         },
-        "content_sha256": { "$ref": "#/$defs/sha256" }
+        "content_sha256": {
+          "description": "SHA-256 over the canonicalized CONTENT PAYLOAD: the object {controls, region_deny_exempt_services}, not the controls[] array alone. Both members are semantic — region_deny_exempt_services names the service namespaces a region or service Deny must spare, so an edit adding one widens a hole in that Deny — and a hash covering only controls[] would leave that field unhashed and every signature over the artifact silent about it. Excluded from the payload: schema_version, and the artifact block itself (which carries this value, and whose sources entries are each vouched for by their own sha256). internal/artifact enumerates the covered and excluded field names so that adding a field to the artifact fails the build until its hash coverage is decided.",
+          "$ref": "#/$defs/sha256"
+        }
       }
     },
 
@@ -41,6 +44,14 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/control" }
+    },
+
+    "region_deny_exempt_services": {
+      "description": "The service namespaces a REGION Deny must not cover, as DATA rather than a list compiled into the tool.\n\nGlobally addressed services are reached through endpoints AWS reports as us-east-1, so a Deny on every action outside a region allowlist denies every IAM call, every STS call, and every Organizations call in the account — including the operator's own ability to undo it. Getting this list wrong bricks an account, which is precisely the argument for it being reviewable catalog content: the same argument `exempt_principals` rests on. A list only the binary knows is a control whose scope cannot be reviewed, and cannot be corrected without a release.\n\nARTIFACT-LEVEL rather than per control, and not for tidiness. Its scope IS the artifact: two controls in one document carrying different lists would have no coherent meaning, and a control-level field also made this an `scp` block on a control that denies nothing, which a `baseline-protection` control is not allowed to be. An AWS fact about which endpoints answer where is not a Deny and must not be shaped like one.\n\nINTERSECTED under union, and that is forced rather than chosen. A `Deny` over `NotAction: [a:*]` concatenated with a `Deny` over `NotAction: [b:*]` denies everything except the INTERSECTION, so a merge that unioned these lists would describe something the rendered policy does not do. The consequence is that the list only ever shrinks as control sets merge, and an intersection reaching empty is a hard error at plan time rather than an attached deny-all.\n\nDeliberately NOT required alongside `region_allowlist`: the control set stating an AWS fact need not be the one restricting regions — automat's own `baseline-protection` supplies this list and constrains no regions. The pairing is a PLAN-TIME invariant instead. If any compiled input constrains regions and none supplies this list, the packer refuses to render rather than falling back to a built-in, because a fallback is the compiled-in list with extra steps.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9-]+$" }
     }
   },
 

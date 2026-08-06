@@ -34,6 +34,11 @@ Notes on choices that constrain future changes:
   `exempt_automation_role: true|false`.
 - `compiled_at` and all timestamps are constrained to second-precision UTC with
   a `Z` suffix. Sub-second or offset forms would break deterministic hashing.
+- `content_sha256` covers a canonicalized **content payload** object, not
+  `controls[]` alone. DESIGN.md §8 said `controls[]` and this section originally
+  said nothing at all; see "Pre-publication change to control-artifact/v1: the
+  content hash covers a payload" below for what the payload is and why leaving the
+  definition implicit was the defect.
 
 ### Pre-publication changes to 1.0.0
 
@@ -796,3 +801,108 @@ diff is exactly the rename: the field name, then the `record_sha256`,
 which is what the golden file exists to make visible. Canonicalization itself did
 not change, so this is not the release-note-breaks-every-manifest-on-disk case that
 test's failure message warns about; there are no manifests on disk to break.
+
+## Pre-publication change to control-artifact/v1: `region_deny_exempt_services`, and the content hash covers a payload
+
+Landed with E1–E7 (Phase 2), before publication, so there is **no version bump** —
+nothing has consumed a 1.0.0 artifact. After publication the new field would be a
+**minor** bump on its own (a new optional property), but the hash-definition change
+would be **major**: it changes what `content_sha256` means, so a consumer computing
+the old hash would reject every artifact automat writes.
+
+**Directed by the maintainer** as part of E1/E3: the global-service exemption list
+is catalog data, never compiled into the binary. The hash restructuring is not part
+of that direction — it fell out of it, and it **restructures rather than strictly
+tightens**, which under CLAUDE.md rule 6 makes it something to surface rather than
+assume. It is recorded here for ratification with the reasoning below; the
+alternative was an unhashed security-relevant field, which was not a real option.
+
+### The new field
+
+`region_deny_exempt_services` — a **top-level** array (sibling of `schema_version`,
+`artifact`, `controls`), `minItems: 1`, `uniqueItems: true`, entries matching
+`^[a-z0-9-]+$`. It names the globally addressed service namespaces (IAM, STS,
+Organizations, Route 53, Support, billing, Health, …) that a region or service
+allowlist Deny must not cover.
+
+**Data, not code**, for the same reason `exempt_principals` is: getting this list
+wrong bricks an account, and a list only the binary knows is a control whose scope
+cannot be reviewed or corrected without a release. The packer therefore has **no
+fallback** — a fallback is the compiled-in list with extra steps, and it would
+silently paper over a control set that forgot to state the fact.
+
+**Top-level rather than per control**, and this was decided by a test rather than by
+taste. Three reasons, in the order they became apparent:
+
+1. On a control it made an SCP block that carries no statement. An exemption list
+   prevents nothing, and `TestEveryBaselineControlIsBaselineProtectionClass`
+   rejected the synthetic control that held it with "carries no SCP statement, so it
+   prevents nothing" — which is the right answer.
+2. Its scope *is* the artifact. Two controls in one document carrying different
+   lists would have no coherent reading.
+3. It is not required alongside `region_allowlist`, and cannot be: the control set
+   stating the AWS fact need not be the one restricting regions. `baseline-protection`
+   supplies the list and constrains no regions. The pairing is therefore a
+   **plan-time** invariant in `internal/compilesets`, not a schema one.
+
+Under union it **intersects**, which is forced rather than chosen: a Deny over
+`NotAction: [a:*]` alongside a Deny over `NotAction: [b:*]` denies everything except
+what both spare, so a merge that unioned the lists would describe something the
+rendered policy does not do. `nil` and empty mean different failures at plan time —
+nothing supplied a list, versus two inputs supplied lists that agree on nothing —
+and both are refused with messages naming the inputs. Those messages are
+golden-tested under `internal/compilesets/testdata/refusals/`, because in the case
+they cover the message is the whole of what automat delivers.
+
+### The hash now covers a payload
+
+`content_sha256` was defined (DESIGN.md §8) as the hash of canonicalized
+`controls[]`. A top-level field beside `controls` would have sat **outside** it.
+
+That is not a tidiness problem. This is the one field in the artifact whose
+corruption both bricks an account and silently widens a Deny: an edit adding `s3` to
+the list opens `s3:*` in every region the allowlist excludes, and under the old
+definition it would have passed `VerifyContentHash` and every signature over the
+artifact unremarked. So the hash input is now an explicit object:
+
+```jsonc
+{ "controls": [...], "region_deny_exempt_services": [...] }   // omitted when absent
+```
+
+Excluded: `schema_version`, and the whole `artifact` block — which carries the hash
+itself, and whose `sources[]` entries are each vouched for by their own `sha256`.
+`internal/artifact` names both groups (`HashCoveredFields`, `HashExcludedFields`) and
+a reflection test requires every field of `Artifact` to appear in exactly one, so
+adding a field is now a **decision about hash coverage that fails the build until it
+is written down**. That mechanism is the actual fix; the payload object is just this
+instance of it.
+
+**Every artifact hash moved**, including `cmmc-l1`'s, which gained no field — the
+payload is a wrapping object where it used to be a bare array. Both vendored
+catalogs were regenerated and `TestContentHashIsStable`'s pin was updated with the
+reason. This cost nothing, because nothing is published and no catalog has shipped;
+the same change after publication would have been a migration.
+
+The hash does **not** distinguish an empty `region_deny_exempt_services` from an
+absent one (`omitempty` collapses them), and that is deliberate: no valid document
+can carry `[]`, since both `minItems: 1` and the Go validator reject it. Two earlier
+attempts to preserve the distinction in the payload were reverted. The place that
+must not launder empty into absent is **canonicalization**, which runs before
+`Write` validates — hence `sortedUniqueKeepEmpty` there, and
+`TestCanonicalizeKeepsAnEmptyExemptListDistinguishableFromAbsent`.
+
+### Both validators, both directions
+
+The Go validator enforces the pattern, `uniqueItems`, and the present-but-empty
+rejection; `TestGoAndSchemaAgreeOnRejection` pins the pair. Two gaps surfaced in
+writing it, and both were real rather than fixture artifacts on inspection:
+
+- **`uniqueItems` was missing from the Go validator.** Added. "Three namespaces
+  exempted" and "two namespaces, one listed twice" are different claims to someone
+  counting them — the same reasoning the maintainer ratified for the enforcement
+  sets.
+- **The present-but-empty case could not be expressed in the shared table**, which
+  marshals a Go struct and so drops `[]` before the schema ever sees it. Moved to
+  `TestBothValidatorsRejectAnEmptyExemptListOnDisk`, which feeds both validators the
+  on-disk form directly. This one *was* a fixture limitation, and the fix was a
+  better fixture rather than a weaker claim.

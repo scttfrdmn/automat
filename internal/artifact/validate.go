@@ -135,6 +135,7 @@ func (a *Artifact) Validate() error {
 
 	a.Meta.validate(&p)
 	a.Controls.validate(&p)
+	a.validateRegionDenyExemptServices(&p)
 
 	if len(p.list) == 0 {
 		return nil
@@ -144,6 +145,46 @@ func (a *Artifact) Validate() error {
 		subject = "control artifact " + safe(a.Meta.ID)
 	}
 	return &ValidationError{Subject: subject, Problems: p.list}
+}
+
+// validateRegionDenyExemptServices checks the artifact-level global-service
+// exemption list.
+//
+// The list is optional — most artifacts state no AWS endpoint facts — but an
+// entry that does not name a real service namespace silently exempts nothing,
+// which is the failure mode that bricks an account: the operator reads the
+// catalog, sees `iam` misspelled as `Iam`, and the rendered Deny covers IAM
+// after all.
+func (a *Artifact) validateRegionDenyExemptServices(p *problems) {
+	if a.RegionDenyExemptServices == nil {
+		return
+	}
+	if len(a.RegionDenyExemptServices) == 0 {
+		p.add("region_deny_exempt_services", "present but empty",
+			"omit the field entirely, or list at least one service namespace; an empty list and an "+
+				"absent one mean different things to the packer — absent says this artifact states no "+
+				"endpoint facts, empty would claim no service is globally addressed")
+	}
+	seen := make(map[string]bool, len(a.RegionDenyExemptServices))
+	for i, sv := range a.RegionDenyExemptServices {
+		if !reService.MatchString(sv) {
+			p.add(fmt.Sprintf("region_deny_exempt_services[%d]", i),
+				fmt.Sprintf("%q is not a service namespace", sv),
+				"use IAM service namespaces like iam, sts, or organizations; this list is what a region "+
+					"Deny must not cover, so an entry that does not name a real service silently exempts nothing")
+		}
+		// uniqueItems, matching the published schema. Canonicalize dedupes, so a
+		// duplicate reaches here only from a hand-edited file — which is the
+		// document the schema is a contract for. Two spellings of one list must not
+		// be two claims about which services a region Deny leaves alone.
+		if seen[sv] {
+			p.add(fmt.Sprintf("region_deny_exempt_services[%d]", i),
+				fmt.Sprintf("duplicate entry %s", safe(sv)),
+				"list each service namespace once; a repeated entry exempts nothing extra and makes the "+
+					"list disagree with itself about how many services are globally addressed")
+		}
+		seen[sv] = true
+	}
 }
 
 func majorOf(semver string) string {
@@ -299,7 +340,7 @@ func (c *Control) validate(p *problems, path string) {
 }
 
 func (s *SCP) validate(p *problems, path string) {
-	if len(s.Statements) == 0 && len(s.RegionAllowlist) == 0 && len(s.ServiceAllowlist) == 0 {
+	if s.isEmpty() {
 		p.add(path, "has no statements and no allowlists",
 			"add at least one statement, region_allowlist, or service_allowlist")
 	}

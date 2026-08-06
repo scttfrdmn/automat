@@ -5,9 +5,89 @@ package artifact
 
 import (
 	"encoding/json"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
+
+// TestEveryArtifactFieldIsClassifiedForHashCoverage is the test that makes
+// forgetting a hash-coverage decision a build failure.
+//
+// Adding a field to Artifact is a decision about whether the content hash covers
+// it, and the failure mode of getting it wrong is silent: the field exists, the
+// document validates, signatures verify, and an edit to the field changes what a
+// vended account permits without changing any hash that anyone checks. That is
+// how region_deny_exempt_services nearly landed outside the hash — the one field
+// in the artifact that decides whether a region Deny covers IAM.
+//
+// So: every exported field of Artifact must appear in exactly one of
+// HashCoveredFields or HashExcludedFields, and each name in HashCoveredFields
+// must be a real field on both Artifact and the content payload. A new field
+// fails here until someone writes down which it is and why.
+func TestEveryArtifactFieldIsClassifiedForHashCoverage(t *testing.T) {
+	fieldNames := func(v any) []string {
+		typ := reflect.TypeOf(v)
+		out := make([]string, 0, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			if f := typ.Field(i); f.IsExported() {
+				out = append(out, f.Name)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	classified := make(map[string]string, len(HashCoveredFields)+len(HashExcludedFields))
+	for _, n := range HashCoveredFields {
+		classified[n] = "covered"
+	}
+	for _, n := range HashExcludedFields {
+		if prior, dup := classified[n]; dup {
+			t.Errorf("field %q is listed as both %s and excluded; it is one or the other", n, prior)
+		}
+		classified[n] = "excluded"
+	}
+
+	for _, name := range fieldNames(Artifact{}) {
+		if _, ok := classified[name]; !ok {
+			t.Errorf("Artifact field %q is in neither HashCoveredFields nor HashExcludedFields.\n"+
+				"Decide whether the content hash covers it and say so in one of those lists, with the reason.\n"+
+				"A field outside the hash can be edited without invalidating any signature over the artifact — "+
+				"which is fine for compiled_at and catastrophic for anything that changes what an account permits.",
+				name)
+		}
+	}
+
+	artifactFields := make(map[string]bool)
+	for _, n := range fieldNames(Artifact{}) {
+		artifactFields[n] = true
+	}
+	payloadFields := make(map[string]bool)
+	for _, n := range fieldNames(contentPayload{}) {
+		payloadFields[n] = true
+	}
+	for _, n := range HashCoveredFields {
+		if !artifactFields[n] {
+			t.Errorf("HashCoveredFields names %q, which is not a field on Artifact", n)
+		}
+		if !payloadFields[n] {
+			t.Errorf("HashCoveredFields names %q, which is not a field on contentPayload — "+
+				"so it is documented as hashed and is not in fact hashed", n)
+		}
+	}
+	for _, n := range fieldNames(contentPayload{}) {
+		if classified[n] != "covered" {
+			t.Errorf("contentPayload has field %q, which HashCoveredFields does not name — "+
+				"it is hashed and undocumented as such", n)
+		}
+	}
+	for _, n := range HashExcludedFields {
+		if !artifactFields[n] {
+			t.Errorf("HashExcludedFields names %q, which is not a field on Artifact", n)
+		}
+	}
+}
 
 // sampleArtifact returns a valid artifact exercising every enforcement class.
 //
@@ -282,6 +362,19 @@ func TestContentHashChangesWithControls(t *testing.T) {
 		"change statement text": func(t *testing.T, a *Artifact) {
 			mustControl(t, a, "AA.L1-b.1.a").Statement = "Do a different thing."
 		},
+		// The artifact-level global-service exemption list is inside the hash, and
+		// these three cases are why it has to be. The list decides which service
+		// namespaces a rendered region Deny does NOT cover, so every edit to it
+		// widens or narrows the holes in that Deny. Outside the hash, adding `s3`
+		// here would pass VerifyContentHash and every signature over the artifact
+		// unremarked, and the operator's only evidence that the Deny changed shape
+		// would be an account that behaves differently.
+		"add a region-deny exemption list": func(_ *testing.T, a *Artifact) {
+			a.RegionDenyExemptServices = []string{"iam", "sts"}
+		},
+		"widen a region-deny exemption list": func(_ *testing.T, a *Artifact) {
+			a.RegionDenyExemptServices = []string{"iam", "sts", "s3"}
+		},
 	}
 
 	for name, mutate := range mutations {
@@ -318,7 +411,17 @@ func TestContentHashIsStable(t *testing.T) {
 	// inside the hash. A hash that ignored it would let the stated
 	// justification for a hole in a Deny be rewritten under a signature that
 	// still verified.
-	const want = "b35fbe93002a6a519fb7cd83820a82a6dd194ad77ecc4743551bb9555b302fcc"
+	//
+	// It moved a third time when the content hash stopped covering a bare
+	// controls[] array and started covering a content payload OBJECT
+	// (HashCoveredFields), so that the artifact-level
+	// region_deny_exempt_services list is inside the hash. That list decides
+	// whether a rendered region Deny covers IAM; outside the hash, an edit adding
+	// a service to it — widening the holes in the Deny — would pass
+	// VerifyContentHash unremarked. Every artifact hash moved, which cost nothing
+	// because no schema has been published and no catalog had shipped, and would
+	// have cost a great deal later.
+	const want = "cd27800083c55774c7c65d27b6bbe81f084ffa331b183b74330d64e4a9b06776"
 
 	a := sampleArtifact()
 	got, err := a.ComputeContentHash()
@@ -329,6 +432,44 @@ func TestContentHashIsStable(t *testing.T) {
 		t.Errorf("canonical hash of the sample artifact changed:\n got %s\nwant %s\n"+
 			"If this change is intentional, bump the schema version and add a migration note "+
 			"in schema/CHANGELOG.md, then update this constant.", got, want)
+	}
+}
+
+// TestCanonicalizeKeepsAnEmptyExemptListDistinguishableFromAbsent guards the one
+// place the empty/absent distinction has to survive.
+//
+// Canonicalize runs before Write validates, so if it turned `[]` into nil the
+// invalid document would become a valid one on the way to disk and the error the
+// author needed to see would never be raised. The content hash is allowed to
+// conflate the two — no valid document carries `[]`, because both the schema's
+// minItems and Validate reject it — but canonicalization is upstream of that
+// rejection and must not launder it.
+func TestCanonicalizeKeepsAnEmptyExemptListDistinguishableFromAbsent(t *testing.T) {
+	empty := unhashedSampleArtifact()
+	empty.RegionDenyExemptServices = []string{}
+	empty.Canonicalize()
+	if empty.RegionDenyExemptServices == nil {
+		t.Error("Canonicalize turned an empty region_deny_exempt_services into absent; " +
+			"Write validates AFTER canonicalizing, so this would silently repair an invalid " +
+			"artifact into a valid one instead of telling the author the list is empty")
+	}
+
+	absent := unhashedSampleArtifact()
+	absent.Canonicalize()
+	if absent.RegionDenyExemptServices != nil {
+		t.Errorf("Canonicalize invented a region_deny_exempt_services where the artifact had none: %v",
+			absent.RegionDenyExemptServices)
+	}
+
+	// And it still sorts and dedupes, like every other set-valued member: order in
+	// the source file must not reach the hash.
+	unsorted := unhashedSampleArtifact()
+	unsorted.RegionDenyExemptServices = []string{"sts", "iam", "sts", "organizations"}
+	unsorted.Canonicalize()
+	want := []string{"iam", "organizations", "sts"}
+	if !reflect.DeepEqual(unsorted.RegionDenyExemptServices, want) {
+		t.Errorf("Canonicalize did not sort and dedupe the exempt list:\n got %v\nwant %v",
+			unsorted.RegionDenyExemptServices, want)
 	}
 }
 

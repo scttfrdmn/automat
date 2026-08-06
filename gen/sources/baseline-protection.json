@@ -10,6 +10,38 @@
     "note": "automat's own control set. The artifact's source hash is of THIS file, which is what the compiler read; there is no upstream publication, and the absence of an upstream hash is deliberate rather than missing."
   },
 
+  "region_deny_exempt_services": {
+    "reason": "These service namespaces answer on endpoints AWS reports as us-east-1, so a Deny on every action outside a region allowlist denies every call to them from anywhere — including the IAM, STS, and Organizations calls automat itself makes to build the baseline, and including the calls an operator would make to undo a mistake. AWS's own region-restriction guidance carries this exemption list for the same reason. The list lives HERE, as data automat's own always-attached control set supplies, rather than compiled into the binary: a list only the binary knows is a control whose scope cannot be reviewed and cannot be corrected without a release, and this one bricks accounts when wrong. It is INTERSECTED under union, which is forced rather than chosen — a Deny over NotAction[a] concatenated with a Deny over NotAction[b] denies everything except a and b's intersection.",
+    "namespaces": [
+      "access-analyzer",
+      "account",
+      "acm",
+      "aws-marketplace",
+      "aws-portal",
+      "budgets",
+      "ce",
+      "cloudfront",
+      "config",
+      "cur",
+      "directconnect",
+      "globalaccelerator",
+      "health",
+      "iam",
+      "kms",
+      "networkmanager",
+      "organizations",
+      "pricing",
+      "route53",
+      "route53domains",
+      "shield",
+      "sts",
+      "support",
+      "trustedadvisor",
+      "waf",
+      "wellarchitected"
+    ]
+  },
+
   "exemptions": {
     "baseline-automation": {
       "reason": "automat's in-account automation role establishes and re-verifies the detective baseline; a control that blocks its own installation is not a control",

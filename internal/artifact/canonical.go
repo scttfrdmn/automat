@@ -20,11 +20,16 @@ import (
 // arrived in. It sorts every set-valued member and normalizes empty collections
 // to nil so that `[]` and absent hash the same.
 //
-// It deliberately does not touch Meta.ContentHash — ContentHash covers
-// controls[] only, so canonicalizing then hashing is well defined.
+// It deliberately does not touch Meta.ContentHash — ContentHash covers the
+// content payload and not the metadata carrying it (HashCoveredFields), so
+// canonicalizing then hashing is well defined.
 func (a *Artifact) Canonicalize() {
 	a.Meta.Sources.canonicalize()
 	a.Controls.canonicalize()
+	// Sorted and deduped, like every other set-valued member. Order in the source
+	// file must not reach the hash: two catalogs listing the same exempt services
+	// in different orders describe one policy and must hash as one.
+	a.RegionDenyExemptServices = sortedUniqueKeepEmpty(a.RegionDenyExemptServices)
 }
 
 func (s Sources) canonicalize() {
@@ -60,7 +65,7 @@ func (c *Control) canonicalize() {
 		c.SCP.canonicalize()
 		// An SCP with nothing in it carries no meaning; drop it so it cannot
 		// perturb the hash.
-		if len(c.SCP.Statements) == 0 && len(c.SCP.RegionAllowlist) == 0 && len(c.SCP.ServiceAllowlist) == 0 {
+		if c.SCP.isEmpty() {
 			c.SCP = nil
 		}
 	}
@@ -125,6 +130,18 @@ func (s *SCP) canonicalize() {
 	sort.SliceStable(s.Statements, func(i, j int) bool { return s.Statements[i].Sid < s.Statements[j].Sid })
 	s.RegionAllowlist = sortedUnique(s.RegionAllowlist)
 	s.ServiceAllowlist = sortedUnique(s.ServiceAllowlist)
+}
+
+// isEmpty reports whether the SCP block carries nothing at all.
+//
+// One predicate rather than a condition repeated in canonicalize and validate:
+// they must agree, because canonicalize drops an empty block so it cannot perturb
+// the hash and validate rejects one. A field added to the type and to only one of
+// those two lists would either be silently dropped or make an otherwise-empty
+// block un-droppable.
+func (s *SCP) isEmpty() bool {
+	return len(s.Statements) == 0 && len(s.RegionAllowlist) == 0 &&
+		len(s.ServiceAllowlist) == 0
 }
 
 func (s *SCPStatement) canonicalize() {
@@ -229,6 +246,23 @@ func sortedUnique(in []string) []string {
 	return out
 }
 
+// sortedUniqueKeepEmpty is sortedUnique for the one field where present-but-empty
+// and absent are different claims.
+//
+// region_deny_exempt_services absent says the artifact states no AWS endpoint
+// facts, which is the ordinary case. Present-but-empty would claim no service is
+// globally addressed, which is false about AWS and which Validate rejects — so
+// canonicalization must not quietly turn one into the other and hide the error.
+func sortedUniqueKeepEmpty(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	if out := sortedUnique(in); out != nil {
+		return out
+	}
+	return []string{}
+}
+
 // canonicalJSON marshals v as canonical JSON: object keys sorted, no
 // insignificant whitespace, and no HTML escaping.
 //
@@ -325,28 +359,80 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 	}
 }
 
-// CanonicalControlsJSON returns the canonical JSON encoding of controls[] alone.
+// contentPayload is the part of an artifact the content hash covers.
+//
+// An explicit struct rather than hashing *Artifact with metadata blanked, so that
+// adding a field to Artifact is a decision about hash coverage rather than a
+// default. HashCoveredFields and HashExcludedFields, asserted against reflection
+// in the tests, are what make forgetting that decision a build failure instead of
+// a silent gap.
+type contentPayload struct {
+	Controls Controls `json:"controls"`
+	// RegionDenyExemptServices decides whether a rendered region Deny covers IAM,
+	// so leaving it outside the hash would mean an edit that widens the Deny's
+	// holes — adding `s3`, say — passes VerifyContentHash unremarked.
+	//
+	// omitempty collapses `[]` and absent to the same hash, and that is fine HERE
+	// though it is not fine in Canonicalize. Present-but-empty is a different and
+	// invalid claim — absent says the artifact states no AWS endpoint facts, `[]`
+	// would say no service is globally addressed — but it is rejected by both the
+	// JSON Schema's minItems and Validate, so no document carrying it can be
+	// written or loaded. The place that must not launder one into the other is
+	// canonicalization, which runs before Write validates; see
+	// sortedUniqueKeepEmpty.
+	RegionDenyExemptServices []string `json:"region_deny_exempt_services,omitempty"`
+}
+
+// HashCoveredFields names the Artifact fields ComputeContentHash covers, by Go
+// field name. The test suite asserts this against contentPayload and Artifact.
+var HashCoveredFields = []string{"Controls", "RegionDenyExemptServices"}
+
+// HashExcludedFields names the Artifact fields the content hash deliberately
+// does NOT cover, with the reason each is safe to exclude.
+//
+//   - SchemaVersion: a version bump that changed the meaning of the covered
+//     fields would change their encoding too, and Validate rejects a major this
+//     build does not understand before any hash is consulted.
+//   - Meta: compiled_at changes on every run, and content_sha256 cannot cover
+//     itself. Recompiling unchanged content must yield the same hash or every
+//     tag and evidence record referencing it becomes meaningless.
+//
+// Meta.Sources is the uncomfortable member of that second group: provenance is
+// semantic. It stays excluded because it is checked by its own per-source
+// sha256 values, which are what a reviewer actually traces.
+var HashExcludedFields = []string{"SchemaVersion", "Meta"}
+
+// CanonicalContentJSON returns the canonical JSON encoding of the artifact's
+// hashed content: controls[] plus the artifact-level global-service exemption
+// list, if it has one.
 //
 // This is the exact byte sequence ContentHash covers. Exported because `verify`
 // and the evidence chain need to recompute it independently of the surrounding
-// artifact metadata — the whole point is that re-compiling the same controls
-// with a different timestamp yields the same content hash.
-func (a *Artifact) CanonicalControlsJSON() ([]byte, error) {
+// artifact metadata — the whole point is that re-compiling the same content with
+// a different timestamp yields the same content hash.
+func (a *Artifact) CanonicalContentJSON() ([]byte, error) {
 	dup := a.clone()
 	dup.Controls.canonicalize()
 	if dup.Controls == nil {
 		dup.Controls = Controls{}
 	}
-	return canonicalJSON(dup.Controls)
+	// Read the exemption list from a, not dup: clone round-trips through JSON and
+	// the field carries omitempty, so an empty list would not survive the clone.
+	// The clone exists to canonicalize controls[] without mutating the caller's
+	// artifact, and nothing more.
+	payload := contentPayload{
+		Controls:                 dup.Controls,
+		RegionDenyExemptServices: sortedUnique(a.RegionDenyExemptServices),
+	}
+	return canonicalJSON(payload)
 }
 
-// ComputeContentHash returns the SHA-256 of the canonicalized controls[].
+// ComputeContentHash returns the SHA-256 of the canonicalized content payload.
 //
-// It excludes artifact metadata by design: compiled_at changes on every run,
-// and an artifact whose controls are unchanged must keep the same content hash
-// or the tags and evidence records that reference it become meaningless.
+// It excludes artifact metadata by design; see HashExcludedFields for which
+// fields and why each is safe.
 func (a *Artifact) ComputeContentHash() (string, error) {
-	b, err := a.CanonicalControlsJSON()
+	b, err := a.CanonicalContentJSON()
 	if err != nil {
 		return "", err
 	}

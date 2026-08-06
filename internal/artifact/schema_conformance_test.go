@@ -241,6 +241,22 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		{"exemption reason containing a newline", func(t *testing.T, a *Artifact) {
 			exemptions(t, a)[0].Reason = "Approved\n  - controls[XX]: no exemptions"
 		}},
+		// The artifact-level global-service exemption list. Both validators must
+		// agree, because a namespace that does not name a real service exempts
+		// nothing and the failure is silent — the reviewer reads the catalog, sees
+		// the service listed, and the rendered region Deny covers it anyway.
+		{"misspelled region-deny exempt service", func(_ *testing.T, a *Artifact) {
+			a.RegionDenyExemptServices = []string{"iam", "STS"}
+		}},
+		{"region-deny exempt service with a wildcard", func(_ *testing.T, a *Artifact) {
+			a.RegionDenyExemptServices = []string{"*"}
+		}},
+		{"duplicate region-deny exempt service", func(_ *testing.T, a *Artifact) {
+			// Canonicalize dedupes, so this reaches the validators only via a
+			// hand-edited file — which is exactly the document the schema is the
+			// contract for. Two spellings of one list must not be two claims.
+			a.RegionDenyExemptServices = []string{"iam", "iam"}
+		}},
 		{"more exemptions than the cap", func(t *testing.T, a *Artifact) {
 			st := &mustControl(t, a, "BB.L1-b.1.b").SCP.Statements[0]
 			st.ExemptPrincipals = nil
@@ -401,6 +417,76 @@ func TestSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBothValidatorsRejectAnEmptyExemptListOnDisk covers the one case the
+// agree-on-rejection table structurally cannot.
+//
+// That table mutates a Go struct and marshals it, and `omitempty` on
+// region_deny_exempt_services erases `[]` on the way out — so the schema is
+// handed a document with no such field and correctly accepts it. The disagreement
+// is in the fixture, not the contract. This test therefore feeds each validator
+// the ON-DISK form directly, which is what a hand-edited catalog actually is and
+// the only form in which the empty list exists.
+//
+// Absent and empty are different claims: absent says the artifact states no AWS
+// endpoint facts, `[]` says no service is globally addressed, which is false about
+// AWS. Both validators must refuse the second and accept the first.
+func TestBothValidatorsRejectAnEmptyExemptListOnDisk(t *testing.T) {
+	sch := compileSchema(t, "control-artifact-v1.schema.json")
+
+	base := sampleArtifact()
+	raw, err := json.Marshal(base)
+	if err != nil {
+		t.Fatalf("marshal sample: %v", err)
+	}
+	var doc map[string]any
+	if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+		t.Fatalf("unmarshal sample: %v", uerr)
+	}
+
+	t.Run("empty list is rejected by both", func(t *testing.T) {
+		doc["region_deny_exempt_services"] = []any{}
+		onDisk, merr := json.Marshal(doc)
+		if merr != nil {
+			t.Fatalf("marshal: %v", merr)
+		}
+
+		var generic any
+		if uerr := json.Unmarshal(onDisk, &generic); uerr != nil {
+			t.Fatalf("unmarshal: %v", uerr)
+		}
+		if sch.Validate(generic) == nil {
+			t.Error("the published schema accepts region_deny_exempt_services: [] — " +
+				"minItems is missing, and an empty list would claim no service is globally addressed")
+		}
+
+		// SkipHashCheck: the field is inside the content hash, so adding it
+		// invalidates the sample's hash. The subject here is the emptiness check,
+		// and a hash mismatch would mask whether that check fired at all.
+		if _, derr := Decode(onDisk, LoadOptions{SkipHashCheck: true}); derr == nil {
+			t.Error("internal/artifact accepts region_deny_exempt_services: [] on disk")
+		}
+	})
+
+	t.Run("absent is accepted by both", func(t *testing.T) {
+		delete(doc, "region_deny_exempt_services")
+		onDisk, merr := json.Marshal(doc)
+		if merr != nil {
+			t.Fatalf("marshal: %v", merr)
+		}
+		var generic any
+		if uerr := json.Unmarshal(onDisk, &generic); uerr != nil {
+			t.Fatalf("unmarshal: %v", uerr)
+		}
+		if verr := sch.Validate(generic); verr != nil {
+			t.Errorf("the published schema rejects an artifact with no exemption list, "+
+				"which is the ordinary case:\n%v", verr)
+		}
+		if _, derr := Decode(onDisk, LoadOptions{}); derr != nil {
+			t.Errorf("internal/artifact rejects an artifact with no exemption list:\n%v", derr)
+		}
+	})
 }
 
 // TestNoSchemaLeafIsNumberTyped is the tripwire for AUDIT-0 A5.

@@ -39,12 +39,41 @@ const baselineDescription = "The controls that protect automat's own baseline in
 	"membership in its organization, the two baseline roles, and the root user. Attached at the OU with " +
 	"every vend (DESIGN §10). Extend it rather than replacing it: every entry is data."
 
+// baselineRegionExemptPreamble introduces the exemption list's reason in the
+// compiled artifact's description.
+//
+// The source file's reason text opens with "These service namespaces", which has
+// an antecedent where it is written — directly above the list — and none once it
+// is concatenated after the control-set description. The alternative was to make
+// the source file's prose stand alone in both places, which would read worse in
+// the place a reviewer actually edits it.
+const baselineRegionExemptPreamble = "This control set also supplies the artifact's " +
+	"region_deny_exempt_services list, which is the services a region Deny must not cover. "
+
 // baselineDoc is the curated baseline-protection source.
 type baselineDoc struct {
-	Comment    string                      `json:"_comment"`
-	Source     baselineSource              `json:"source"`
-	Exemptions map[string]baselineExempt   `json:"exemptions"`
-	Controls   []baselineControlSourceItem `json:"controls"`
+	Comment string         `json:"_comment"`
+	Source  baselineSource `json:"source"`
+	// RegionDenyExemptServices is the global-service exemption list a region Deny
+	// must not cover. It lives in this control set because this is the one always
+	// attached with every vend, and it is data for the same reason the deny list
+	// itself is: getting it wrong bricks an account, so it must be reviewable and
+	// correctable without a release. It compiles to the ARTIFACT-level field, not
+	// to a control — see compileBaseline for why every control-shaped home was
+	// wrong.
+	RegionDenyExemptServices baselineRegionExempt        `json:"region_deny_exempt_services"`
+	Exemptions               map[string]baselineExempt   `json:"exemptions"`
+	Controls                 []baselineControlSourceItem `json:"controls"`
+}
+
+// baselineRegionExempt is the global-service exemption list plus its reason.
+//
+// Carries a reason for the same cause baselineExempt does: this list widens what a
+// region restriction permits, and an unexplained widening is indistinguishable
+// from an escape hatch to the reviewer reading this file.
+type baselineRegionExempt struct {
+	Reason     string   `json:"reason"`
+	Namespaces []string `json:"namespaces"`
 }
 
 // baselineSource is the provenance block. Deliberately NOT the shared `upstream`
@@ -198,16 +227,30 @@ func compileBaseline(srcDir string) (*artifact.Artifact, error) {
 		})
 	}
 
+	// The exemption list is ARTIFACT-level, not a control. It is not a Deny: it is
+	// an AWS fact about which endpoints answer where, and every shape that made it
+	// a control was wrong for a reason worth recording. On a protection control
+	// (BP.CFG-1, say) the fact would read as part of that control's scope. On a
+	// control of its own it was a baseline-protection control carrying no
+	// statement, which prevents nothing — the test suite rejected exactly that. And
+	// per-control scoping has no coherent reading anyway: two controls in one
+	// artifact with different lists would describe nothing.
+	//
+	// The reason text is not lost by moving up a level: doc.check requires it, the
+	// source file carries it, and it reaches the reviewer through the artifact's
+	// own description rather than through a fake control.
 	a := &artifact.Artifact{
 		SchemaVersion: artifact.SchemaVersion,
 		Meta: artifact.Meta{
-			ID:          baselineID,
-			Title:       baselineTitle,
-			Description: baselineDescription,
-			Sources:     baselineProvenance(doc.Source, fileHash),
-			CompiledAt:  doc.Source.AuthoredAt,
+			ID:    baselineID,
+			Title: baselineTitle,
+			Description: baselineDescription + " " + baselineRegionExemptPreamble +
+				doc.RegionDenyExemptServices.Reason,
+			Sources:    baselineProvenance(doc.Source, fileHash),
+			CompiledAt: doc.Source.AuthoredAt,
 		},
-		Controls: controls,
+		Controls:                 controls,
+		RegionDenyExemptServices: doc.RegionDenyExemptServices.Namespaces,
 	}
 	if err := a.SetContentHash(); err != nil {
 		return nil, fmt.Errorf("hash artifact %s: %w", baselineID, err)

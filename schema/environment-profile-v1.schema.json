@@ -45,6 +45,37 @@
       "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" }
     },
 
+    "permitted": {
+      "description": "The PERMITTED-BEHAVIOR BOUNDARY for this environment: which regions and which service namespaces principals in the account may call. Both are ALLOWLISTS, enforced by Deny SCPs (`aws:RequestedRegion` for regions, a NotAction Deny for services) that the packer emits — a catalog author cannot write that shape, by design.\n\nTHESE ONLY EVER NARROW. Each set is INTERSECTED with the corresponding allowlist the compiled control sets require, never substituted for it and never added to it. That is the union law on the other axis: union of controls, INTERSECTION of permitted behavior (DESIGN 9). An institution therefore cannot widen its own posture by editing an environment profile — it can only restrict further, which is the whole reason the fields are safe to expose here rather than only in a control set.\n\nDISTINCT FROM `baseline.regions`, which is opt-in region ENABLEMENT via the Account Management API. One is a boundary (what a principal may call); the other is an account-level action taken at baseline time. They are deliberately separate fields because an operator can legitimately want a region enabled but not permitted, or permitted in policy while never enabled, and conflating them would make one of those inexpressible.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "regions": {
+          "description": "Permitted regions. Intersected with the control sets' region allowlists, never widened. `minItems: 1` because an empty allowlist is not a strict policy but a DENY-ALL: it denies every call in the account, including the ones automat's own baseline makes, and it would be discovered after create and move had already succeeded (AUDIT-0's H5 — the empty set is the absorbing element of the meet). An intersection that evaluates to empty is likewise a hard error at PLAN time naming which inputs produced the emptiness, never a silently attached deny-all.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+        },
+        "services": {
+          "description": "Permitted service namespaces. Intersected with the control sets' service allowlists, never widened. `minItems: 1` for the same reason as `regions`. The globally addressed services (IAM, STS, Organizations, Route 53, Support, billing, Health, and the rest) do NOT need listing here and must not be relied on being absent: they are exempted from the region Deny by the exemption data in the control artifact (`scp.region_deny_exempt_services`), which is catalog data rather than a hardcoded list precisely because getting it wrong bricks an account.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" }
+        }
+      }
+    },
+
+    "obligations": {
+      "description": "The obligation profiles this environment is being built to satisfy, by id — `cmmc-l1`, `dfars-7012`, `nih-cadr-dua`. A DIFFERENT DOCUMENT TYPE from this one: an obligation profile says under what instrument a requirement applies and how it is assessed, while this document says what gets built. Referencing them here is what lets an evidence record, and later `assess`, say which reading of policy an account was vended under without an operator re-declaring it per command.\n\nRecorded rather than resolved: automat does not decide that an obligation applies. Where an obligation profile leaves the control catalog revision open (`revision_policy: operator-determined` — the NIH controlled-access case), the determination is the operator's and is recorded here with who made it and when, so it is inside this document's content hash and inside the evidence chain.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/obligation_reference" }
+    },
+
     "placement": {
       "description": "Where the vended account lands. New accounts always materialize under the root and are then moved (DESIGN 3, fact 4).",
       "type": "object",
@@ -122,7 +153,7 @@
           }
         },
         "regions": {
-          "description": "Region posture. enable/disable are opt-in regions managed via the Account Management API; the region allowlist is enforced separately by SCP.",
+          "description": "Opt-in region ENABLEMENT, via the Account Management API, performed in-child at baseline time. NOT the permitted-region boundary — that is `permitted.regions`, enforced by SCP. The two are separate fields on purpose and neither implies the other: an operator can enable a region without permitting calls in it (an account that may hold data there later), or permit one in policy that was never enabled (a boundary written ahead of the account's growth). Collapsing them would make one of those inexpressible, and would also conflate a boundary a principal cannot cross with an action automat takes once.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -193,6 +224,47 @@
     "date": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+
+    "obligation_reference": {
+      "description": "One obligation profile this environment is built to satisfy, plus any determination the profile left to the operator.\n\nThe hash is required for the same reason the evidence record's is: an obligation profile is a reading of policy that moves — notices are superseded, phase-in dates arrive, a class deviation pinning a revision expires — so a reference naming only an id is a reference whose subject can be rewritten under it. A validator recomputes it; the schema cannot.",
+      "type": "object",
+      "required": ["id", "content_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The obligation profile id, e.g. `cmmc-l1`, `dfars-7012`, `nih-cadr-dua`.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+        },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "revision_determination": {
+          "description": "REQUIRED when the referenced obligation profile declares `revision_policy: operator-determined`, and meaningless otherwise. The schema cannot enforce that pairing — it would have to read the other document — so a validator must, and the failure is a hard error rather than a default: automat ships no default revision, because a tool that silently picks one has made a compliance determination on the institution's behalf. The whole point of recording it here is that it is then inside this document's content hash and inside the evidence chain.",
+          "$ref": "#/$defs/operator_determination"
+        }
+      }
+    },
+
+    "operator_determination": {
+      "description": "A decision automat is NOT entitled to make, recorded with who made it and when.\n\nEvery field is required, and the reason is the same for all of them: a determination with no named determiner is an anonymous claim in a document an institution acts on, and a determination with no date cannot be checked for staleness against `review_by`. The `statement` is required for the reason `attestation.statement` is — a bare value invites the reader to supply the justification themselves, and they supply the strongest one available.\n\nHashed with the rest of the document, so a determination cannot be rewritten under material that still verifies.",
+      "type": "object",
+      "required": ["value", "determined_by", "determined_at", "statement"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "description": "The determination itself, e.g. a control catalog revision id where the instrument names none.",
+          "$ref": "#/$defs/prose"
+        },
+        "determined_by": {
+          "description": "Who determined it, as they wish to be identified — a named person, an office, a role. Free prose because the useful identity is an institutional one, and because the point is that a human is named at all.",
+          "$ref": "#/$defs/prose"
+        },
+        "determined_at": { "$ref": "#/$defs/date" },
+        "statement": {
+          "description": "The basis for the determination, in the determiner's own words.",
+          "$ref": "#/$defs/long_prose"
+        }
+      }
     },
 
     "sha256": {

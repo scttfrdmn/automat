@@ -326,6 +326,27 @@ func TestValidateRejects(t *testing.T) {
 			wantPath: "template",
 			wantFix:  ".md",
 		},
+		{
+			// A misspelled namespace exempts nothing, and the failure is silent:
+			// the operator reads the catalog, sees the service listed, and the
+			// rendered region Deny covers it anyway.
+			name: "misspelled region-deny exempt service",
+			mutate: func(a *Artifact) {
+				a.RegionDenyExemptServices = []string{"iam", "STS"}
+			},
+			wantPath: "region_deny_exempt_services[1]",
+			wantFix:  "silently exempts nothing",
+		},
+		{
+			// Present-but-empty is not the same claim as absent, and it is a false
+			// one: some services really are globally addressed.
+			name: "present but empty region-deny exempt list",
+			mutate: func(a *Artifact) {
+				a.RegionDenyExemptServices = []string{}
+			},
+			wantPath: "region_deny_exempt_services",
+			wantFix:  "omit the field entirely",
+		},
 	}
 
 	for _, tc := range tests {

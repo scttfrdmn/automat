@@ -150,7 +150,7 @@ Sketch (Claude Code: formalize as JSON Schema + Go types with round-trip tests):
       { "mapping": "aws-config-conformance-pack-cmmc-l1", "sha256": "…" }
     ],
     "compiled_at": "2026-08-04T00:00:00Z",
-    "content_sha256": "…"            // hash of canonicalized controls[]
+    "content_sha256": "…"            // hash of the canonicalized content payload — see below
   },
   "controls": [
     {
@@ -169,6 +169,26 @@ Sketch (Claude Code: formalize as JSON Schema + Go types with round-trip tests):
 ```
 
 Notes:
+- `content_sha256` covers a **content payload**, not the `controls[]` array alone. This paragraph
+  originally said "hash of canonicalized `controls[]`", and that stopped being true when
+  `region_deny_exempt_services` moved to the top level (see below): a field beside `controls` would
+  have sat outside the hash, so an edit adding a namespace to it — *widening the holes in a region
+  Deny* — would have passed `VerifyContentHash` and every signature over the artifact unremarked.
+  The payload is `{controls, region_deny_exempt_services}`, canonicalized, and `internal/artifact`
+  enumerates the covered and excluded field names so adding a field to the artifact is a decision
+  about hash coverage that fails the build until it is written down. Excluded: `schema_version` and
+  the whole `artifact` block, whose `sources` entries carry their own per-source hashes.
+- `region_deny_exempt_services` is a **top-level** array of the globally addressed service
+  namespaces (IAM, STS, Organizations, Route 53, Support, billing, Health, …) that a region or
+  service allowlist Deny must not cover. It is catalog **data**, never compiled into the binary,
+  for the same reason `exempt_principals` is: getting it wrong bricks an account, and a list only
+  the binary knows is a control whose scope cannot be reviewed or corrected without a release.
+  Top-level rather than per control because its scope *is* the artifact — two controls carrying
+  different lists would have no coherent reading — and because on a control it made an SCP block
+  that denies nothing, which a `baseline-protection` control is not allowed to be. Under union it
+  **intersects**, which is forced rather than chosen: a Deny over `NotAction: [a:*]` alongside a
+  Deny over `NotAction: [b:*]` denies everything except what both spare, so a merge that unioned
+  the lists would describe something the rendered policy does not do.
 - `enforcement` may be a list (a control can have both an SCP fragment and config rules).
 - `order` on parameters encodes the per-parameter partial order used by union (§9). Set-valued parameters (comma-joined port and action lists) take `set-union` when the members are *prohibited* and `set-intersect` when they are *permitted*; both directions are the stricter one, which is what monotonicity requires. A `set_separator` field overrides the default `,`.
 - `provenance` on each config-rule binding records who asserts it. `aws-mapping` bindings come from a published AWS mapping recorded in `artifact.sources` and are mechanically generated — never hand-edited. `curated` bindings are automat's own judgment and must carry a `rationale`. The split exists so a reviewer can audit automat's claims separately from AWS's, and so regenerating a catalog cannot silently overwrite a reviewed binding.
@@ -188,12 +208,16 @@ Notes:
 Governing law: **union of controls = intersection of permitted behavior.** The operation is a meet on a semilattice of control sets:
 
 - **Deny SCP fragments:** concatenate (always safe; dedupe identical statements; respect SCP size limits by merging Action lists where semantics allow).
-- **Allowlists** (regions, services): **intersect**. Union of "us-east-1,us-west-2" and "US regions" = the two regions.
+- **Allowlists** (regions, services): **intersect**. Union of "us-east-1,us-west-2" and "US regions" = the two regions. So does `region_deny_exempt_services` (§8), for the reason recorded there.
+- **An allowlist intersection that evaluates to empty is a hard error at plan time**, naming which inputs produced the emptiness. AUDIT-0's H5 observed that the empty set is the absorbing element of the meet; the consequence here is concrete, because an empty region or service allowlist renders as an SCP denying every call in the account — including automat's own baseline work and the operator's attempt to undo it — and it would be discovered *after* create and move had already succeeded. `minItems: 1` in the schema stops the one-document case; the plan-time refusal stops the intersection case. Never a silent deny-all, never discovered at apply. The refusal messages are golden-tested, because in the case they cover the message is the whole of what automat delivers.
+- **A control set that restricts regions or services and supplies no `region_deny_exempt_services` is refused**, with no fallback to a built-in list — a fallback is the compiled-in list with extra steps.
 - **Config rules:** set-union deduped by rule identifier; overlapping parameters resolve by the declared per-parameter `order` (min/max). If two sets bind the same parameter with `exact` and different values, or no order is declared: **hard error** with a conflict report demanding explicit resolution (an override file). Never guess.
 - **Procedural controls:** dedupe via `crosswalk` so one practice is attested once, not once per framework ID; the stub lists all satisfied IDs.
 - Output is itself a first-class artifact (new id, sources = the input artifacts, fresh content hash) — unions compose.
 
-Property tests Claude Code should write: idempotence (A∪A=A), commutativity, associativity, and monotonicity (the union never permits behavior any input forbade).
+Property tests Claude Code should write: idempotence (A∪A=A), commutativity, associativity, and monotonicity (the union never permits behavior any input forbade). Monotonicity is asserted with the region, service, and exemption **sets** as subjects and not only the statements, and over the **packed policy documents** as well as the merged values: an allowlist is not a statement until the packer renders it, so a statement-level property cannot see it, and a renderer that intersected the members correctly could still emit a document permitting more than either input's.
+
+The allowlist shape must be **checkable, not merely emittable**: `verify` (§12) has to say which region or service moved, so `internal/compilesets` reads region and service restrictions back off attached policy documents as AWS returns them, and a property test round-trips everything the packer emits. A shape automat can render but cannot recover would leave `verify` diffing whole documents and reporting "different" for a reordered key.
 
 ## 10. Baseline-protection meta-control
 

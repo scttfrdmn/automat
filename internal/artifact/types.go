@@ -135,6 +135,36 @@ type Artifact struct {
 	SchemaVersion string   `json:"schema_version"`
 	Meta          Meta     `json:"artifact"`
 	Controls      Controls `json:"controls"`
+	// RegionDenyExemptServices are the service namespaces a REGION Deny must not
+	// cover, as catalog DATA rather than a list compiled into the binary.
+	//
+	// Globally addressed services answer on endpoints AWS reports as us-east-1, so
+	// a Deny on every action outside a region allowlist denies every IAM, STS, and
+	// Organizations call in the account — including the operator's own ability to
+	// undo it. Getting the list wrong bricks an account, which is the argument for
+	// it being reviewable content rather than a var in a package: the same argument
+	// ExemptPrincipals rests on, and a list only the binary knows is a control
+	// whose scope cannot be reviewed or corrected without a release.
+	//
+	// ARTIFACT-LEVEL rather than per control, and not for tidiness. Its scope IS
+	// the artifact: two controls in one document carrying different lists would
+	// have no coherent reading. Per-control also made this an SCP block on a
+	// control that denies nothing, which a baseline-protection control is not
+	// allowed to be — an AWS fact about which endpoints answer where is not a Deny
+	// and must not be shaped like one.
+	//
+	// INTERSECTED under union, and that is forced rather than chosen: a Deny over
+	// NotAction[a:*] concatenated with a Deny over NotAction[b:*] denies everything
+	// except a∩b, so a merge that unioned these would describe something the
+	// rendered policy does not do.
+	//
+	// Deliberately NOT required alongside a region allowlist. The control set
+	// stating an AWS fact need not be the one restricting regions — automat's own
+	// baseline-protection supplies this list and constrains no regions. The pairing
+	// is a plan-time invariant instead: if any input constrains regions and none
+	// supplies this list, the packer refuses, because a fallback is the compiled-in
+	// list with extra steps.
+	RegionDenyExemptServices []string `json:"region_deny_exempt_services,omitempty"`
 }
 
 // Meta is an artifact's identity and provenance.
