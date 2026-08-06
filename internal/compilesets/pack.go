@@ -491,9 +491,39 @@ func renderStatement(st Statement, opts PackOptions) (string, error) {
 // the exemption would not exist.
 //
 // Merging into an existing condition is a conflict, not an override: if a catalog
-// already constrains aws:PrincipalArn with ArnNotLike, adding the exemption
-// values would loosen the catalog's own constraint. That is a widening, so it
-// errors.
+// already constrains aws:PrincipalArn with a negative operator, adding the
+// exemption values would loosen the catalog's own constraint. That is a widening,
+// so it errors.
+//
+// # The conflict check reads a SET of operators, and used to read one literal (AUDIT-2)
+//
+// It compared against `"ArnNotLike"` alone, while behavior.go models six negative
+// operators over the same key and IAM accepts all six with an IfExists suffix as
+// well. Five spellings walked past it. Neither half of that is a widening — IAM
+// ANDs separate condition blocks, so a catalog's StringNotLike and the packer's
+// ArnNotLike intersect, and an intersection is narrower than either — which is why
+// this is medium and not high, and why the fix is stated in terms of what the check
+// is FOR rather than in terms of escalation:
+//
+//   - The loosening case, which is the original reasoning and applies to every
+//     negative operator equally. If a catalog wrote its own exemption list on this
+//     key, the exemptions the operator sees rendered are not the list they wrote,
+//     and the packer is the only place that can say so.
+//   - The case-normalization trap, which is worse and is specific to the string
+//     operators. This function refuses to EMIT StringNotLike on aws:PrincipalArn
+//     for the reason two paragraphs up — the string operators do not normalize case
+//     or partition, so a case-mismatched role name silently matches nothing and the
+//     exemption does not exist. A catalog carrying that shape has the bug the packer
+//     will not write, and it was passed through in silence.
+//
+// The positive operators are deliberately NOT conflicts. A catalog's
+// ArnLike on aws:PrincipalArn intersected with the packer's ArnNotLike is exactly
+// the semantics an exemption wants — applies to matching principals, except the
+// listed ones — so erroring there would refuse a correct document.
+//
+// The operator list is derived from the one behavior.go models rather than written
+// out again, because two copies of a security-relevant vocabulary drift and the
+// direction they drift in is silent.
 func renderCondition(st Statement, opts PackOptions) (map[string]map[string][]string, error) {
 	out := map[string]map[string][]string{}
 	for op, keys := range st.Condition {
@@ -529,13 +559,32 @@ func renderCondition(st Statement, opts PackOptions) (map[string]map[string][]st
 	arns = sortedUnique(arns)
 
 	const op, key = "ArnNotLike", "aws:PrincipalArn"
-	if existing, ok := out[op][key]; ok {
+	// Every operator the statement already carries on this key, not just this one.
+	// Sorted, because a map iteration decides which conflict an operator is told
+	// about otherwise, and a report that varies between runs on one document is a
+	// report an operator cannot act on.
+	var clashing []string
+	for have := range st.Condition {
+		if _, ok := st.Condition[have][key]; ok && isNegativeOperator(have) {
+			clashing = append(clashing, have)
+		}
+	}
+	clashing = sortedUnique(clashing)
+	if len(clashing) > 0 {
+		var detail []string
+		for _, have := range clashing {
+			detail = append(detail, fmt.Sprintf("%s (%s)", have,
+				strings.Join(sortedUnique(st.Condition[have][key]), ", ")))
+		}
 		return nil, &PackError{
-			Reason: fmt.Sprintf("statement %q both exempts principals and already constrains %s under %s "+
-				"(%s)", st.Sid, key, op, strings.Join(existing, ", ")),
+			Reason: fmt.Sprintf("statement %q both exempts principals and already constrains %s with a "+
+				"negative operator: %s", st.Sid, key, strings.Join(detail, "; ")),
 			Remediation: "express the exemption through exempt_principals or through the condition, not both: " +
-				"adding exemption ARNs to an existing " + op + " on " + key + " would loosen the condition the " +
-				"catalog wrote, and a merge must never widen what is permitted (DESIGN §9)",
+				"the packer renders exemptions as " + op + " on " + key + ", and a second negative operator on " +
+				"the same key means the exemptions an operator reads in the rendered policy are not the list " +
+				"the catalog wrote. If the existing operator is StringNotLike or StringNotEquals, it is also " +
+				"the case-sensitivity bug the packer refuses to emit — those operators do not normalize an " +
+				"ARN's case or partition, so a mismatched role name exempts nobody",
 			Sources: st.Origins,
 		}
 	}

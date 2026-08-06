@@ -192,25 +192,116 @@ func TestAnUnresolvedPlaceholderIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnExistingArnNotLikeOnPrincipalArnIsAConflict.
+// TestAnExistingNegativeOperatorOnPrincipalArnIsAConflict.
 //
-// If a catalog already constrains aws:PrincipalArn under ArnNotLike, adding the
-// exemption ARNs to that list would LOOSEN the catalog's own condition — the Deny
-// would stop applying to principals the catalog meant it to cover. Overriding it
-// silently is the widening DESIGN §9 forbids, so it is an error naming both halves.
-func TestAnExistingArnNotLikeOnPrincipalArnIsAConflict(t *testing.T) {
-	m := &Merged{Statements: []Statement{
-		deny("ProtectRecorder", []string{"config:StopConfigurationRecorder"}, []string{"*"},
-			artifact.Condition{"ArnNotLike": {"aws:PrincipalArn": {centralIT}}},
-			exempt(breakGlass, "incident response")),
-	}}
+// If a catalog already constrains aws:PrincipalArn with a negative operator, the
+// exemptions an operator reads in the rendered policy are not the list the catalog
+// wrote — the packer's own ArnNotLike is ANDed with the catalog's, so each list
+// exempts only the principals in both. Passing that through silently is the
+// widening-adjacent failure DESIGN §9 forbids reasoning past, so it is an error
+// naming both halves.
+//
+// AUDIT-2: this checked the literal "ArnNotLike" and five spellings walked past it,
+// including the two StringNot* operators — which are also the case-sensitivity bug
+// the packer refuses to EMIT for itself (see renderCondition), so a catalog carrying
+// one was getting through with a defect automat will not write.
+func TestAnExistingNegativeOperatorOnPrincipalArnIsAConflict(t *testing.T) {
+	// Every negative spelling, including the IfExists suffixes, which are the same
+	// operator with an absent-key rule and constrain the key just as much.
+	for _, op := range []string{
+		"ArnNotLike", "ArnNotEquals", "StringNotLike", "StringNotEquals",
+		"ArnNotLikeIfExists", "StringNotEqualsIfExists",
+	} {
+		t.Run(op, func(t *testing.T) {
+			m := &Merged{Statements: []Statement{
+				deny("ProtectRecorder", []string{"config:StopConfigurationRecorder"}, []string{"*"},
+					artifact.Condition{op: {"aws:PrincipalArn": {centralIT}}},
+					exempt(breakGlass, "incident response")),
+			}}
 
-	pe := packError(t, m, packOpts())
-	for _, want := range []string{"ArnNotLike", "aws:PrincipalArn", centralIT} {
-		if !strings.Contains(pe.Error(), want) {
-			t.Errorf("the conflict report does not mention %q, so the operator cannot see which two "+
-				"constraints collided: %v", want, pe)
+			pe := packError(t, m, packOpts())
+			for _, want := range []string{op, "aws:PrincipalArn", centralIT} {
+				if !strings.Contains(pe.Error(), want) {
+					t.Errorf("the conflict report does not mention %q, so the operator cannot see which two "+
+						"constraints collided: %v", want, pe)
+				}
+			}
+		})
+	}
+}
+
+// A POSITIVE operator on the same key is not a conflict, and this is the half that
+// keeps the fix above from being a refusal of correct documents.
+//
+// A catalog's ArnLike on aws:PrincipalArn intersected with the packer's ArnNotLike is
+// exactly what an exemption means: applies to the matching principals, except the
+// listed ones. Erroring there would refuse the shape the feature exists to express.
+func TestAPositiveOperatorOnPrincipalArnIsNotAConflict(t *testing.T) {
+	for _, op := range []string{"ArnLike", "ArnEquals", "StringLike", "StringEquals"} {
+		t.Run(op, func(t *testing.T) {
+			m := &Merged{Statements: []Statement{
+				deny("ProtectRecorder", []string{"config:StopConfigurationRecorder"}, []string{"*"},
+					artifact.Condition{op: {"aws:PrincipalArn": {centralIT}}},
+					exempt(breakGlass, "incident response")),
+			}}
+			got := mustPack(t, m, packOpts())
+			if len(got.Policies) != 1 {
+				t.Fatalf("expected one policy, got %d", len(got.Policies))
+			}
+			// Both conditions survive: the catalog's, and the packer's exemption.
+			body := got.Policies[0].Document
+			for _, want := range []string{op, "ArnNotLike", centralIT, breakGlass} {
+				if !strings.Contains(body, want) {
+					t.Errorf("the rendered policy dropped %q, so the intersection is not what was "+
+						"emitted:\n%s", want, body)
+				}
+			}
+		})
+	}
+}
+
+// The packer's conflict check and the behavioral model must recognize the same
+// negative operators, and the coupling has to be asserted rather than commented.
+//
+// AUDIT-2's finding was two copies of one vocabulary drifting apart, and the fix is
+// only durable if a future operator added to conditionMatches cannot be added to one
+// side alone. So: every operator the model evaluates is classified here by hand, and
+// the classification is checked against isNegativeOperator. A new operator makes this
+// test fail to compile against UnknownOperators' list, which is the loud failure the
+// silent one is being traded for.
+func TestTheConflictCheckKnowsEveryNegativeOperatorTheModelEvaluates(t *testing.T) {
+	// The full modeled vocabulary, with the answer stated independently of the
+	// implementation. Compare against behavior.go's UnknownOperators switch.
+	want := map[string]bool{
+		"StringEquals": false, "StringNotEquals": true,
+		"StringLike": false, "StringNotLike": true,
+		"ArnEquals": false, "ArnNotEquals": true,
+		"ArnLike": false, "ArnNotLike": true,
+		"Bool": false,
+	}
+	for op, neg := range want {
+		if got := isNegativeOperator(op); got != neg {
+			t.Errorf("isNegativeOperator(%q) = %v, want %v", op, got, neg)
 		}
+		if got := isNegativeOperator(op + "IfExists"); got != neg {
+			t.Errorf("isNegativeOperator(%qIfExists) = %v, want %v — the suffix is an absent-key "+
+				"rule, not a different operator", op, got, neg)
+		}
+	}
+
+	// The other direction: nothing in the negative list is outside the modeled set,
+	// which would be a conflict check firing on an operator the model cannot
+	// evaluate at all.
+	probe := make([]Statement, 0, len(negativeOperators))
+	for _, op := range negativeOperators {
+		probe = append(probe, Statement{SCPStatement: artifact.SCPStatement{
+			Effect: "Deny", Action: []string{"s3:*"}, Resource: []string{"*"},
+			Condition: artifact.Condition{op: {"aws:PrincipalArn": {centralIT}}},
+		}})
+	}
+	if unknown := UnknownOperators(probe); len(unknown) != 0 {
+		t.Errorf("the conflict check treats %v as negative operators, but the behavioral model does "+
+			"not evaluate them — the two vocabularies have drifted, which is the AUDIT-2 finding", unknown)
 	}
 }
 

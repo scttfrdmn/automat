@@ -172,6 +172,28 @@ func conditionMatches(op, key string, values []string, r Request) bool {
 	return false
 }
 
+// negativeOperators are the modeled operators whose match means "does NOT match".
+//
+// Here rather than in pack.go because this is where the operator vocabulary is
+// modeled, and the packer's conflict check has to be about the same set the model
+// evaluates or the two disagree about what a statement means. AUDIT-2 found the
+// packer checking a single literal against a set of six.
+var negativeOperators = []string{
+	"StringNotEquals", "StringNotLike",
+	"ArnNotEquals", "ArnNotLike",
+}
+
+// isNegativeOperator reports whether op is a modeled negative operator, ignoring an
+// IfExists suffix.
+//
+// The suffix is stripped rather than rejected: ArnNotLikeIfExists is the same
+// operator with an absent-key rule, so a statement carrying it constrains the key in
+// exactly the way a conflict check cares about. conditionMatches trims it for the
+// same reason.
+func isNegativeOperator(op string) bool {
+	return contains(negativeOperators, strings.TrimSuffix(op, "IfExists"))
+}
+
 // UnknownOperators returns the condition operators in the statement set that the
 // behavioral model does not evaluate, sorted.
 //
