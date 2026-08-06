@@ -66,6 +66,30 @@ audit records a decision rather than rediscovering the change.
   `schema/CHANGELOG.md`. AUDIT-2 still owes the sweep over the other three
   schemas and over what the CLI and error paths print, since a field becomes a
   round-trip field the moment a remediation message tells someone to type it.
+- **UNRATIFIED — `control-artifact/v1`'s content hash now covers a payload object**
+  rather than a bare `controls[]` array. Landed with E1/E3 because the alternative
+  was an unhashed security-relevant field (`region_deny_exempt_services`, whose
+  corruption both bricks an account and silently widens a Deny), but it
+  **restructures rather than strictly tightens** — so rule 6 makes it the
+  maintainer's call, not an audit-driven change that may land and be ratified later.
+  Committed in `6700bc0` with the reasoning in `schema/CHANGELOG.md`. Every artifact
+  hash moved, including `cmmc-l1`'s, which gained no field. Flagged here because a
+  changelog entry is a record, not an approval.
+- **UNRATIFIED — `environment-profile/v1`: five fields tightened** —
+  `environment_profile.title`/`.description` to `$defs/prose`/`long_prose`,
+  `placement.ou_path[]` to `$defs/ou_name`, `account.email_pattern` to an explicit
+  charset with `maxLength: 254` (the old `^[^@\s]+@[^@\s]+$` admitted control bytes
+  and a 4KB address), `account.tags` to `$defs/tag_key`/`tag_value` with
+  `maxProperties: 48`, and both `local_dir` fields to `$defs/local_dir` (the old
+  `minLength: 1` admitted `/etc`, `../../..`, and `~/`). All strictly tightening and
+  pre-publication, so they land under rule 6's audit-driven clause. Found by writing
+  `internal/envprofile`'s `TestGoAndSchemaAgreeOnRejection` — the schema was the
+  looser layer in every case, which is the wrong direction for the one document type
+  that is **hand-written**, since the schema is what the operator's editor checks
+  while they write it. Reasoning per field in `schema/CHANGELOG.md`, along with the
+  three asymmetries that are asserted to remain asymmetric and the one production
+  defect (`CanonicalContentJSON` conflating an empty permitted *set* with an empty
+  permitted *block*) the same tests found.
 - **substrate#577** (root has no stable identity) as evidence the emulator probe
   paid for itself independent of the migration decision. See Phase 3 below.
 
