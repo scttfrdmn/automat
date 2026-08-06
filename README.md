@@ -34,6 +34,7 @@ everything else in the design is marked as not shipping yet, in this file and in
 |---|---|---|
 | `automat preflight` | Classifies where you stand — standalone, management, or member — and reports every capability automat needs, with the exact grant that would fix anything missing | Phase 1 |
 | `automat init` | Prepares an organization to vend into: creates one with all features if this account is not in one, enables the service control policy type on the root, and ensures an OU below it. Prints a plan first; every step is create-or-verify, so a second run writes nothing | Phase 2 |
+| `automat vend` | Creates one member account from an environment profile, moves it into the target OU, and ensures the OU's service control policies from the compiled control sets — controls attached before the account is handed to anyone. Writes a hash-chained evidence manifest and prints a birth certificate. **Preventive controls only:** it performs no in-child baseline work, and says so in every plan and every manifest (see below) | Phase 2 |
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
@@ -48,9 +49,16 @@ reliably tells you a grant is *missing*; it cannot promise a call will succeed.
 Named because leaving them out would read as an oversight, and naming them as though they
 worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
 
-- **`automat vend`** — creating and baselining an account. Phase 2, in progress. This is the
-  point of the tool, and it does not exist yet. An organization can be prepared to vend
-  into (see the table above); nothing yet vends into it.
+- **The in-child baseline** — the half of vending that works *inside* the new account: the
+  Config recorder and delivery channel, the conformance pack compiled from the control sets'
+  Config rules, opt-in region enablement, attestation stubs for the procedural controls, and
+  the in-account automation role. Phase 2, in progress. Vending itself works (see the table
+  above) and what it attaches is real, but it attaches only **preventive** controls. A
+  vended account therefore has no detective baseline: nothing in it is being *watched*.
+  Singled out here rather than left as a footnote because a vended account looks finished —
+  so the plan reports the step as not performed, and the evidence manifest carries a
+  **parked** `baseline-apply` record. That record is what stops a manifest which is merely
+  silent about the baseline from reading as a baseline that succeeded.
 - **`automat setup` without `--request`** — applying the delegation directly from a
   management account. Phase 3. The command refuses and names the phase.
 - **`automat verify`** — re-reading what is actually attached to an account. Phase 4. Worth

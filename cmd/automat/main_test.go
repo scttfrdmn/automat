@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
 	"github.com/scttfrdmn/automat/internal/awsfake"
@@ -64,13 +65,16 @@ func fakes(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*g
 }
 
 // fakeWorld is every fake behind one globals, kept together because `init` needs
-// three of them to agree about the same organization.
+// three of them to agree about the same organization, and `vend` needs four: it
+// creates an account through OrgVend and attaches policies to it through OrgPolicy,
+// and those two are the same organization or the attachment targets nothing.
 type fakeWorld struct {
-	STS   *awsfake.STS
-	Org   *awsfake.Org
-	State *awsfake.OrgState
-	Init  *awsfake.OrgInit
-	Vend  *awsfake.OrgVend
+	STS    *awsfake.STS
+	Org    *awsfake.Org
+	State  *awsfake.OrgState
+	Init   *awsfake.OrgInit
+	Vend   *awsfake.OrgVend
+	Policy *awsfake.OrgPolicy
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -106,11 +110,12 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		state.SCPEnabled = false
 	}
 	f := &fakeWorld{
-		STS:   stsFake,
-		Org:   orgFake,
-		State: state,
-		Init:  awsfake.NewOrgInit(state).Observing(orgFake),
-		Vend:  awsfake.NewOrgVend(state),
+		STS:    stsFake,
+		Org:    orgFake,
+		State:  state,
+		Init:   awsfake.NewOrgInit(state).Observing(orgFake),
+		Vend:   awsfake.NewOrgVend(state),
+		Policy: awsfake.NewOrgPolicy(state),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -128,6 +133,9 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		newOrgVend: func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
 			return f.Vend, nil
 		},
+		newOrgPolicy: func(context.Context, string, string) (awsapi.OrgPolicyAPI, error) {
+			return f.Policy, nil
+		},
 		newIAM: func(context.Context, string, string) (awsapi.IAMAPI, error) {
 			return iamFake, nil
 		},
@@ -138,6 +146,11 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 			t.Error("a test built an SSO OIDC client; only `login` should, and no test here runs it")
 			return nil, errors.New("unexpected")
 		},
+		// No wait between polls. CreateAccount is asynchronous and the fake reports
+		// IN_PROGRESS twice before succeeding, so a real sleep would cost the poll
+		// interval twice per vend — and the poll COUNT is what the code under test
+		// decides, not the interval, so waiting tests nothing.
+		sleep: func(context.Context, time.Duration) error { return nil },
 	}
 	// No config file: the tests that want one point --config at a temp path.
 	g.configPath = filepath.Join(t.TempDir(), "absent.toml")
@@ -370,6 +383,9 @@ func TestSetupRequestWritesABundleAndMakesNoAWSCall(t *testing.T) {
 	g.newOrgVend = func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
 		return nil, refuse("an Organizations vend client")
 	}
+	g.newOrgPolicy = func(context.Context, string, string) (awsapi.OrgPolicyAPI, error) {
+		return nil, refuse("an Organizations policy client")
+	}
 	g.newIAM = func(context.Context, string, string) (awsapi.IAMAPI, error) { return nil, refuse("an IAM client") }
 	g.newQuota = func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 		return nil, refuse("a Service Quotas client")
@@ -532,14 +548,28 @@ vendor_role_ann = "arn:aws:iam::111111111111:role/automat-vendor"
 // what notices — the LoadDefaultConfig underneath it would otherwise read the
 // developer's own ~/.aws and, on a machine with a valid profile, silently succeed.
 func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
-	for _, args := range [][]string{
-		{"preflight"},
-		{"version"},
-		{"setup"},
-		{"init"},
-		{"init", "--dry-run"},
+	for _, tc := range []struct {
+		args []string
+		// profile marks a case that needs a real environment profile on disk.
+		// Without one `vend` refuses before it builds a single client, and the case
+		// would pass while asserting nothing — the exact vacuous-test failure this
+		// file's other comments are about.
+		profile bool
+	}{
+		{args: []string{"preflight"}},
+		{args: []string{"version"}},
+		{args: []string{"setup"}},
+		{args: []string{"init"}},
+		{args: []string{"init", "--dry-run"}},
+		{args: []string{"vend", "--name", "Genomics"}, profile: true},
+		{args: []string{"vend", "--name", "Genomics", "--dry-run"}, profile: true},
 	} {
+		args := tc.args
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			if tc.profile {
+				args = append(append([]string{}, args...),
+					"--environment-profile", vendProfileJSON(t, nil))
+			}
 			g := &globals{configPath: filepath.Join(t.TempDir(), "absent.toml")}
 			var built []string
 			note := func(what string) error {
@@ -553,6 +583,9 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 			}
 			g.newOrgVend = func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
 				return nil, note("Organizations (vend)")
+			}
+			g.newOrgPolicy = func(context.Context, string, string) (awsapi.OrgPolicyAPI, error) {
+				return nil, note("Organizations (policy)")
 			}
 			g.newIAM = func(context.Context, string, string) (awsapi.IAMAPI, error) { return nil, note("IAM") }
 			g.newQuota = func(context.Context, string, string) (awsapi.QuotaAPI, error) { return nil, note("Quotas") }

@@ -4,8 +4,13 @@
 // Command automat vends compliant AWS sub-accounts.
 //
 // Each subcommand of DESIGN §13 lives in its own file here. Phase 1 provided
-// login, preflight, and setup --request; Phase 2 adds init; the rest arrive with
-// their phases.
+// login, preflight, and setup --request; Phase 2 adds init and vend; the rest
+// arrive with their phases.
+//
+// `vend` performs DESIGN §7 steps 1 to 4 and step 6 — resolve, create, place,
+// attach the service control policies, and write the evidence manifest. It does NOT
+// perform step 5, the in-child baseline work, and it reports that in every plan and
+// in every manifest rather than omitting it. See newVendCmd.
 package main
 
 import (
@@ -54,8 +59,11 @@ func newRootCmdWith(g *globals) *cobra.Command {
 			"Start with `automat preflight`: it reports where you stand in an organization and\n" +
 			"what automat can and cannot do from there. If you are in a member account, it\n" +
 			"will point you at `automat setup --request`. If you own the organization,\n" +
-			"`automat init` prepares it.\n\n" +
-			"Phase 2 build: preflight, onboarding, and `init` work; `vend` does not exist yet.",
+			"`automat init` prepares it. Then `automat vend` creates accounts.\n\n" +
+			"Phase 2 build: preflight, onboarding, `init`, and `vend` work. `vend` attaches\n" +
+			"preventive controls (service control policies) but performs no in-child baseline\n" +
+			"work — no Config recorder, no conformance pack, no in-account roles (DESIGN §7\n" +
+			"step 5). Every plan and every evidence manifest says so.",
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		// Print help rather than an opaque error when invoked bare.
@@ -77,6 +85,7 @@ func newRootCmdWith(g *globals) *cobra.Command {
 		newPreflightCmd(g),
 		newSetupCmd(g),
 		newInitCmd(g),
+		newVendCmd(g),
 	)
 	return cmd
 }

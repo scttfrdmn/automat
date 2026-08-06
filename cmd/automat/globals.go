@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -46,18 +47,24 @@ type globals struct {
 	// what makes "this command holds no init client" a fact about the wiring rather
 	// than a claim about the code, and in the MEMBER state the vend and policy
 	// halves genuinely run on different credentials (DESIGN §5), so they cannot
-	// share one. `automat init` is the only caller of newOrgInit.
-	//
-	// newOrgPolicy joins these with `vend`; it is absent rather than nil-and-unused
-	// so that the set of clients this binary can build stays the set some command
-	// actually builds.
-	newSSOOIDC func(ctx context.Context, region string) (awsapi.SSOOIDCAPI, error)
-	newOrg     func(ctx context.Context, region, profile string) (awsapi.OrgAPI, error)
-	newOrgInit func(ctx context.Context, region, profile string) (awsapi.OrgInitAPI, error)
-	newOrgVend func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
-	newSTS     func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
-	newIAM     func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
-	newQuota   func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
+	// share one. `automat init` is the only caller of newOrgInit, and `automat
+	// vend` is the only caller of newOrgPolicy.
+	newSSOOIDC   func(ctx context.Context, region string) (awsapi.SSOOIDCAPI, error)
+	newOrg       func(ctx context.Context, region, profile string) (awsapi.OrgAPI, error)
+	newOrgInit   func(ctx context.Context, region, profile string) (awsapi.OrgInitAPI, error)
+	newOrgVend   func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
+	newOrgPolicy func(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error)
+	newSTS       func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
+	newIAM       func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
+	newQuota     func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
+
+	// sleep is how a command waits between polls, and it is a field for the same
+	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
+	// a test that waited for real would spend the poll interval per poll per case,
+	// and one that shortened the interval instead would be testing a timing the
+	// binary never uses. nil means org.Ensurer's own default, which is what
+	// production gets.
+	sleep func(ctx context.Context, d time.Duration) error
 }
 
 // load reads the config file once.
@@ -165,6 +172,26 @@ func (g *globals) orgInitClient(ctx context.Context, region, profile string) (aw
 func (g *globals) orgVendClient(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error) {
 	if g.newOrgVend != nil {
 		return g.newOrgVend(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
+}
+
+// orgPolicyClient is the service control policy client.
+//
+// A different constructor from orgVendClient even though both return an
+// Organizations client today, because in the MEMBER state they will not: policy
+// operations run as the caller's own delegated identity while account and OU
+// operations travel through the assumed vendor role (DESIGN §5). Sharing one
+// constructor would make that difference invisible at the moment Phase 3 has to
+// introduce it, and the difference is the whole security argument the onboarding
+// bundle makes.
+func (g *globals) orgPolicyClient(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error) {
+	if g.newOrgPolicy != nil {
+		return g.newOrgPolicy(ctx, region, profile)
 	}
 	cfg, err := g.awsConfig(ctx, region, profile)
 	if err != nil {

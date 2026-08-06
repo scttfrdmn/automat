@@ -72,7 +72,7 @@ func TestREADMEClaimsOnlyCommandsThatExist(t *testing.T) {
 	// here rather than parsed out of the table because a parser that failed to find
 	// a row would silently assert nothing, which is the failure mode this whole
 	// file exists to prevent.
-	claimed := []string{"preflight", "init", "setup", "login", "version"}
+	claimed := []string{"preflight", "init", "vend", "setup", "login", "version"}
 
 	for _, name := range claimed {
 		if !strings.Contains(s, "`automat "+name+"`") {

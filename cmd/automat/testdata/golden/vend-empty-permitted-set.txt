@@ -1,0 +1,2 @@
+<profile path>: environment profile "research-cui" is invalid (1 problem):
+  - permitted.services: is present but empty — omit the field to add no boundary on this axis, or list at least one member. An empty allowlist is not a strict policy but a DENY-ALL: it denies every call in the account, including the ones automat's own baseline makes, and nothing about the document says so

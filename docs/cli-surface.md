@@ -13,7 +13,7 @@ That direction matters: checking §13 against a summary of the code would find n
 ## Commands
 
 §13 lists eleven command forms. Phase 1 shipped three plus two cobra built-ins; Phase 2
-adds `init`.
+adds `init` and `vend`.
 
 | §13 command | State | Where |
 |---|---|---|
@@ -22,7 +22,7 @@ adds `init`.
 | `automat setup --request` | **Shipped** | `cmd/automat/setup.go` |
 | `automat setup` (MANAGEMENT) | Not yet — Phase 3 | Refuses with the phase named |
 | `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
-| `automat vend` | Not yet — Phase 2 | ROADMAP Phase 2 |
+| `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
 | `automat compile` | Not yet — see below | `gen/catalog` today |
 | `automat verify` | Not yet — Phase 4 | ROADMAP Phase 4 |
 | `automat list` | Not yet — Phase 4 | ROADMAP Phase 4 |
@@ -45,6 +45,7 @@ shipped command is absent from §13.**
 | `preflight` | none | — |
 | `setup` | `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`, `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`, `--vendor-role-name`, `--contact` | §13 names none of these |
 | `init` | `--ou-name`, `--dry-run`, `--yes` | §13 names none of these |
+| `vend` | `--environment-profile`, `--name`, `--email`, `--ou`, `--resume`, `--dry-run` | §13 line 100 names `--profile`; see the naming note below |
 
 §13 specifies commands, not flags, so a flag cannot contradict it by existing. The two
 with security semantics remain the ones AUDIT-1 flagged: `--force` (discards a hand
@@ -108,8 +109,9 @@ intended: `TestPreflightNeverPrintsTheExternalID` covers the CLI's output paths.
 
 ## Deviations
 
-Two. D1 was found by writing this page; D2 was found by building `init` and is a
-deviation automat is keeping.
+Three. D1 was found by writing this page; D2 was found by building `init` and is a
+deviation automat is keeping; D3 was found by building `vend` and is a shortfall
+automat is disclosing rather than keeping.
 
 ### D1 — The CLI named the wrong phase for `setup` without `--request`. FIXED
 
@@ -170,6 +172,50 @@ asserts the partial-progress report names the step that did succeed.
 **For AUDIT-2:** either §13's `init` line is amended to name the two states it permits, or
 this deviation is re-ratified as it stands. Do not resolve it by narrowing the command —
 that would reintroduce a mutating command with no safe second run.
+
+### D3 — `automat vend` performs DESIGN §7 steps 1–4 and 6, not step 5. DISCLOSED, not accepted
+
+§13 writes the command as vending an account with its baseline applied. As built, `vend`
+does step 1 (resolve the environment profile to a compiled control set), step 2 (create
+the account), step 3 (move it into the target OU), step 4 (ensure the OU's service
+control policies), and step 6 (write the evidence manifest and print the birth
+certificate). It does **not** do step 5, the in-child baseline work: no Config recorder
+or delivery channel, no conformance pack, no opt-in region enablement, no attestation
+stubs, and no in-account automation role.
+
+The reason is capability, not scheduling: there is no `internal/baseline` package and no
+Config, Account Management, or IAM-write interface in `internal/awsapi`, so this binary
+cannot assume into a vended account at all.
+
+**Listed as a deviation rather than as ROADMAP progress because a vended account looks
+finished.** Its preventive controls are real and attached; nothing in it is being
+watched. An operator reading only a green run would have no way to tell. So the shortfall
+is stated in three places the operator cannot miss, and each is asserted by a test:
+
+- the **plan and the applied output** carry two `RecordUnknown` lines naming what was
+  not performed and why re-running will not change it;
+- the **evidence manifest** carries a `baseline-apply` record with outcome `parked` — the
+  accurate outcome, since the work is genuinely outstanding. A manifest that was merely
+  silent would read as a baseline that succeeded, which is the single most damaging thing
+  a compliance artifact can do;
+- the **birth certificate** prints `detective baseline: NOT APPLIED`.
+
+Two smaller shortfalls of the same kind, both reported the same way rather than dropped:
+
+- **Three of DESIGN §14's five account tags are not written.** `automat:vended-by` and
+  `automat:ou` are set at creation, which is the only moment they can be — a tag a
+  condition reads must not be writable by the principal the condition constrains. The
+  other three (`automat:artifact-id`, `automat:artifact-sha256`, `automat:version`) are
+  the post-create mutable set, and nothing in `internal/org` tags an account after
+  creation.
+- **`account.role_name` and `account.iam_user_access_to_billing` in the environment
+  profile do not reach AWS.** `org.EnsureAccount` sends only `AccountName`, `Email`, and
+  `Tags`. Two document fields that validate and then have no effect, which is worth an
+  audit line of its own.
+
+**For AUDIT-2:** this is not a deviation to re-ratify. Either step 5 ships and D3 is
+struck, or §13's `vend` line is amended to describe what the command does. What must not
+happen is D3 quietly becoming the definition of vending.
 
 ### Not a deviation: `automat compile` lives in `gen/catalog`
 
