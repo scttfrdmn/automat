@@ -1,0 +1,8 @@
+cannot apply the environment profile's permitted sets to the compiled control sets: the
+environment profile's permitted region set is present but empty, which permits no region
+at all (from environment-profile:clinical-genomics-l3). omit the permitted.regions field
+to add no boundary on that axis, or list at least one member. An empty allowlist is not
+a strict policy but a DENY-ALL: it denies every call in the account, including the ones
+automat's own baseline makes, and nothing about the document says so. Reaching this
+point means the profile was not validated before it was compiled — the schema and
+envprofile.Validate both refuse it

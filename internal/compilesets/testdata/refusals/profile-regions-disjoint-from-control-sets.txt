@@ -1,0 +1,11 @@
+cannot apply the environment profile's permitted sets to the compiled control sets: the
+environment profile permits regions "eu-west-1", and the compiled control sets permit
+regions "us-east-1", "us-west-2"; they have no member in common, so no region would be
+permitted (from 800-171r2:3.1.3, environment-profile:clinical-genomics-l3). the profile
+and the control sets disagree about where work may run: the profile can only NARROW what
+the control sets permit, so every region it names must be one they already allow. Either
+name a permitted region from the second list, or compile a control set that permits the
+ones the profile needs. automat refuses rather than attaching the intersection, because
+an SCP permitting no region denies every call in the account — including the ones
+automat's own baseline makes, and the operator's own ability to undo it — and the
+account would already have been created and moved by the time anyone found out

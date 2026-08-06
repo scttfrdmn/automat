@@ -1,0 +1,12 @@
+cannot apply the environment profile's permitted sets to the compiled control sets: the
+environment profile permits services "sagemaker", and the compiled control sets permit
+services "batch", "s3"; they have no member in common, so no service would be permitted
+(from 800-171r2:3.4.6, environment-profile:clinical-genomics-l3). the profile and the
+control sets disagree about which services may be used: the profile can only NARROW what
+the control sets permit, so every service it names must be one they already allow.
+Either name a permitted service from the second list, or compile a control set that
+permits the ones the profile needs. automat refuses rather than attaching the
+intersection, because an SCP permitting no service denies every call in the account —
+including the ones automat's own baseline makes, and the operator's own ability to undo
+it — and the account would already have been created and moved by the time anyone
+found out

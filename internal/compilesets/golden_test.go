@@ -211,53 +211,108 @@ func TestEveryGoldenScenarioIsCoveredByAFile(t *testing.T) {
 // These live under testdata/refusals rather than testdata/golden because
 // TestEveryGoldenScenarioIsCoveredByAFile treats every directory under
 // testdata/golden as a packed-policy scenario and would call this one stale.
+//
+// Each scenario returns the ERROR rather than the input it refuses, because the
+// refusals no longer all come from one function: Narrow refuses at plan time before
+// anything is rendered, and pinning its text matters for the same reason pinning
+// Pack's does — an environment profile disjoint from its control sets produces a
+// paragraph and nothing else.
 var goldenRefusals = []struct {
-	file  string
-	build func(t *testing.T) *Merged
+	file   string
+	refuse func(t *testing.T) error
 }{
 	{
 		// No compiled set supplied the exemption list.
 		file: "missing-exemption-list",
-		build: func(t *testing.T) *Merged {
+		refuse: func(t *testing.T) error {
 			t.Helper()
-			return &Merged{
+			_, err := Pack(&Merged{
 				RegionAllowlist:  newAllowSet([]string{"us-west-2"}, "800-171r2:3.1.3"),
 				ServiceAllowlist: newAllowSet([]string{"s3"}, "cmmc-l1:AC.L1-3.1.1"),
-			}
+			}, packOpts())
+			return err
 		},
 	},
 	{
 		// Two sets supplied it and agreed on nothing.
 		file: "exemption-list-intersects-to-nothing",
-		build: func(t *testing.T) *Merged {
+		refuse: func(t *testing.T) error {
 			t.Helper()
-			return &Merged{
+			_, err := Pack(&Merged{
 				RegionAllowlist: newAllowSet([]string{"us-west-2"}, "800-171r2:3.1.3"),
 				RegionDenyExemptServices: &AllowSet{
 					Members: []string{},
 					Sources: []string{"800-171r2", "local-overlay"},
 				},
-			}
+			}, packOpts())
+			return err
 		},
 	},
 	{
 		file: "region-allowlist-intersects-to-nothing",
-		build: func(t *testing.T) *Merged {
+		refuse: func(t *testing.T) error {
 			t.Helper()
-			return withGlobalExemptions(&Merged{RegionAllowlist: &AllowSet{
+			_, err := Pack(withGlobalExemptions(&Merged{RegionAllowlist: &AllowSet{
 				Members: []string{},
 				Sources: []string{"800-171r2:3.1.3", "local-overlay:regions"},
-			}})
+			}}), packOpts())
+			return err
 		},
 	},
 	{
 		file: "service-allowlist-intersects-to-nothing",
-		build: func(t *testing.T) *Merged {
+		refuse: func(t *testing.T) error {
 			t.Helper()
-			return withGlobalExemptions(&Merged{ServiceAllowlist: &AllowSet{
+			_, err := Pack(withGlobalExemptions(&Merged{ServiceAllowlist: &AllowSet{
 				Members: []string{},
 				Sources: []string{"800-171r2:3.4.6", "local-overlay:services"},
-			}})
+			}}), packOpts())
+			return err
+		},
+	},
+	{
+		// E5, at the narrowing layer: the environment profile and the control sets
+		// each permit regions and share none.
+		file: "profile-regions-disjoint-from-control-sets",
+		refuse: func(t *testing.T) error {
+			t.Helper()
+			_, err := Narrow(
+				withGlobalExemptions(&Merged{
+					RegionAllowlist: newAllowSet([]string{"us-east-1", "us-west-2"}, "800-171r2:3.1.3"),
+				}),
+				NarrowOptions{Regions: []string{"eu-west-1"}, ProfileID: "clinical-genomics-l3"},
+			)
+			return err
+		},
+	},
+	{
+		file: "profile-services-disjoint-from-control-sets",
+		refuse: func(t *testing.T) error {
+			t.Helper()
+			_, err := Narrow(
+				withGlobalExemptions(&Merged{
+					ServiceAllowlist: newAllowSet([]string{"s3", "batch"}, "800-171r2:3.4.6"),
+				}),
+				NarrowOptions{Services: []string{"sagemaker"}, ProfileID: "clinical-genomics-l3"},
+			)
+			return err
+		},
+	},
+	{
+		// The deny-all a validated profile cannot carry, refused rather than
+		// intersected. Reaching Narrow means something skipped validation, and the
+		// message has to say so — an operator reading it needs to know the document
+		// is wrong, not that their regions do not overlap.
+		file: "profile-region-set-present-but-empty",
+		refuse: func(t *testing.T) error {
+			t.Helper()
+			_, err := Narrow(
+				withGlobalExemptions(&Merged{
+					RegionAllowlist: newAllowSet([]string{"us-east-1"}, "800-171r2:3.1.3"),
+				}),
+				NarrowOptions{Regions: []string{}, ProfileID: "clinical-genomics-l3"},
+			)
+			return err
 		},
 	},
 }
@@ -266,7 +321,7 @@ func TestRefusalMessagesMatchGolden(t *testing.T) {
 	dir := filepath.Join("testdata", "refusals")
 	for _, sc := range goldenRefusals {
 		t.Run(sc.file, func(t *testing.T) {
-			_, err := Pack(sc.build(t), packOpts())
+			err := sc.refuse(t)
 			if err == nil {
 				t.Fatal("this scenario no longer refuses; the refusal it pins is gone, not just reworded")
 			}

@@ -70,7 +70,8 @@ type Packed struct {
 }
 
 // PackError reports that the merged control set cannot be expressed within AWS's
-// quotas, or that the merge produced something unrenderable.
+// quotas, that the merge produced something unrenderable, or that a narrowing left
+// nothing to render.
 //
 // An error value with remediation text, per CLAUDE.md rule 7: the operator's next
 // action is to narrow the control set or split the OU, and the message says which
@@ -82,11 +83,25 @@ type PackError struct {
 	Remediation string
 	// Sources names the artifacts involved, when known.
 	Sources []string
+	// Stage names the step that refused, and appears in the first clause of the
+	// message. Empty means the packer, which is the ordinary case.
+	//
+	// It exists because Narrow refuses BEFORE anything is rendered, and a refusal
+	// opening with "cannot pack" sends the operator to look at policy size and slot
+	// quotas — the two things a narrowing failure has nothing to do with. The first
+	// six words of an error are what a hurried operator reads, so they have to name
+	// the right step.
+	Stage string
 }
 
 func (e *PackError) Error() string {
 	var sb strings.Builder
-	sb.WriteString("cannot pack the merged control set into service control policies: ")
+	if e.Stage != "" {
+		sb.WriteString(e.Stage)
+	} else {
+		sb.WriteString("cannot pack the merged control set into service control policies")
+	}
+	sb.WriteString(": ")
 	sb.WriteString(e.Reason)
 	if len(e.Sources) > 0 {
 		sb.WriteString(" (from ")
