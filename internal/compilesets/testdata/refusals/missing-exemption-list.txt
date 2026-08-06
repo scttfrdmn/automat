@@ -1,0 +1,10 @@
+cannot pack the merged control set into service control policies: a compiled control set
+restricts regions or services, but none of them supplies region_deny_exempt_services —
+the list of globally addressed service namespaces the restriction must not cover (from
+800-171r2:3.1.3, cmmc-l1:AC.L1-3.1.1). compile a control set that carries an
+artifact-level region_deny_exempt_services list (automat's own baseline-protection set
+does, and is attached with every vend). automat will not substitute a built-in list:
+globally addressed services answer on endpoints AWS reports as us-east-1, so a
+restriction that does not exempt them denies every IAM, STS, and Organizations call in
+the account — including the operator's own ability to undo it — and a list only this
+binary knows is a control whose scope cannot be reviewed or corrected without a release

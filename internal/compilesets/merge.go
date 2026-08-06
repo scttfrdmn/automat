@@ -55,6 +55,15 @@ func FromArtifact(a *artifact.Artifact) *Merged {
 		}
 		m.addSCP(c.SCP, a.Meta.ID, c.ID)
 	}
+	// Artifact-level, so it is seeded here rather than in addSCP: the list states
+	// an AWS fact about which endpoints answer where, whose scope is the whole
+	// document. The origin is the artifact id alone for the same reason — there is
+	// no control to attribute it to, and inventing one would tell an operator
+	// reading a conflict report to go look at a control that says nothing about it.
+	if a.RegionDenyExemptServices != nil {
+		m.RegionDenyExemptServices = intersectSets(m.RegionDenyExemptServices,
+			newAllowSet(a.RegionDenyExemptServices, a.Meta.ID))
+	}
 	m.Statements = mergeStatements(m.Statements)
 	sortStatements(m.Statements)
 	return m
@@ -93,9 +102,10 @@ func Combine(a, b *Merged) *Merged {
 	}
 
 	out := &Merged{
-		Statements:       mergeStatements(sts),
-		RegionAllowlist:  intersectSets(a.RegionAllowlist, b.RegionAllowlist),
-		ServiceAllowlist: intersectSets(a.ServiceAllowlist, b.ServiceAllowlist),
+		Statements:               mergeStatements(sts),
+		RegionAllowlist:          intersectSets(a.RegionAllowlist, b.RegionAllowlist),
+		ServiceAllowlist:         intersectSets(a.ServiceAllowlist, b.ServiceAllowlist),
+		RegionDenyExemptServices: intersectSets(a.RegionDenyExemptServices, b.RegionDenyExemptServices),
 	}
 	sortStatements(out.Statements)
 	return out
@@ -171,6 +181,29 @@ type Merged struct {
 	RegionAllowlist *AllowSet
 	// ServiceAllowlist is the same for service namespaces.
 	ServiceAllowlist *AllowSet
+
+	// RegionDenyExemptServices is the intersection of every artifact-level
+	// global-service exemption list that appeared. nil means NO artifact supplied
+	// one.
+	//
+	// INTERSECTED, and that is forced by SCP semantics rather than chosen. A Deny
+	// over NotAction[a:*] concatenated with a Deny over NotAction[b:*] denies
+	// everything except a∩b, so a merge that unioned these lists would describe
+	// something the rendered policy does not do — the list would claim more
+	// services are spared than the policy spares. Every other reading is a lie
+	// about the output.
+	//
+	// Reused as an AllowSet for the provenance, which is the same reason the
+	// allowlists carry one: when this intersects to nothing the operator's
+	// question is which two catalogs disagreed about what AWS does.
+	//
+	// nil versus empty is load-bearing here for a different reason than on the
+	// allowlists. nil means no input stated the AWS fact, which Pack refuses when
+	// anything constrains regions — falling back to a built-in list would be the
+	// compiled-in list with extra steps. Empty means two inputs stated it and
+	// agreed on nothing, which is a conflict between two claims about AWS and
+	// cannot be resolved by picking one.
+	RegionDenyExemptServices *AllowSet
 }
 
 // AllowSet is an intersected allowlist that remembers who constrained it.

@@ -420,6 +420,170 @@ func pickMembers(s *AllowSet) []string {
 	return s.Members
 }
 
+// TestUnionIsMonotoneOnTheGlobalServiceExemptionList is monotonicity for the
+// exemption list, which is the one set in a Merged where "wider" and "longer" are
+// the same thing.
+//
+// The list is rendered into NotAction, so every namespace on it is a HOLE in a
+// Deny. A merge that unioned the lists would punch a hole neither input granted —
+// the same defect as unioning exempt principals, one layer down and easier to miss
+// because the entries look like a compatibility list rather than like permissions.
+func TestUnionIsMonotoneOnTheGlobalServiceExemptionList(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		a := drawRenderable(rt, "a")
+		b := drawRenderable(rt, "b")
+		u := Combine(a, b)
+
+		got := pickMembers(u.RegionDenyExemptServices)
+		for _, side := range []struct {
+			name string
+			m    *Merged
+		}{{"A", a}, {"B", b}} {
+			spared := map[string]bool{}
+			for _, v := range side.m.RegionDenyExemptServices.Members {
+				spared[v] = true
+			}
+			for _, v := range got {
+				if !spared[v] {
+					rt.Fatalf("the union WIDENED the global-service exemption list: it spares %q from the "+
+						"region and service Denies, which %s does not (%s spares %v, union spares %v). "+
+						"Every entry on this list is a hole in a Deny, so a longer list is a wider policy",
+						v, side.name, side.name, side.m.RegionDenyExemptServices.Members, got)
+				}
+			}
+		}
+		if u.RegionDenyExemptServices == nil {
+			rt.Fatal("the union LOST the exemption list; both inputs carried one, and a Merged without one " +
+				"cannot render either allowlist at all")
+		}
+	})
+}
+
+// TestUnionIsMonotoneOverRenderedPolicies is the can-any-merge-widen property with
+// the REGION AND SERVICE SETS as subjects rather than only the statements.
+//
+// Why a separate property, when TestUnionIsMonotone already checks denied behavior:
+// an allowlist is not a statement until Pack renders it, so the statement-level
+// property cannot see it, and TestUnionIsMonotoneOnAllowlists sees it only as a set
+// of member strings. Neither notices a renderer that intersected the members
+// correctly and then emitted a policy permitting more than either input's would —
+// a condition operator changed, a NotAction list assembled from the wrong side, an
+// exemption list resolved per statement instead of once. The subject here is the
+// document that actually gets attached to the OU.
+//
+// The refusal case is not a widening. If the union's allowlists or exemption lists
+// intersect to nothing, Pack refuses and nothing is attached; a policy that does
+// not exist permits nothing. So the property is checked only when the union packs,
+// and TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals keeps that from
+// quietly becoming the usual case.
+func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		a := drawRenderable(rt, "a")
+		b := drawRenderable(rt, "b")
+		u := Combine(a, b)
+
+		union, err := Pack(u, packOpts())
+		if err != nil {
+			// A compile the packer refuses. Nothing is attached, so nothing widened.
+			return
+		}
+		denied := deniedSet(packedStatements(union))
+
+		for _, side := range []struct {
+			name string
+			m    *Merged
+		}{{"A", a}, {"B", b}} {
+			p, perr := Pack(side.m, packOpts())
+			if perr != nil {
+				rt.Fatalf("%s does not pack on its own (%v); the generator is supposed to produce "+
+					"renderable inputs, so this is a generator bug and it makes the property vacuous",
+					side.name, perr)
+			}
+			want := deniedSet(packedStatements(p))
+			if missing := diffDenied(want, denied); len(missing) > 0 {
+				rt.Fatalf("the union's PACKED POLICY widened permissions: %s's packed policy denied %d "+
+					"request(s) the union's permits.\nfirst missing: %s\n%s\nunion:\n%s",
+					side.name, len(missing), missing[0], describe(side.name, side.m), describe("A ∪ B", u))
+			}
+		}
+	})
+}
+
+// TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals.
+//
+// The property above returns early when the union does not pack, which is correct
+// and is also the shape of a property that tests nothing: if disjoint allowlist
+// draws made most unions unpackable, it would report a pass having compared almost
+// no policies. Same argument as TestTheGeneratorActuallyProducesMerges, and the
+// same remedy — measure it.
+func TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals(t *testing.T) {
+	const runs = 200
+	var packed, refused int
+	rapid.Check(t, func(rt *rapid.T) {
+		if packed+refused >= runs {
+			return
+		}
+		u := Combine(drawRenderable(rt, "a"), drawRenderable(rt, "b"))
+		if _, err := Pack(u, packOpts()); err != nil {
+			refused++
+			return
+		}
+		packed++
+	})
+	t.Logf("%d unions packed, %d refused", packed, refused)
+	if packed*4 < packed+refused {
+		t.Errorf("only %d of %d generated unions packed; the rendered monotonicity property is mostly "+
+			"returning early, so it is comparing policies far less often than its run count suggests. "+
+			"Widen the drawn allowlists so intersections survive more often",
+			packed, packed+refused)
+	}
+	if refused == 0 {
+		t.Error("no generated union was refused, so the early return in the rendered monotonicity " +
+			"property is dead code and the disjoint-allowlist case is unexercised by it")
+	}
+}
+
+// packedStatements flattens a pack into the statement list the behavioral model
+// evaluates.
+//
+// Across ALL policies, not the first: the bin packer distributes statements over
+// several documents, every document is attached to the same target, and a
+// restriction that landed in the second one is as effective as one in the first.
+// Reading only Policies[0] would report a widening every time a multi-document pack
+// happened to split the allowlists off.
+func packedStatements(p *Packed) []Statement {
+	var out []Statement
+	for _, pol := range p.Policies {
+		out = append(out, pol.Statements...)
+	}
+	return out
+}
+
+// drawRenderable is drawMerged plus the artifact-level exemption list Pack requires
+// before it will render either allowlist, and with at least one allowlist present
+// so the drawn value is actually a subject for the rendered properties.
+//
+// The exemption sets all contain the namespaces that would brick an account —
+// deliberately, so their intersection is never empty and the refusals the rendered
+// property returns early on are only ever the allowlist ones. The empty-intersection
+// refusal has its own coverage (TestAnExemptionListThatIntersectsToNothingIsRefused
+// and the pinned refusal text); mixing it in here would make the property's early
+// return fire for two unrelated reasons.
+func drawRenderable(t *rapid.T, label string) *Merged {
+	m := drawMerged(t, label)
+	if m.RegionAllowlist == nil && m.ServiceAllowlist == nil {
+		m.RegionAllowlist = newAllowSet(
+			rapid.SliceOfNDistinct(rapid.SampledFrom(probeRegions), 1, 3,
+				func(s string) string { return s }).Draw(t, label+".forcedRegions"),
+			label+":regions")
+	}
+	extra := rapid.SliceOfNDistinct(rapid.SampledFrom([]string{"kms", "route53", "support", "health"}), 0, 3,
+		func(s string) string { return s }).Draw(t, label+".exemptExtra")
+	m.RegionDenyExemptServices = newAllowSet(
+		append([]string{"iam", "sts", "organizations"}, extra...), label+":exempt")
+	return m
+}
+
 // TestUnionIsIdempotent: A ∪ A = A.
 //
 // Two claims in one, and both matter operationally. Denied behavior must be

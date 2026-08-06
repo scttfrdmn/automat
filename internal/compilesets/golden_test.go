@@ -191,6 +191,165 @@ func TestEveryGoldenScenarioIsCoveredByAFile(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Golden refusals
+// ---------------------------------------------------------------------------
+
+// The emptiness refusals, pinned as text.
+//
+// Owed by E5: an allowlist or exemption list that intersects to nothing is a hard
+// error at PLAN time whose message names which inputs produced the emptiness, and
+// the requirement is that the error be golden-tested. The reason it is worth bytes
+// on disk rather than a strings.Contains assertion is that this message is the
+// entire product in the case it covers. The account has not been created yet, the
+// operator has two or more control sets and no idea which pair disagreed, and what
+// they get is one paragraph. A wording change that drops the source list, or stops
+// distinguishing "nobody supplied a list" from "the lists agreed on nothing",
+// makes that paragraph useless without failing any behavioral test — the error is
+// still returned, still typed, still non-empty.
+//
+// These live under testdata/refusals rather than testdata/golden because
+// TestEveryGoldenScenarioIsCoveredByAFile treats every directory under
+// testdata/golden as a packed-policy scenario and would call this one stale.
+var goldenRefusals = []struct {
+	file  string
+	build func(t *testing.T) *Merged
+}{
+	{
+		// No compiled set supplied the exemption list.
+		file: "missing-exemption-list",
+		build: func(t *testing.T) *Merged {
+			t.Helper()
+			return &Merged{
+				RegionAllowlist:  newAllowSet([]string{"us-west-2"}, "800-171r2:3.1.3"),
+				ServiceAllowlist: newAllowSet([]string{"s3"}, "cmmc-l1:AC.L1-3.1.1"),
+			}
+		},
+	},
+	{
+		// Two sets supplied it and agreed on nothing.
+		file: "exemption-list-intersects-to-nothing",
+		build: func(t *testing.T) *Merged {
+			t.Helper()
+			return &Merged{
+				RegionAllowlist: newAllowSet([]string{"us-west-2"}, "800-171r2:3.1.3"),
+				RegionDenyExemptServices: &AllowSet{
+					Members: []string{},
+					Sources: []string{"800-171r2", "local-overlay"},
+				},
+			}
+		},
+	},
+	{
+		file: "region-allowlist-intersects-to-nothing",
+		build: func(t *testing.T) *Merged {
+			t.Helper()
+			return withGlobalExemptions(&Merged{RegionAllowlist: &AllowSet{
+				Members: []string{},
+				Sources: []string{"800-171r2:3.1.3", "local-overlay:regions"},
+			}})
+		},
+	},
+	{
+		file: "service-allowlist-intersects-to-nothing",
+		build: func(t *testing.T) *Merged {
+			t.Helper()
+			return withGlobalExemptions(&Merged{ServiceAllowlist: &AllowSet{
+				Members: []string{},
+				Sources: []string{"800-171r2:3.4.6", "local-overlay:services"},
+			}})
+		},
+	},
+}
+
+func TestRefusalMessagesMatchGolden(t *testing.T) {
+	dir := filepath.Join("testdata", "refusals")
+	for _, sc := range goldenRefusals {
+		t.Run(sc.file, func(t *testing.T) {
+			_, err := Pack(sc.build(t), packOpts())
+			if err == nil {
+				t.Fatal("this scenario no longer refuses; the refusal it pins is gone, not just reworded")
+			}
+			// Wrapped at a terminal width so the golden file is readable as the
+			// operator reads it. The wrap is the test's, not the packer's: nothing
+			// in automat should assume a terminal width.
+			got := wrapForReview(err.Error()) + "\n"
+
+			path := filepath.Join(dir, sc.file+".txt")
+			if updateGolden() {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				// 0644: a committed, reviewed fixture, as with the packed documents.
+				if err := os.WriteFile(path, []byte(got), 0o644); err != nil { //nolint:gosec // reviewed, committed fixture
+					t.Fatalf("write %s: %v", path, err)
+				}
+				t.Logf("updated %s", path)
+				return
+			}
+			want, rerr := os.ReadFile(path) //nolint:gosec // fixed testdata path
+			if rerr != nil {
+				t.Fatalf("read %s: %v — run `AUTOMAT_UPDATE_GOLDEN=1 go test ./internal/compilesets/`",
+					path, rerr)
+			}
+			if got != string(want) {
+				t.Errorf("the refusal text changed.\n%s\n"+
+					"If the change is intended, run "+
+					"`AUTOMAT_UPDATE_GOLDEN=1 go test ./internal/compilesets/` and read the diff as an "+
+					"operator would: this paragraph is the whole of what automat delivers when a compile "+
+					"cannot be packed.", firstDiff(string(want), got))
+			}
+		})
+	}
+	if !updateGolden() {
+		assertNoOrphanRefusals(t, dir)
+	}
+}
+
+func assertNoOrphanRefusals(t *testing.T, dir string) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := make(map[string]bool, len(goldenRefusals))
+	for _, sc := range goldenRefusals {
+		have[sc.file+".txt"] = true
+	}
+	for _, f := range files {
+		if !have[filepath.Base(f)] {
+			t.Errorf("%s pins a refusal no scenario produces — either a refusal was removed (a compile "+
+				"that used to be rejected now packs) or the file is stale", f)
+		}
+	}
+	if len(files) != len(goldenRefusals) {
+		t.Errorf("%s has %d pinned refusals but there are %d scenarios; a scenario added without running "+
+			"the update step would pass by never being compared", dir, len(files), len(goldenRefusals))
+	}
+}
+
+// wrapForReview breaks an error message at word boundaries so a golden diff shows
+// the changed phrase on one line rather than reflowing the whole paragraph.
+func wrapForReview(s string) string {
+	const width = 88
+	var out strings.Builder
+	col := 0
+	for i, word := range strings.Fields(s) {
+		switch {
+		case i == 0:
+		case col+1+len(word) > width:
+			out.WriteString("\n")
+			col = 0
+		default:
+			out.WriteString(" ")
+			col++
+		}
+		out.WriteString(word)
+		col += len(word)
+	}
+	return out.String()
+}
+
 // TestTheModelUnderstandsEveryOperatorTheCatalogsUse.
 //
 // Owed by name from behavior.go: Denies answers "does not deny" for a condition
@@ -364,7 +523,14 @@ func goldenExemptionDisagreement(t *testing.T) *artifact.Artifact {
 	}})
 }
 
-// goldenAllowlisted carries both allowlists.
+// goldenAllowlisted carries both allowlists, plus the artifact-level
+// global-service exemption list they require.
+//
+// The exemption list is on the artifact and not on the control, because it states
+// an AWS fact about which endpoints answer where rather than a restriction — and
+// because the packer refuses to render either allowlist without one. That refusal
+// is exercised by TestAConstrainedSetWithNoExemptionListIsRefused; here the point
+// is what a well-formed constrained set packs into, so the list is present.
 func goldenAllowlisted(t *testing.T) *artifact.Artifact {
 	t.Helper()
 	a := artifactWithSCP(t, "golden-allow", &artifact.SCP{Statements: []artifact.SCPStatement{{
@@ -375,6 +541,7 @@ func goldenAllowlisted(t *testing.T) *artifact.Artifact {
 	}}})
 	a.Controls[0].SCP.RegionAllowlist = []string{"us-east-1", "us-west-2"}
 	a.Controls[0].SCP.ServiceAllowlist = []string{"s3", "ec2", "batch", "fsx"}
+	a.RegionDenyExemptServices = testGlobalNamespaces
 	return a
 }
 

@@ -1,0 +1,9 @@
+cannot pack the merged control set into service control policies: the global-service
+exemption lists of the compiled control sets intersect to nothing, so a region or
+service restriction would cover every service including the globally addressed ones
+(from 800-171r2, local-overlay). the control sets disagree about which services are
+globally addressed, which is a disagreement about how AWS works rather than about policy
+— reconcile them so their region_deny_exempt_services lists overlap. The lists
+intersect rather than union because that is what the rendered policy does: a Deny over
+NotAction[a:*] alongside a Deny over NotAction[b:*] denies everything except what both
+spare

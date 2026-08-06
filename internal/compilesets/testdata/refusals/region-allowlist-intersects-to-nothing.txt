@@ -1,0 +1,6 @@
+cannot pack the merged control set into service control policies: the region allowlists
+of the compiled control sets intersect to nothing, so no region would be permitted (from
+800-171r2:3.1.3, local-overlay:regions). the control sets disagree about where work may
+run; compile a set whose regions overlap, or override the region allowlist explicitly
+— an SCP permitting no region denies every call in the account, including the ones
+automat's own baseline makes

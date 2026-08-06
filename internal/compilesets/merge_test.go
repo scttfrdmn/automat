@@ -271,8 +271,8 @@ func TestAChainOfStatementsCollapsesCompletely(t *testing.T) {
 // mergeStatements passes any it is handed straight through if that ordering ever
 // changes.
 func TestNoAllowlistStatementIsEverMerged(t *testing.T) {
-	region := regionStatement(newAllowSet([]string{"us-east-1"}, "set:regions"), PackOptions{})
-	service := serviceStatement(newAllowSet([]string{"s3"}, "set:services"), PackOptions{})
+	region := regionStatement(newAllowSet([]string{"us-east-1"}, "set:regions"), testGlobalNamespaces, PackOptions{})
+	service := serviceStatement(newAllowSet([]string{"s3"}, "set:services"), testGlobalNamespaces, PackOptions{})
 
 	t.Run("two allowlist statements pass through untouched", func(t *testing.T) {
 		got := mergeStatements([]Statement{region, service})
@@ -315,7 +315,7 @@ func TestNoAllowlistStatementIsEverMerged(t *testing.T) {
 		// arrived first, silently dropping one restriction — and because the
 		// result would be a valid, shorter policy, nothing downstream would
 		// notice.
-		other := serviceStatement(newAllowSet([]string{"ec2"}, "set:other"), PackOptions{})
+		other := serviceStatement(newAllowSet([]string{"ec2"}, "set:other"), testGlobalNamespaces, PackOptions{})
 		got := mergeStatements([]Statement{service, other})
 		if len(got) != 2 {
 			t.Fatalf("two service allowlists over different namespaces collapsed into %d statement(s); "+

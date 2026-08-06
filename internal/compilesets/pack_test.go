@@ -28,6 +28,38 @@ func packOpts() PackOptions {
 	return PackOptions{NamePrefix: "automat-test", AutomationRoleARN: testAutomationRole}
 }
 
+// testGlobalNamespaces is the global-service exemption list the tests use.
+//
+// A FIXTURE, not the list automat ships. The real one is artifact-level catalog
+// data supplied by baseline-protection (see catalogs/baseline-protection.json),
+// which is the whole point: a list compiled into this package would be a control
+// whose scope nobody can review. It is repeated here because the packer's tests
+// are about the shape of the rendered policy, and a test that read the shipped
+// catalog would fail for reasons about the catalog rather than about the packer.
+//
+// TestTheShippedCatalogSuppliesTheNamespacesThatWouldBrickAnAccount is what holds
+// the real list to the same standard.
+var testGlobalNamespaces = []string{
+	"access-analyzer", "account", "acm", "aws-marketplace", "aws-portal",
+	"budgets", "ce", "cloudfront", "config", "cur", "directconnect",
+	"globalaccelerator", "health", "iam", "kms", "networkmanager",
+	"organizations", "pricing", "route53", "route53domains", "shield", "sts",
+	"support", "trustedadvisor", "waf", "wellarchitected",
+}
+
+// withGlobalExemptions supplies the exemption list a Merged needs before either
+// allowlist can be rendered.
+//
+// A helper because most tests here are about statement semantics rather than
+// about where the list came from, and because forgetting it produces the
+// missing-list PackError, which would fail the test for the wrong reason.
+// TestAConstrainedSetWithNoExemptionListIsRefused is the test that is about the
+// omission.
+func withGlobalExemptions(m *Merged) *Merged {
+	m.RegionDenyExemptServices = newAllowSet(testGlobalNamespaces, "set:fixture")
+	return m
+}
+
 // mustPack packs and fails the test on error.
 func mustPack(t *testing.T, m *Merged, opts PackOptions) *Packed {
 	t.Helper()
@@ -553,7 +585,7 @@ func TestAnOversizeAllowlistIsRefusedRatherThanSplit(t *testing.T) {
 	for i := 0; i < 400; i++ {
 		services = append(services, fmt.Sprintf("averylongservicenamespace%03d", i))
 	}
-	m := &Merged{ServiceAllowlist: newAllowSet(services, "set:services")}
+	m := withGlobalExemptions(&Merged{ServiceAllowlist: newAllowSet(services, "set:services")})
 
 	pe := packError(t, m, packOpts())
 	if !strings.Contains(pe.Reason, "allowlist") {
@@ -724,7 +756,7 @@ func warns(warnings []string, substr string) bool {
 // automat makes to build the baseline and the ones the operator would need to undo
 // it.
 func TestTheRegionAllowlistExemptsGlobalServices(t *testing.T) {
-	m := &Merged{RegionAllowlist: newAllowSet([]string{"us-west-2"}, "set:regions")}
+	m := withGlobalExemptions(&Merged{RegionAllowlist: newAllowSet([]string{"us-west-2"}, "set:regions")})
 	got := mustPack(t, m, packOpts())
 	if len(got.Policies) != 1 {
 		t.Fatalf("expected one policy, got %d", len(got.Policies))
@@ -755,25 +787,42 @@ func TestTheRegionAllowlistExemptsGlobalServices(t *testing.T) {
 	}
 }
 
-// TestGlobalServiceNamespacesIsExportedForReview.
+// TestTheShippedCatalogSuppliesTheNamespacesThatWouldBrickAnAccount.
 //
-// A list only the packer knows is a control whose scope cannot be reviewed: the
-// operator reading a region restriction needs to see which services it does not
-// cover. This asserts the list is non-empty and contains the ones whose absence
-// would brick an account, so a future trim has to break a test rather than a
-// production vend.
-func TestGlobalServiceNamespacesIsExportedForReview(t *testing.T) {
+// The exemption list is catalog DATA now, not a var in this package, which is what
+// makes its scope reviewable — but "reviewable" is only worth something if someone
+// reviews it, and the failure mode of a trimmed list is a bricked account rather
+// than a failed test. So this reads the SHIPPED baseline-protection catalog, which
+// is what every vend actually attaches, and asserts the namespaces whose absence
+// removes the operator's own ability to recover.
+//
+// Reading the real catalog rather than the fixture is the entire point of the test:
+// a future edit to catalogs/baseline-protection.json that drops `iam` has to break
+// this rather than a production vend.
+func TestTheShippedCatalogSuppliesTheNamespacesThatWouldBrickAnAccount(t *testing.T) {
+	a, err := artifact.Load("../../catalogs/baseline-protection.json", artifact.LoadOptions{})
+	if err != nil {
+		t.Fatalf("load the shipped baseline-protection catalog: %v", err)
+	}
+	if len(a.RegionDenyExemptServices) == 0 {
+		t.Fatal("the shipped baseline-protection catalog supplies no region_deny_exempt_services. " +
+			"It is the control set attached with every vend, so nothing else will supply the list, and " +
+			"the packer now refuses to render a region or service restriction without one — which is " +
+			"better than the alternative, but this catalog is what makes the ordinary case work")
+	}
 	for _, ns := range []string{"iam", "organizations", "sts", "kms", "route53", "cloudfront", "support"} {
-		if !contains(GlobalServiceNamespaces, ns) {
-			t.Errorf("%q is missing from GlobalServiceNamespaces; a region restriction that covers it "+
-				"denies calls made through a us-east-1 global endpoint", ns)
+		if !contains(a.RegionDenyExemptServices, ns) {
+			t.Errorf("%q is missing from the shipped catalog's region_deny_exempt_services; a region "+
+				"restriction that covers it denies calls made through a us-east-1 global endpoint — "+
+				"for iam, sts, and organizations that includes the calls an operator would make to "+
+				"undo the restriction", ns)
 		}
 	}
 }
 
 // TestTheServiceAllowlistPermitsTheAllowlistedServices.
 func TestTheServiceAllowlistPermitsTheAllowlistedServices(t *testing.T) {
-	m := &Merged{ServiceAllowlist: newAllowSet([]string{"s3", "ec2"}, "set:services")}
+	m := withGlobalExemptions(&Merged{ServiceAllowlist: newAllowSet([]string{"s3", "ec2"}, "set:services")})
 	sts := mustPack(t, m, packOpts()).Policies[0].Statements
 
 	for _, action := range []string{"s3:GetObject", "ec2:RunInstances", "iam:CreateRole"} {
@@ -797,13 +846,19 @@ func TestTheServiceAllowlistPermitsTheAllowlistedServices(t *testing.T) {
 // The packer emits exactly two, and the golden files show them landing in the same
 // document, so the argument that "the packer owns the shape" needs a test and not a
 // paragraph. What saves it is that both statements carry the global-service
-// namespaces, so A ∩ B always contains those — but that is a property of the
-// current lists, not of the shape, and it is one trim away from being false.
+// exemption list, so A ∩ B always contains it.
+//
+// That is now a property of the SHAPE rather than of two lists that happen to
+// agree: renderable resolves the exemption list once and hands the same slice to
+// both statements, and refuses outright when no control set supplies one. The
+// earlier version of this comment noted the invariant was "one trim away from
+// being false" because each statement built its own list from a package var — that
+// is what moving the list to catalog data and resolving it once fixed.
 func TestBothAllowlistsInOnePolicyDoNotComposeIntoADenyAll(t *testing.T) {
-	m := &Merged{
+	m := withGlobalExemptions(&Merged{
 		RegionAllowlist:  newAllowSet([]string{"us-west-2"}, "set:regions"),
 		ServiceAllowlist: newAllowSet([]string{"s3", "batch"}, "set:services"),
-	}
+	})
 	got := mustPack(t, m, packOpts())
 	if len(got.Policies) != 1 {
 		t.Fatalf("expected both allowlists in one policy, got %d policies", len(got.Policies))
@@ -843,14 +898,15 @@ func TestBothAllowlistsInOnePolicyDoNotComposeIntoADenyAll(t *testing.T) {
 // above depends on, stated directly.
 //
 // The two NotAction lists intersect. What keeps that intersection non-empty is that
-// both contain every global-service namespace — so if someone trims one list, this
-// fails here with an explanation, rather than in the behavioral test with a
-// puzzling denial, or in production with a bricked account.
+// both contain every namespace in the exemption list — so if someone changes one
+// statement to build its own list, this fails here with an explanation, rather than
+// in the behavioral test with a puzzling denial, or in production with a bricked
+// account.
 func TestTheTwoAllowlistStatementsShareTheGlobalNamespaces(t *testing.T) {
-	region := regionStatement(newAllowSet([]string{"us-west-2"}, "set:r"), packOpts())
-	service := serviceStatement(newAllowSet([]string{"s3"}, "set:s"), packOpts())
+	region := regionStatement(newAllowSet([]string{"us-west-2"}, "set:r"), testGlobalNamespaces, packOpts())
+	service := serviceStatement(newAllowSet([]string{"s3"}, "set:s"), testGlobalNamespaces, packOpts())
 
-	for _, ns := range GlobalServiceNamespaces {
+	for _, ns := range testGlobalNamespaces {
 		want := ns + ":*"
 		if !contains(region.NotAction, want) {
 			t.Errorf("the region statement's NotAction omits %q", want)
@@ -877,12 +933,12 @@ func TestAnAllowlistThatIntersectsToNothingIsAConflictNotAPolicy(t *testing.T) {
 	}{
 		{
 			name: "regions",
-			m:    &Merged{RegionAllowlist: &AllowSet{Members: []string{}, Sources: []string{"set-a:c1", "set-b:c1"}}},
+			m:    withGlobalExemptions(&Merged{RegionAllowlist: &AllowSet{Members: []string{}, Sources: []string{"set-a:c1", "set-b:c1"}}}),
 			want: "region",
 		},
 		{
 			name: "services",
-			m:    &Merged{ServiceAllowlist: &AllowSet{Members: []string{}, Sources: []string{"set-a:c1", "set-b:c1"}}},
+			m:    withGlobalExemptions(&Merged{ServiceAllowlist: &AllowSet{Members: []string{}, Sources: []string{"set-a:c1", "set-b:c1"}}}),
 			want: "service",
 		},
 	} {
@@ -914,9 +970,135 @@ func TestAnEmptyAllowlistIsDistinctFromAnAbsentOne(t *testing.T) {
 	}
 	// And empty errors — asserted in the test above. Here the point is only that
 	// the two inputs do not behave the same.
-	if _, err := Pack(&Merged{RegionAllowlist: &AllowSet{Members: []string{}}}, packOpts()); err == nil {
+	if _, err := Pack(withGlobalExemptions(&Merged{RegionAllowlist: &AllowSet{Members: []string{}}}), packOpts()); err == nil {
 		t.Error("an empty (non-nil) region allowlist packed successfully; it means two control sets " +
 			"agreed on no region, which as a policy denies every call in the account")
+	}
+}
+
+// TestAConstrainedSetWithNoExemptionListIsRefused.
+//
+// Owed by name from withGlobalExemptions and goldenAllowlisted, both of which say
+// this is the test that is about the omission.
+//
+// The refusal exists because the alternative is a rendered policy: a region or
+// service Deny whose NotAction spares nothing denies every IAM, STS, and
+// Organizations call in the account, including the operator's own attempt to
+// detach it. There is no fallback list — see exemptGlobalServices for why a
+// compiled-in one would be worse than a refusal — so the packer's only correct
+// move is to stop before CreatePolicy, which is what "PLAN time" means here.
+func TestAConstrainedSetWithNoExemptionListIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		m           *Merged
+		wantSources []string
+	}{
+		{
+			name:        "regions only",
+			m:           &Merged{RegionAllowlist: newAllowSet([]string{"us-west-2"}, "set-a:c1")},
+			wantSources: []string{"set-a:c1"},
+		},
+		{
+			name:        "services only",
+			m:           &Merged{ServiceAllowlist: newAllowSet([]string{"s3"}, "set-b:c2")},
+			wantSources: []string{"set-b:c2"},
+		},
+		{
+			// Both axes constrained by different sets: the operator has two files
+			// to look at and the report must name both, because either one could
+			// be the set that was supposed to carry the list.
+			name: "both, from different sets",
+			m: &Merged{
+				RegionAllowlist:  newAllowSet([]string{"us-west-2"}, "set-a:c1"),
+				ServiceAllowlist: newAllowSet([]string{"s3"}, "set-b:c2"),
+			},
+			wantSources: []string{"set-a:c1", "set-b:c2"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pe := packError(t, tc.m, packOpts())
+			if !strings.Contains(pe.Reason, "region_deny_exempt_services") {
+				t.Errorf("the error does not name the missing field, so it does not say what to add: %v", pe)
+			}
+			for _, src := range tc.wantSources {
+				if !contains(pe.Sources, src) {
+					t.Errorf("the refusal does not name %s among the inputs that made the list necessary; "+
+						"the operator cannot tell which compiled set to look at", src)
+				}
+			}
+		})
+	}
+}
+
+// TestAnUnconstrainedSetNeedsNoExemptionList is the other half of the refusal:
+// the list is only load-bearing when something restricts regions or services, so
+// requiring it unconditionally would refuse every ordinary control set — most of
+// which restrict neither.
+func TestAnUnconstrainedSetNeedsNoExemptionList(t *testing.T) {
+	m := &Merged{Statements: []Statement{
+		deny("ProtectRecorder", []string{"config:StopConfigurationRecorder"}, []string{"*"}, nil),
+	}}
+	got := mustPack(t, m, packOpts())
+	if len(got.Policies) != 1 {
+		t.Fatalf("expected one policy, got %d", len(got.Policies))
+	}
+}
+
+// TestAnExemptionListThatIntersectsToNothingIsRefused.
+//
+// E5's second refusal, and a different failure from the one above: here every
+// compiled set stated the fact and they agreed on nothing. Rendering it would
+// produce the same bricked account as omitting the list entirely, so it is the
+// same refusal — but the remediation is not the same, because "add the list" is
+// no help to an operator who has two lists.
+//
+// nil versus empty carries that distinction (see Merged.RegionDenyExemptServices),
+// which is why this is a separate test rather than a case in the table above.
+func TestAnExemptionListThatIntersectsToNothingIsRefused(t *testing.T) {
+	m := &Merged{
+		RegionAllowlist: newAllowSet([]string{"us-west-2"}, "set-a:c1"),
+		// Empty and non-nil: two sets stated the fact and the intersection is
+		// empty. newAllowSet cannot produce this, which is the point.
+		RegionDenyExemptServices: &AllowSet{Members: []string{}, Sources: []string{"set-a:c1", "set-b:c1"}},
+	}
+	pe := packError(t, m, packOpts())
+	if !strings.Contains(pe.Reason, "intersect to nothing") {
+		t.Errorf("the error does not say the lists disagreed, so it reads as the missing-list case and "+
+			"sends the operator to add a list they already have two of: %v", pe)
+	}
+	for _, src := range []string{"set-a:c1", "set-b:c1"} {
+		if !contains(pe.Sources, src) {
+			t.Errorf("the conflict report does not name %s; the sources of an empty intersection are the "+
+				"sets that disagreed, which is the only actionable thing about it", src)
+		}
+	}
+	// And the two refusals are distinguishable to a caller reading the text, not
+	// only to one comparing struct fields.
+	if strings.Contains(pe.Remediation, "will not substitute a built-in list") {
+		t.Error("the empty-intersection refusal reuses the missing-list remediation")
+	}
+}
+
+// TestTheExemptionRefusalHappensBeforeAnyPolicyIsProduced states the "PLAN time"
+// half of E5 as something other than a comment.
+//
+// Pack returns a *Packed and an error; a packer that assembled the documents it
+// could and reported the problem alongside them would let a caller that checked
+// the count before the error attach a partial policy set. So the refusal must
+// yield no policies at all.
+func TestTheExemptionRefusalHappensBeforeAnyPolicyIsProduced(t *testing.T) {
+	// A set with plenty of ordinary statements that would pack fine on their own,
+	// plus one constrained axis with no exemption list.
+	m := Merge(goldenFrameworkA(t), goldenFrameworkB(t))
+	m.RegionAllowlist = newAllowSet([]string{"us-west-2"}, "set-a:c1")
+
+	got, err := Pack(m, packOpts())
+	if err == nil {
+		t.Fatal("a constrained set with no exemption list packed successfully")
+	}
+	if got != nil {
+		t.Errorf("Pack returned %d policies alongside the refusal; a caller that checks the count first "+
+			"would attach a policy set the packer refused to vouch for", len(got.Policies))
 	}
 }
 

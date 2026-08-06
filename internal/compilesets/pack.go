@@ -541,6 +541,15 @@ func renderCondition(st Statement, opts PackOptions) (map[string]map[string][]st
 func (m *Merged) renderable(opts PackOptions) ([]Statement, error) {
 	out := append([]Statement(nil), m.Statements...)
 
+	// The global-service exemption list is resolved once, before either allowlist
+	// statement is rendered, because both statements carry it and a policy where
+	// they carried different lists would deny everything outside their
+	// intersection for reasons no reader could see.
+	exempt, err := m.exemptGlobalServices()
+	if err != nil {
+		return nil, err
+	}
+
 	if m.RegionAllowlist != nil {
 		if len(m.RegionAllowlist.Members) == 0 {
 			return nil, &PackError{
@@ -552,7 +561,7 @@ func (m *Merged) renderable(opts PackOptions) ([]Statement, error) {
 				Sources: m.RegionAllowlist.Sources,
 			}
 		}
-		out = append(out, regionStatement(m.RegionAllowlist, opts))
+		out = append(out, regionStatement(m.RegionAllowlist, exempt, opts))
 	}
 	if m.ServiceAllowlist != nil {
 		if len(m.ServiceAllowlist.Members) == 0 {
@@ -564,31 +573,76 @@ func (m *Merged) renderable(opts PackOptions) ([]Statement, error) {
 				Sources: m.ServiceAllowlist.Sources,
 			}
 		}
-		out = append(out, serviceStatement(m.ServiceAllowlist, opts))
+		out = append(out, serviceStatement(m.ServiceAllowlist, exempt, opts))
 	}
 	return out, nil
 }
 
-// GlobalServiceNamespaces are the service namespaces a region Deny must not
-// cover.
+// exemptGlobalServices resolves the global-service exemption list for the
+// allowlist statements, or refuses.
 //
-// A region-restriction SCP that does not exempt these bricks the account. Global
-// services are addressed through endpoints AWS reports as us-east-1, so a Deny on
-// every action outside the allowlist denies every IAM call, every Organizations
-// call, and every STS call — including the ones automat makes to build the
-// baseline, and including the operator's own ability to undo it. AWS's own
-// region-restriction guidance carries this exemption list for exactly this
-// reason.
+// Two refusals, both at PLAN time and both naming which inputs produced the
+// state, because the failure they prevent is an account that is created, moved,
+// and then unreachable — discovered at apply, after the mutations that cannot be
+// undone by trying again.
 //
-// Exported so `verify` can report it: an operator reading a region control needs
-// to know which services it does not cover, and a list only the packer knows is
-// a control whose scope cannot be reviewed.
-var GlobalServiceNamespaces = []string{
-	"access-analyzer", "account", "acm", "aws-marketplace", "aws-portal",
-	"budgets", "ce", "cloudfront", "config", "cur", "directconnect",
-	"globalaccelerator", "health", "iam", "kms", "networkmanager",
-	"organizations", "pricing", "route53", "route53domains", "shield", "sts",
-	"support", "trustedadvisor", "waf", "wellarchitected",
+// There is deliberately NO fallback to a built-in list. A fallback is the
+// compiled-in list with extra steps: it is unreviewable, uncorrectable without a
+// release, and it would silently paper over a control set that forgot to state
+// the fact. The list is only needed when something constrains regions or
+// services, which is why an artifact may legitimately supply neither.
+func (m *Merged) exemptGlobalServices() ([]string, error) {
+	if m.RegionAllowlist == nil && m.ServiceAllowlist == nil {
+		// Nothing is being restricted, so no exemption is needed and a missing
+		// list is not a problem.
+		return nil, nil
+	}
+
+	if m.RegionDenyExemptServices == nil {
+		sources := allowSetSources(m.RegionAllowlist, m.ServiceAllowlist)
+		return nil, &PackError{
+			Reason: "a compiled control set restricts regions or services, but none of them supplies " +
+				"region_deny_exempt_services — the list of globally addressed service namespaces the " +
+				"restriction must not cover",
+			Remediation: "compile a control set that carries an artifact-level region_deny_exempt_services " +
+				"list (automat's own baseline-protection set does, and is attached with every vend). " +
+				"automat will not substitute a built-in list: globally addressed services answer on " +
+				"endpoints AWS reports as us-east-1, so a restriction that does not exempt them denies " +
+				"every IAM, STS, and Organizations call in the account — including the operator's own " +
+				"ability to undo it — and a list only this binary knows is a control whose scope cannot " +
+				"be reviewed or corrected without a release",
+			Sources: sources,
+		}
+	}
+
+	if len(m.RegionDenyExemptServices.Members) == 0 {
+		return nil, &PackError{
+			Reason: "the global-service exemption lists of the compiled control sets intersect to nothing, " +
+				"so a region or service restriction would cover every service including the globally " +
+				"addressed ones",
+			Remediation: "the control sets disagree about which services are globally addressed, which is a " +
+				"disagreement about how AWS works rather than about policy — reconcile them so their " +
+				"region_deny_exempt_services lists overlap. The lists intersect rather than union " +
+				"because that is what the rendered policy does: a Deny over NotAction[a:*] alongside a " +
+				"Deny over NotAction[b:*] denies everything except what both spare",
+			Sources: m.RegionDenyExemptServices.Sources,
+		}
+	}
+	return m.RegionDenyExemptServices.Members, nil
+}
+
+// allowSetSources collects the origins of whichever allowlists are constraining,
+// so the missing-exemption-list error can name the inputs that made the list
+// necessary. Those are the files the operator has to look at: the artifact that
+// should have supplied the list is by definition not among the inputs.
+func allowSetSources(sets ...*AllowSet) []string {
+	var out []string
+	for _, s := range sets {
+		if s != nil {
+			out = append(out, s.Sources...)
+		}
+	}
+	return sortedUnique(out)
 }
 
 // regionStatement renders the region allowlist as a NotAction Deny.
@@ -602,9 +656,14 @@ var GlobalServiceNamespaces = []string{
 // functions, and is never merged with anything. See Statement.NotAction, and
 // TestNoAllowlistStatementIsEverMerged.
 //
-// Semantics: deny every action EXCEPT the global services, when the requested
-// region is not in the allowlist.
-func regionStatement(set *AllowSet, opts PackOptions) Statement {
+// Semantics: deny every action EXCEPT the globally addressed services, when the
+// requested region is not in the allowlist.
+//
+// exempt comes from the compiled control sets, not from a list in this package.
+// It bricks the account when wrong, which is the argument for it being reviewable
+// catalog data — see Merged.RegionDenyExemptServices and exemptGlobalServices,
+// which is what guarantees the slice is non-empty by the time it arrives here.
+func regionStatement(set *AllowSet, exempt []string, opts PackOptions) Statement {
 	st := Statement{
 		SCPStatement: artifact.SCPStatement{
 			Sid:      "AutomatDenyRegionsOutsideAllowlist",
@@ -614,7 +673,7 @@ func regionStatement(set *AllowSet, opts PackOptions) Statement {
 				"StringNotEquals": {"aws:RequestedRegion": sortedUnique(set.Members)},
 			},
 		},
-		NotAction: serviceWildcards(GlobalServiceNamespaces),
+		NotAction: serviceWildcards(exempt),
 		Origins:   set.Sources,
 	}
 	if opts.AutomationRoleARN != "" {
@@ -638,14 +697,14 @@ func regionStatement(set *AllowSet, opts PackOptions) Statement {
 // allowlist is an intersection, so this list only ever shrinks as control sets
 // merge — and a shorter NotAction list denies more, which is the monotone
 // direction.
-func serviceStatement(set *AllowSet, opts PackOptions) Statement {
+func serviceStatement(set *AllowSet, exempt []string, opts PackOptions) Statement {
 	st := Statement{
 		SCPStatement: artifact.SCPStatement{
 			Sid:      "AutomatDenyServicesOutsideAllowlist",
 			Effect:   "Deny",
 			Resource: []string{"*"},
 		},
-		NotAction: serviceWildcards(append(append([]string(nil), set.Members...), GlobalServiceNamespaces...)),
+		NotAction: serviceWildcards(append(append([]string(nil), set.Members...), exempt...)),
 		Origins:   set.Sources,
 	}
 	if opts.AutomationRoleARN != "" {
