@@ -518,6 +518,28 @@ func TestEveryShippedSourceIsHashedAndDated(t *testing.T) {
 						"read", s.ID)
 				}
 			}
+			// The uri must be where the hashed bytes are, not merely where the document
+			// was found. AUDIT-2 F6: the UC source recorded media_type
+			// application/pdf against the .html policy page it was linked from, so the
+			// one field a re-verifier needs — fetch this, hash it, compare — pointed at
+			// a page whose bytes hash to something else entirely. The hash was correct;
+			// the route back to it was not, which makes a correct hash unusable.
+			//
+			// Checked as a media-type/extension agreement rather than by fetching, since
+			// a test may not reach the network. That is weaker than verifying the bytes
+			// and it catches the mismatch that actually happened.
+			for _, s := range p.Sources {
+				if s.MediaType != "application/pdf" || s.URI == "" {
+					continue
+				}
+				if !strings.HasSuffix(strings.ToLower(s.URI), ".pdf") {
+					t.Errorf("source %q hashes application/pdf bytes but its uri is %q.\n\n"+
+						"A media type and a uri that disagree mean a re-verifier fetches the "+
+						"wrong thing and concludes the hash is wrong. Record the uri the bytes "+
+						"were actually retrieved from — the citation's own uri is the place for "+
+						"the page a reader should start at.", s.ID, s.URI)
+				}
+			}
 			// A retrieved-only citation must point at a source, since the retrieval time
 			// is then the ONLY date anchoring the claim.
 			for i, c := range p.Citations {

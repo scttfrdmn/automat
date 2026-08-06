@@ -643,3 +643,55 @@ Three answers, and the first is what the shape of the data suggests:
 Q15 — both are "what does this hash cover", and answering them together is likely cheaper
 than answering either alone. Wanted before Phase 4's `verify`, which has to decide what it
 is verifying an account *against*.
+
+### Q18 — `classification-profile/v1` has no way to record a citation it could not retrieve
+
+`citation.date_basis` has three values, and all three describe a document that WAS
+retrieved: `published-effective-date` and `last-updated-in-document` name where in the
+bytes the date was read from, and `retrieved-only` means "retrieved, and it bears no date
+at all." There is no value for *never retrieved*.
+
+The UC profile has such a citation. `BFB-IS-3` is the parent policy the Classification
+Standard says drives it, retrieval was attempted and failed with a TLS error, and the
+profile records it because a reader needs to know it exists and that this profile has not
+read it. Its note says NOT RETRIEVED in the first two words. But the machine-readable
+fields say something else:
+
+- `date_basis: retrieved-only` — which, per its own schema description, asserts the
+  document was retrieved and found dateless.
+- `source_id: uc-classification-standard` — the Classification Standard, i.e. a
+  DIFFERENT document. The schema defines `source_id` as "the `sources[]` entry holding the
+  retrieved bytes of this citation," and those bytes are not IS-3's.
+
+The validator requires a `source_id` when the basis is `retrieved-only`, precisely because
+that basis means the retrieval record is the only dating available — so the profile was
+pushed into naming *some* source, and the only hashed source it has is the other document.
+Reasonable under the shapes available, and wrong in the field a tool reads. A future
+consumer filtering on `date_basis` gets IS-3 in the retrieved set, and one resolving
+`source_id` gets a hash that verifies against a document IS-3 is not.
+
+**Why this is not fixed in the audit that found it (AUDIT-2 F5).** Every repair needs
+either a new enum value or a relaxed `source_id` rule, and rule 6 reserves both: a fourth
+`date_basis` value loosens a published enum, and dropping the `source_id` requirement
+loosens a validator constraint that exists for a good reason. Three candidate answers:
+
+1. **A fourth `date_basis`: `not-retrieved`.** Forbids `effective_date` like
+   `retrieved-only` does, and forbids `source_id` rather than requiring it — the absence
+   then MEANS unretrieved, checkably, instead of being inferable only from prose. Most
+   honest, and it makes the state a first-class one a renderer can mark, the way
+   `envprofile.ObligationFacts.UnresolvedSources` now marks the obligation profiles'
+   zero-hash placeholders (F1). Costs a schema version bump and a migration note.
+2. **A separate `unretrieved_references[]` block.** Keeps `citations[]` meaning "documents
+   this profile read" with no exceptions, and puts the acknowledged-but-unread elsewhere.
+   Cleaner conceptually; more schema surface, and it splits one reader-facing list in two.
+3. **Drop the citation.** Cheapest and the worst of the three: the reader loses the fact
+   that IS-3 governs the scheme, which is true and load-bearing whether or not automat
+   fetched it. A profile that omits its own parent policy reads as complete.
+
+**Settled by a maintainer decision.** Wanted before a second derived profile ships, since
+whatever shape is chosen will be copied by every profile after it, and unretrieved parent
+policy is the normal case rather than the exception — institutional policy pages routinely
+reference PDFs behind broken links.
+
+Until then the state is disclosed in the profile's own citation note, which is where a
+human reads it, and this question is the record that a machine still cannot.
