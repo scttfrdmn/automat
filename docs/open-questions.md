@@ -496,3 +496,100 @@ the packer.
 **Asked and answered before task #13's step 4 was written**, since step 4 is where the absence
 becomes visible: a vend that attaches "control SCPs + baseline-protection" and silently attaches
 no region or service SCP is a vend that does three quarters of what §7 says it does.
+
+### Q15 — `obligation-profile/v1` does not say what its content hash covers
+
+**Blocks nothing today; blocks the check it was written for.** An environment profile's
+obligation reference carries a required `content_sha256`, and
+`envprofile.CheckObligations` compares it against the profile's actual hash — the
+second of its three checks, and the reason the field exists at all: an obligation
+profile is a reading of policy that moves, so a reference naming only an id has a
+subject that can be rewritten underneath it.
+
+The comparison does not happen. `ObligationFacts.ContentSHA256` is left empty by
+`internal/catalog`, and `CheckObligations` reads empty as *unknown* rather than as
+*matches* (`TestAResolverWithNoHashDoesNotSilentlyPassTheHashCheck`), so a reference's
+hash is checked for well-formedness by `Validate` and against nothing else.
+
+The reason is that there is no value to compare against. The other two document types
+define a hashed payload explicitly — `control-artifact/v1` hashes
+`{controls, region_deny_exempt_services}`, and `environment-profile/v1` names its
+covered and excluded fields in `internal/envprofile/canonical.go` — while the
+obligation profile's schema describes `signatures[].content_sha256` as "the document
+content hash" and never says which bytes that is. At least three answers are defensible:
+
+1. **Raw file bytes.** Simplest, and checkable with `sha256sum`. But it makes
+   reformatting the file a hash change, and the vendored profiles are hand-maintained
+   JSON that a maintainer will reformat.
+2. **Canonicalized whole document.** Stable under reformatting, and the
+   `CanonicalJSON` the maintainer already ratified one of ("one canonicalization is
+   the point"). Requires deciding whether `signatures` is inside its own hash, which
+   the other two schemas answer by excluding it.
+3. **A canonicalized payload excluding `signatures`, `status`, and `review_by`** — the
+   fields that change when a profile is re-reviewed but its policy reading does not.
+   Most useful for the check's actual purpose, and the most opinionated.
+
+**What the code assumes now:** nothing, deliberately. The resolver reports the hash as
+unknown and `TestResolveObligationsReportsTheHashAsUnknown` pins that, with a note to
+delete the test once the check exists. Reporting a hash computed some plausible way
+would be worse than reporting none: `CheckObligations` would then compare every
+reference in every environment profile against a definition nobody ratified, and a
+reference that verified against the wrong definition looks checked while a reference
+that verified against nothing does not.
+
+**Settled by a maintainer decision, not by a live org.** It is a schema question:
+answering it adds "the hash covers X" language to
+`schema/obligation-profile-v1.schema.json`, which is a published contract, so rule 6's
+"ask first" applies. Worth answering before Phase 4's `assess`, which will want to
+quote the same hash.
+
+### Q16 — DESIGN §14's SCP naming convention is not what the packer emits
+
+DESIGN §14: "SCP names: `automat-<artifact-id>-<class>` (e.g.
+`automat-cmmc-l1-baseline-protection`), each SCP tagged with the artifact hash."
+`internal/org/policy.go`'s `PolicySpec.Name` doc repeats it. `compilesets.Pack` emits
+`fmt.Sprintf("%s-%d", opts.NamePrefix, i+1)`, and the golden files are
+`automat-test-1.json` … — a caller-supplied prefix and an ordinal, with no artifact id
+and no class.
+
+Flagged rather than reconciled, per CLAUDE.md: "when design and code disagree, stop and
+flag it — do not silently reinterpret the design." Which one is right is not obvious,
+because §14's shape may not be expressible:
+
+- **A packed policy has no single artifact id.** Union is the whole point — a vend
+  compiling `cmmc-l1` + `baseline-protection` + a campus set produces statements from
+  all three, and the packer bin-packs them by size rather than by origin. `<artifact-id>`
+  presumes one artifact per policy; the merge presumes the opposite.
+- **Nor a single class.** The packer emits control, region, service, and
+  baseline-protection statement shapes and packs whatever fits, so a policy is
+  `<class>` only if the packer is required to keep classes in separate policies —
+  which spends slots out of a per-target budget of five, of which two are already
+  reserved.
+- **Organizations enforces name uniqueness**, which the ordinal handles and
+  `automat-<artifact-id>-<class>` does not: two vends against the same OU with
+  different profiles would collide on a name that names neither profile.
+
+Three readings, and the first two are not the same change:
+
+1. **§14 describes the intent and the packer's names are the implementation.** Then §14
+   is stale prose and should say `automat-<environment-profile-id>-<n>` or similar —
+   the profile id being the one id a packed policy actually has one of. Cheapest, and
+   it loses the readability §14 was reaching for: an operator looking at five attached
+   policies in the console learns nothing from an ordinal.
+2. **§14 is the requirement and the packer must pack by class.** Names become
+   meaningful, `verify` can find the policy it means to check by name rather than by
+   tag, and the slot budget tightens: four classes into three available slots fails
+   whenever more than three are non-empty, which a region+service+control+protection
+   vend is.
+3. **Names stay ordinal and the TAGS carry the meaning.** §14 already requires the
+   artifact hash as a tag; extend that to artifact ids and class. `verify` reads tags,
+   which it must anyway (a console-renamed policy is still the policy). §14's example
+   name becomes an illustration rather than a contract.
+
+**What the code assumes now:** reading 1 by default, since `NamePrefix` is
+caller-supplied and no caller exists yet. `vend` is the first caller and has to pass
+something, so this needs an answer at task #13 — but the answer is a one-line change
+at the call site under any reading, which is why the packer was not held up for it.
+
+**Relevant to `verify` (Phase 4)** more than to `vend`: whatever `vend` names a policy,
+`verify` has to find it again, and finding it by name means the name is a contract.
