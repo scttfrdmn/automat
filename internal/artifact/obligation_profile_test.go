@@ -39,6 +39,7 @@ type profileDoc struct {
 	Status    string `json:"status"`
 	Citations []struct {
 		ID            string `json:"id"`
+		Title         string `json:"title"`
 		EffectiveDate string `json:"effective_date"`
 	} `json:"citations"`
 	ControlCatalogs []struct {
@@ -546,6 +547,68 @@ func TestTheShippedProfileSetIsTheOneThatWasApproved(t *testing.T) {
 			"still a proposed rule and is deliberately not shipped as a profile (Q11 in "+
 			"docs/open-questions.md). Update this list in the same change that argues for the "+
 			"profile.", got, want)
+	}
+}
+
+// TestOneInstrumentIsCitedOneWayAcrossTheProfileSet holds the one mechanically
+// checkable part of citation correctness: an instrument has one effective date and
+// one published title, so two profiles citing it differently means at least one is
+// wrong, and an operator reading two birth certificates gets two answers about the
+// same clause.
+//
+// # What it would NOT have caught, stated plainly
+//
+// This test passes at the commit before AUDIT-2's F4 was fixed. `48 CFR
+// 252.204-7021` carried 2024-12-16 in BOTH profiles — the 32 CFR 170 program
+// rule's date rather than the clause's — and two copies of one wrong date agree.
+// Agreement is not correctness, and no cross-check can supply a fact neither copy
+// holds. Verifying a date against the Federal Register is the standing obligation
+// in docs/policy-caveat.md, performed by a human at each phase gate; this test does
+// not do it and must not be read as doing it.
+//
+// What it does do is cover the state a correction passes THROUGH. Verified by
+// running it in a worktree at the pre-fix commit with one of the two dates
+// corrected: it fails, naming both profiles. A half-applied fix is the likeliest
+// way this set drifts again, because the profile the auditor was reading gets
+// edited and the other one does not.
+func TestOneInstrumentIsCitedOneWayAcrossTheProfileSet(t *testing.T) {
+	type claim struct{ date, title, profile string }
+	byInstrument := make(map[string][]claim)
+	for name, p := range loadProfiles(t) {
+		for _, c := range p.Citations {
+			byInstrument[c.ID] = append(byInstrument[c.ID],
+				claim{date: c.EffectiveDate, title: c.Title, profile: name})
+		}
+	}
+
+	var shared int
+	for id, claims := range byInstrument {
+		if len(claims) < 2 {
+			continue
+		}
+		shared++
+		first := claims[0]
+		for _, c := range claims[1:] {
+			if c.date != first.date {
+				t.Errorf("%s is cited with two effective dates:\n  %s: %s\n  %s: %s\n\n"+
+					"One instrument, one effective date. At least one of these is wrong, and both "+
+					"render with equal confidence. Verify against the Federal Register or eCFR and "+
+					"correct the citation rather than the test.",
+					id, first.profile, first.date, c.profile, c.date)
+			}
+			if c.title != first.title {
+				t.Errorf("%s is cited with two titles:\n  %s: %q\n  %s: %q\n\n"+
+					"The title is the instrument's own as published, so a difference is a "+
+					"transcription error in one of them.",
+					id, first.profile, first.title, c.profile, c.title)
+			}
+		}
+	}
+	if shared == 0 {
+		t.Error("no instrument is cited by more than one profile, so this test compared nothing. " +
+			"That is a real state of the world and not a bug — but if it holds after a profile is " +
+			"added, check that the new profile is not citing a shared instrument under a slightly " +
+			"different id, which would defeat this check by making the two look unrelated.")
 	}
 }
 

@@ -35,10 +35,10 @@
     },
     {
       "id": "48 CFR 252.204-7021",
-      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirement",
-      "effective_date": "2024-12-16",
+      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirements",
+      "effective_date": "2025-11-10",
       "role": "related",
-      "note": "CMMC Phase 2 begins 2026-11-10, at which point most CUI contracts require a C3PAO-assessed Level 2 rather than a self-assessment. This profile's `phased` status is that date: the self-assessment path it models is being layered over, not withdrawn, and an operator planning past late 2026 needs to know which regime their next award falls under. Recorded as a citation rather than a separate profile because a Level 2 profile would need C3PAO assessment modeling automat has no basis for yet."
+      "note": "Clause heading (NOV 2025), current text set by 90 FR 43560 (DFARS Case 2019-D041), effective 2025-11-10. This field previously read 2024-12-16 — the 32 CFR 170 program rule's date on a 48 CFR clause — which was the date that could not produce the schedule the rest of this note states (AUDIT-2 F4). It can now: 32 CFR 170.16(e)(1) keys Implementation Phase 1 to the effective date of the 48 CFR acquisition rule, so Phase 1 begins 2025-11-10, and (e)(2) puts Phase 2 'one calendar year following the start date of Phase 1'. CMMC Phase 2 therefore begins 2026-11-10, at which point most CUI contracts require a C3PAO-assessed Level 2 rather than a self-assessment. This profile's `phased` status is that date: the self-assessment path it models is being layered over, not withdrawn, and an operator planning past late 2026 needs to know which regime their next award falls under. Recorded as a citation rather than a separate profile because a Level 2 profile would need C3PAO assessment modeling automat has no basis for yet."
     },
     {
       "id": "DoD class deviation 2024-O0013",

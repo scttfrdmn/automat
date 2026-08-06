@@ -17,21 +17,21 @@
       "title": "Cybersecurity Maturity Model Certification (CMMC) Program",
       "effective_date": "2024-12-16",
       "role": "creates",
-      "note": "The CMMC Program rule. Level 1 practices are enumerated at 170.14(c)(1), which is the citation catalogs/cmmc-l1.json's control ids follow."
+      "note": "The CMMC Program rule. Two paragraphs, and they say different things: 170.14(c)(2) enumerates the Level 1 requirements (by reference — 'those set forth in 48 CFR 52.204-21(b)(1)(i) through (xv)'), while 170.14(c)(1) 'Numbering' defines the DD.L#-REQ identifier scheme that catalogs/cmmc-l1.json's control ids follow. The count comes from (c)(2); the ids come from (c)(1)."
     },
     {
       "id": "48 CFR 252.204-7021",
-      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirement",
-      "effective_date": "2024-12-16",
+      "title": "Contractor Compliance with the Cybersecurity Maturity Model Certification Level Requirements",
+      "effective_date": "2025-11-10",
       "role": "operationalizes",
-      "note": "The contract clause that makes a CMMC level a condition of award."
+      "note": "The contract clause that makes a CMMC level a condition of award. Clause heading (NOV 2025), current text set by 90 FR 43560 (DFARS Case 2019-D041), effective 2025-11-10 — which is also the start of Implementation Phase 1 under 32 CFR 170.16(e)(1), since that paragraph keys Phase 1 to the effective date of the 48 CFR acquisition rule. This field previously read 2024-12-16, which is the 32 CFR 170 program rule's date and not this clause's (AUDIT-2 F4). Title corrected to the published plural 'Requirements' at the same time."
     },
     {
       "id": "FAR 52.204-21",
       "title": "Basic Safeguarding of Covered Contractor Information Systems",
-      "effective_date": "2016-11-30",
+      "effective_date": "2021-12-06",
       "role": "related",
-      "note": "The fifteen Level 1 practices derive from this clause's safeguarding requirements; it is the control-text source in catalogs/cmmc-l1.json's artifact.sources."
+      "note": "The fifteen Level 1 practices derive from this clause's safeguarding requirements; it is the control-text source in catalogs/cmmc-l1.json's artifact.sources. The date is the current revision's: the clause heading reads (Nov 2021), set by 86 FR 61017 (FAR: Revision of Definition of 'Commercial Item'), effective 2021-12-06. The clause was originally effective 2016-06-15 (81 FR 30439) and this field previously read 2016-11-30, which is neither date — AUDIT-2 F3. The 2021 revision changed 'commercial items' to 'commercial products or commercial services' in paragraph (c) and did not touch the fifteen requirements in (b)(1), so the vendored control text is unaffected by the correction."
     }
   ],
 
@@ -39,7 +39,7 @@
     {
       "catalog": "cmmc-2.0-level-1",
       "revision_policy": "pinned",
-      "revision": "CMMC 2.0 Level 1 (32 CFR 170.14(c)(1))",
+      "revision": "CMMC 2.0 Level 1 (32 CFR 170.14(c)(2))",
       "artifact_id": "cmmc-l1",
       "note": "Fifteen practices. The instrument names them exactly, so there is nothing for an operator to determine about scope of controls — only about scope of system."
     }
