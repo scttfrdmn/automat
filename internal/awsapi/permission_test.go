@@ -126,6 +126,44 @@ func TestDeniedOnlyWrapsDenials(t *testing.T) {
 	})
 }
 
+// TestAWSMessageSurvivesSoAConditionFailureIsDistinguishable is AUDIT-2's second
+// automat:ou finding.
+//
+// A missing action and a matched-but-failed condition are the same error code. The
+// Grant sentence is written at the call site before the call, so it always describes
+// the first — and when the cause is the second, that advice is confidently wrong:
+// "grant organizations:CreateAccount in the management account" to an operator who
+// already has it. AWS's message is the only thing that names the real cause
+// ("…with the request tags provided"), and Error() used to drop it.
+func TestAWSMessageSurvivesSoAConditionFailureIsDistinguishable(t *testing.T) {
+	orig := &apiErr{
+		code: "AccessDeniedException",
+		msg: "User: arn:aws:sts::111111111111:assumed-role/automat-vendor/session is not " +
+			"authorized to perform: organizations:CreateAccount because no identity-based " +
+			"policy allows the organizations:CreateAccount action with the request tags provided",
+	}
+	err := Denied(orig, "organizations:CreateAccount", "the organization",
+		"arn:aws:sts::111111111111:assumed-role/automat-vendor/session",
+		"grant organizations:CreateAccount on the organization")
+
+	got := err.Error()
+	if !strings.Contains(got, "with the request tags provided") {
+		t.Errorf("the AWS message is not in the rendered error, so an operator holding the "+
+			"action sees only remediation advice for a permission they already have:\n%s", got)
+	}
+	if !strings.Contains(got, "AWS said:") {
+		t.Errorf("the AWS text is unattributed. automat's remediation is an inference and this "+
+			"is evidence; a reader who cannot tell them apart cannot weigh them:\n%s", got)
+	}
+
+	// A non-AWS cause adds nothing about authorization and must not produce a
+	// dangling label.
+	plain := &PermissionError{Action: "sts:GetCallerIdentity", Cause: errors.New("dial tcp: timeout")}
+	if strings.Contains(plain.Error(), "AWS said:") {
+		t.Errorf("a non-API cause was rendered as an AWS message:\n%s", plain.Error())
+	}
+}
+
 // TestErrorRendersWithMissingParts. Not every call site knows a resource — some
 // AWS operations do not report one — and the error must still read as a sentence
 // rather than as "not authorized to  on  as ".

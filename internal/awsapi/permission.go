@@ -23,6 +23,22 @@ import (
 //
 // The Grant field is automat's contribution: the sentence the operator forwards
 // to whoever can actually make the change.
+//
+// # Why AWS's own message is reprinted rather than replaced
+//
+// Rule 7's three parts are what automat OWES the operator; they are not the whole
+// of what is diagnostically load-bearing. A denial has two quite different causes
+// that produce the same error code: the principal lacks the action, or the
+// principal has the action under a condition that did not match. Only the second
+// is visible in AWS's message ("…with the request tags provided"), and automat
+// cannot know which happened — Grant is written at the call site, before the call.
+//
+// AUDIT-2 found this the hard way: a request-tag mismatch on CreateAccount
+// rendered as "grant organizations:CreateAccount … in the management account",
+// advice for a permission the operator already had. The grant sentence was
+// confidently wrong, and the sentence that would have identified the real cause was
+// in Cause, which Error() dropped. So both are printed, labeled by who is speaking:
+// automat's remediation is a claim automat is making, and AWS's text is evidence.
 type PermissionError struct {
 	// Action is the API action that was denied, e.g. "organizations:MoveAccount".
 	Action string
@@ -54,7 +70,30 @@ func (e *PermissionError) Error() string {
 		b.WriteString("\n  to fix: ")
 		b.WriteString(e.Grant)
 	}
+	// Last, and attributed. A condition failure is indistinguishable from a missing
+	// action by code alone, and this line is the only place the difference appears.
+	// Attributed because the two sentences have different authors and different
+	// reliabilities: the fix is automat's inference, this is what AWS said.
+	if msg := causeMessage(e.Cause); msg != "" {
+		b.WriteString("\n  AWS said: ")
+		b.WriteString(msg)
+	}
 	return b.String()
+}
+
+// causeMessage is the AWS API message from err, or "" when there is nothing worth
+// printing.
+//
+// Only a smithy.APIError's message is reprinted, not any wrapped error's text: a
+// transport or context error adds noise to a sentence about authorization, and the
+// caller already sees it through Unwrap. An empty or duplicate-of-Action message is
+// dropped rather than rendered as a dangling label.
+func causeMessage(err error) string {
+	var ae smithy.APIError
+	if err == nil || !errors.As(err, &ae) {
+		return ""
+	}
+	return strings.TrimSpace(ae.ErrorMessage())
 }
 
 func (e *PermissionError) Unwrap() error { return e.Cause }

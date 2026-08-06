@@ -546,9 +546,12 @@ func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
 	// it, and the ordering that fails safe is the one where the account is late
 	// rather than the controls.
 	acct, _, err := e.EnsureAccount(ctx, org.AccountSpec{
-		Name:      in.Name,
-		Email:     in.Email,
-		Tags:      vendCreateTags(caller, st.Destination),
+		Name:  in.Name,
+		Email: in.Email,
+		// in.OUID, not st.Destination: the tag names the delegated OU the grant's
+		// StringEquals pins, while st.Destination below is where the account is
+		// placed. They differ whenever placement.ou_path is set. See vendCreateTags.
+		Tags:      vendCreateTags(caller, in.OUID),
 		RequestID: in.RequestID,
 		// The root and the destination, which are the two places an account a
 		// previous run created can be: a create lands it under the root (DESIGN §3,
@@ -751,14 +754,42 @@ func plansOUCreation(actions []org.Action) string {
 // "automat": that is what makes an account attributable to the member account whose
 // delegation created it (internal/bundle/role.go:169, DESIGN §7a).
 //
+// # automat:ou is the DELEGATED OU, not the OU the account lands in
+//
+// These are the same value until placement.ou_path is non-empty, and then they are
+// not, which is how AUDIT-2 found this: vend tagged with st.Destination — the
+// resolved nested OU — while role.go:170 renders the condition as
+// StringEquals aws:RequestTag/automat:ou: '<TargetOU>', a literal fixed when the
+// bundle was generated. Every vend with an ou_path would have been denied in a real
+// organization, and passed the suite because the fake compared tag keys only.
+//
+// The delegated OU is the right value on its own terms, not just the permitted one:
+//
+//   - The grant CANNOT be widened to the subtree. OU ids are opaque
+//     (ou-<root>-<random>), so no StringLike pattern expresses "an OU below this
+//     one" — the subtree relationship lives in the ARN path, which aws:RequestTag
+//     compares as an unstructured string. A condition that admitted arbitrary sub-OU
+//     ids would be admitting arbitrary strings.
+//   - A per-sub-OU value would be WRONG BY DESIGN. The tag is immutable after
+//     creation (it is deliberately absent from role.go's mutableTagKeys), while
+//     MoveAccountsIntoTheDelegatedSubtreeOnly permits moving the account anywhere in
+//     the subtree. A tag naming the leaf OU is stale after the first permitted move;
+//     a tag naming the subtree root stays true for the account's whole life.
+//
+// So automat:ou answers "under which delegation was this account vended", which is
+// the question the condition is asking, and which of the subtree's OUs it currently
+// sits in is answered by ListParents. Where the account actually landed reaches the
+// operator through the birth certificate and the evidence manifest, both of which
+// record st.Destination.
+//
 // DESIGN §14's other three tags — automat:artifact-id, automat:artifact-sha256,
 // automat:version — are the mutable set, written after the account exists, and
 // automat cannot write them yet: nothing in internal/org tags an account after
 // creation. Reported through recordStepFiveIsMissing's sibling rather than dropped.
-func vendCreateTags(caller *callerIdentity, destination string) map[string]string {
+func vendCreateTags(caller *callerIdentity, delegatedOU string) map[string]string {
 	return map[string]string{
 		"automat:vended-by": caller.AccountID,
-		"automat:ou":        destination,
+		"automat:ou":        delegatedOU,
 	}
 }
 

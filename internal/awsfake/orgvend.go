@@ -103,6 +103,16 @@ func (f *OrgVend) CreateAccount(_ context.Context, in *organizations.CreateAccou
 			missing = append(missing, k)
 		}
 	}
+	// The same condition's other half. StringEquals on a value the template fixed
+	// denies a wrong value as flatly as a missing key, and reporting both through one
+	// error keeps the caller from learning to distinguish them — AWS does not.
+	for k, want := range s.RequiredCreateTagValues {
+		if got, ok := tags[k]; !ok {
+			missing = append(missing, k)
+		} else if got != want {
+			missing = append(missing, k+"="+got+", the grant pins "+want)
+		}
+	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return nil, &APIError{

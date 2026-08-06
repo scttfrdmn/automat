@@ -76,6 +76,22 @@ type OrgState struct {
 	// condition it was written for.
 	RequiredCreateTags []string
 
+	// RequiredCreateTagValues pins the VALUE a request tag must carry, which is a
+	// different condition from RequiredCreateTags and catches a different bug.
+	//
+	// The grant is StringEquals, not Null: role.go renders
+	// aws:RequestTag/automat:ou: '<the delegated OU>' as a literal. A create that
+	// carries the key with any other value is denied exactly as loudly as one that
+	// omits the key. Checking presence only made a fake that agreed with every
+	// value, and AUDIT-2 found the real mismatch underneath it — vend sent the
+	// nested placement OU while the grant admits only the delegated one, so every
+	// vend with a non-empty placement.ou_path would have been AccessDenied in a
+	// real organization and passed here.
+	//
+	// Keys present here need not also be in RequiredCreateTags: a pinned value
+	// implies the key, since an absent key cannot equal the pinned string.
+	RequiredCreateTagValues map[string]string
+
 	// CreateAccountPolls is how many DescribeCreateAccountStatus calls report
 	// IN_PROGRESS before one reports SUCCEEDED. Zero means the first poll
 	// succeeds; the default from NewOrgState is 2, because account creation is

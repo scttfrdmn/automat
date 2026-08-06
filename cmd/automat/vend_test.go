@@ -613,6 +613,68 @@ func TestVendTagsTheAccountForTheConditionsThatReadThem(t *testing.T) {
 	}
 }
 
+// TestVendTagsTheDelegatedOUEvenWhenItPlacesDeeper is AUDIT-2's automat:ou finding.
+//
+// The vendor role renders the condition as a literal:
+//
+//	StringEquals: {aws:RequestTag/automat:ou: '<TargetOU>'}
+//
+// fixed when the bundle was generated (internal/bundle/role.go:170). vend used to
+// tag with st.Destination, the OU it resolved placement.ou_path to — the same value
+// until a profile sets ou_path, and a different one after. Every such vend was
+// AccessDeniedException in a real organization, and the whole suite passed because
+// awsfake compared tag KEYS and not values.
+//
+// So this test pins the value the way the grant does, and asserts the two things
+// that must both hold and used to be conflated: the tag names the DELEGATED OU, and
+// the account is placed in the NESTED one. Asserting only the tag would pass a
+// regression that fixed the tag by refusing to descend.
+func TestVendTagsTheDelegatedOUEvenWhenItPlacesDeeper(t *testing.T) {
+	g, f := vendWorld(t)
+	f.State.RequiredCreateTagValues = map[string]string{
+		"automat:vended-by": testManagement,
+		"automat:ou":        testVendOU,
+	}
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["placement"] = map[string]any{
+			"target_ou":               testVendOU,
+			"ou_path":                 []any{"Genomics"},
+			"create_intermediate_ous": true,
+		}
+	})
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend into a nested OU with the grant's request-tag VALUES enforced: %v\n\n"+
+			"An AccessDenied here is the finding, not a test bug: the grant admits only the "+
+			"delegated OU %s in automat:ou, so tagging with the resolved placement OU is a "+
+			"denial in any real organization.", err, testVendOU)
+	}
+
+	accounts := f.State.AccountIDs()
+	if len(accounts) != 1 {
+		t.Fatalf("want 1 account, got %v", accounts)
+	}
+	if got := f.State.TagsOf(accounts[0])["automat:ou"]; got != testVendOU {
+		t.Errorf("automat:ou is %q, want the delegated OU %q that the grant pins", got, testVendOU)
+	}
+
+	// And it still descended. The tag answers "under which delegation", ListParents
+	// answers "where is it now", and the profile's ou_path governs the second.
+	nested := ""
+	for _, id := range f.State.OUIDsUnder(testVendOU) {
+		if f.State.OUName(id) == "Genomics" {
+			nested = id
+		}
+	}
+	if nested == "" {
+		t.Fatalf("no OU named Genomics below %s; the path was not created", testVendOU)
+	}
+	if got := f.State.ParentOf(accounts[0]); got != nested {
+		t.Errorf("the account is under %s, want the nested OU %s — the tag names the "+
+			"delegated OU, but placement must still honor ou_path", got, nested)
+	}
+}
+
 // TestVendResumeContinuesRatherThanCreatingASecondAccount.
 //
 // --resume takes a create-account request id, and the whole reason it exists is that

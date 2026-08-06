@@ -208,6 +208,20 @@ Two smaller shortfalls of the same kind, both reported the same way rather than 
   other three (`automat:artifact-id`, `automat:artifact-sha256`, `automat:version`) are
   the post-create mutable set, and nothing in `internal/org` tags an account after
   creation.
+
+  **`automat:ou` names the delegated OU, not the OU the account is placed in.** The two
+  are the same value until an environment profile sets `placement.ou_path`, and DESIGN
+  §14's one-line tag list does not say which one is meant — so it is said here. The
+  vendor role's `CreateAccount` grant renders the condition as a literal
+  (`StringEquals aws:RequestTag/automat:ou: '<target_ou>'`), fixed when the bundle was
+  generated, and the grant cannot be widened to the subtree: OU ids are opaque, so no
+  `StringLike` pattern expresses "below this OU". The tag would also be *wrong* as a
+  placement record — it is immutable after creation while `MoveAccount` is permitted
+  anywhere in the subtree, so a value naming the leaf OU is stale after the first
+  permitted move. It answers "under which delegation was this vended"; `ListParents`
+  answers "where is it now", and where the account actually landed is on the birth
+  certificate and in the evidence manifest. AUDIT-2 found vend tagging with the resolved
+  placement OU, which is `AccessDeniedException` in a real organization.
 - **`account.role_name` and `account.iam_user_access_to_billing` in the environment
   profile do not reach AWS.** `org.EnsureAccount` sends only `AccountName`, `Email`, and
   `Tags`. Two document fields that validate and then have no effect, which is worth an
