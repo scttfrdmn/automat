@@ -239,6 +239,22 @@ func (e *Ensurer) record(a Action) *Action {
 	return &e.actions[len(e.actions)-1]
 }
 
+// RecordUnknown notes a step a plan could not check, so the plan still lists it.
+//
+// The exported counterpart of what EnsureOUPath does per level when a parent it
+// would create does not exist yet: once a plan's first step is a creation,
+// nothing below it can be read, and the honest report is "cannot be checked"
+// rather than either silence or a guess. `automat init` needs it because its
+// first step may be creating the organization itself, after which the root, the
+// policy type, and the OU are all unreadable — and a plan that simply omitted
+// them would show one line for a command that does three things.
+//
+// Only ever VerbUnknown, and Applied is therefore always false: this records the
+// absence of knowledge, so there is no mode in which it may claim a change.
+func (e *Ensurer) RecordUnknown(kind, detail string) *Action {
+	return e.record(Action{Verb: VerbUnknown, Kind: kind, Detail: detail})
+}
+
 func (e *Ensurer) pollInterval() time.Duration {
 	if e.PollInterval > 0 {
 		return e.PollInterval

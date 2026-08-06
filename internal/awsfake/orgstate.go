@@ -402,6 +402,35 @@ func (s *OrgState) AttachedTo(targetID string) []string {
 	return out
 }
 
+// OUIDsUnder returns the ids of the OUs directly under a parent, sorted.
+func (s *OrgState) OUIDsUnder(parent string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for id := range s.ous {
+		if s.parents[id] == parent {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// OUName returns an OU's name, or "" if there is no such OU.
+//
+// Paired with OUIDsUnder so a test can find an OU the way automat does — by name,
+// because an OU id is assigned at creation and there is no state file to remember
+// one in. A test that hardcoded an id would be asserting against a handle automat
+// itself cannot use between runs.
+func (s *OrgState) OUName(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ou, ok := s.ous[id]; ok {
+		return ou.Name
+	}
+	return ""
+}
+
 // TagsOf returns a copy of a resource's tags.
 func (s *OrgState) TagsOf(resourceID string) map[string]string {
 	s.mu.Lock()

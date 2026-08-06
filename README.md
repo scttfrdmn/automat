@@ -26,12 +26,14 @@ attached to an agreement, usually without whatever page explained the caveat.
 
 ## What works today
 
-This is a **Phase 1 build**. The list below is what you can actually run; everything else
-in the design is marked as not shipping yet, in this file and in `automat --help`.
+This is a **Phase 2 build in progress**. The list below is what you can actually run;
+everything else in the design is marked as not shipping yet, in this file and in
+`automat --help`.
 
 | Command | Does | Landed |
 |---|---|---|
 | `automat preflight` | Classifies where you stand — standalone, management, or member — and reports every capability automat needs, with the exact grant that would fix anything missing | Phase 1 |
+| `automat init` | Prepares an organization to vend into: creates one with all features if this account is not in one, enables the service control policy type on the root, and ensures an OU below it. Prints a plan first; every step is create-or-verify, so a second run writes nothing | Phase 2 |
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
@@ -46,8 +48,9 @@ reliably tells you a grant is *missing*; it cannot promise a call will succeed.
 Named because leaving them out would read as an oversight, and naming them as though they
 worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
 
-- **`automat init` and `automat vend`** — creating and baselining accounts. Phase 2. This
-  is the point of the tool, and it does not exist yet.
+- **`automat vend`** — creating and baselining an account. Phase 2, in progress. This is the
+  point of the tool, and it does not exist yet. An organization can be prepared to vend
+  into (see the table above); nothing yet vends into it.
 - **`automat setup` without `--request`** — applying the delegation directly from a
   management account. Phase 3. The command refuses and names the phase.
 - **`automat verify`** — re-reading what is actually attached to an account. Phase 4. Worth

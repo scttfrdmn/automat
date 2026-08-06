@@ -3,8 +3,9 @@
 
 // Command automat vends compliant AWS sub-accounts.
 //
-// Each subcommand of DESIGN §13 lives in its own file here. Phase 1 provides
-// login, preflight, and setup --request; the rest arrive with their phases.
+// Each subcommand of DESIGN §13 lives in its own file here. Phase 1 provided
+// login, preflight, and setup --request; Phase 2 adds init; the rest arrive with
+// their phases.
 package main
 
 import (
@@ -52,8 +53,9 @@ func newRootCmdWith(g *globals) *cobra.Command {
 			"driven by a compiled control artifact rather than a landing-zone deployment.\n\n" +
 			"Start with `automat preflight`: it reports where you stand in an organization and\n" +
 			"what automat can and cannot do from there. If you are in a member account, it\n" +
-			"will point you at `automat setup --request`.\n\n" +
-			"Phase 1 build: preflight and onboarding work; `vend` does not exist yet.",
+			"will point you at `automat setup --request`. If you own the organization,\n" +
+			"`automat init` prepares it.\n\n" +
+			"Phase 2 build: preflight, onboarding, and `init` work; `vend` does not exist yet.",
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		// Print help rather than an opaque error when invoked bare.
@@ -74,6 +76,7 @@ func newRootCmdWith(g *globals) *cobra.Command {
 		newLoginCmd(g),
 		newPreflightCmd(g),
 		newSetupCmd(g),
+		newInitCmd(g),
 	)
 	return cmd
 }

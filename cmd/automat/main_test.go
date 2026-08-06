@@ -59,12 +59,58 @@ var simulatedVendActions = []string{
 // case; allowActions supplies the actions a permissive caller has.
 func fakes(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*globals, *awsfake.STS, *awsfake.Org) {
 	t.Helper()
+	g, f := fakeSet(t, orgID, mgmt, caller, allowActions...)
+	return g, f.STS, f.Org
+}
+
+// fakeWorld is every fake behind one globals, kept together because `init` needs
+// three of them to agree about the same organization.
+type fakeWorld struct {
+	STS   *awsfake.STS
+	Org   *awsfake.Org
+	State *awsfake.OrgState
+	Init  *awsfake.OrgInit
+	Vend  *awsfake.OrgVend
+}
+
+// fakeSet is fakes() with the whole world returned rather than three of it.
+//
+// The write fakes share one OrgState, and OrgInit is linked to the read fake with
+// Observing, because `automat init` creates an organization and then reads the root
+// of the organization it just created. Unlinked, that read denies an organization
+// that exists — a state AWS never presents — and the command could not be tested
+// past its first step.
+func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*globals, *fakeWorld) {
+	t.Helper()
 	stsFake := awsfake.NewSTS(caller)
 	var orgFake *awsfake.Org
 	if orgID == "" {
 		orgFake = &awsfake.Org{} // zero value: not in an organization
 	} else {
 		orgFake = awsfake.NewOrg(orgID, mgmt)
+	}
+	// The write state carries the org id the reader reports, so an organization
+	// created during a test is the same organization the reader then describes. When
+	// the reader is standalone there is no id yet, and this is the one AWS would
+	// assign — which is why `init`'s plan says the id cannot be predicted.
+	stateOrgID := orgID
+	if stateOrgID == "" {
+		stateOrgID = testOrg
+	}
+	state := awsfake.NewOrgState(stateOrgID, mgmt)
+	if orgID == "" {
+		// A standalone account is pre-organization on both sides. NewOrgState starts
+		// with the policy type ON, which is right for a vend into an existing org and
+		// wrong here: `init`'s whole reason for existing is that a fresh organization
+		// has it off.
+		state.SCPEnabled = false
+	}
+	f := &fakeWorld{
+		STS:   stsFake,
+		Org:   orgFake,
+		State: state,
+		Init:  awsfake.NewOrgInit(state).Observing(orgFake),
+		Vend:  awsfake.NewOrgVend(state),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -75,6 +121,12 @@ func fakes(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*g
 		},
 		newOrg: func(context.Context, string, string) (awsapi.OrgAPI, error) {
 			return orgFake, nil
+		},
+		newOrgInit: func(context.Context, string, string) (awsapi.OrgInitAPI, error) {
+			return f.Init, nil
+		},
+		newOrgVend: func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
+			return f.Vend, nil
 		},
 		newIAM: func(context.Context, string, string) (awsapi.IAMAPI, error) {
 			return iamFake, nil
@@ -89,7 +141,7 @@ func fakes(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*g
 	}
 	// No config file: the tests that want one point --config at a temp path.
 	g.configPath = filepath.Join(t.TempDir(), "absent.toml")
-	return g, stsFake, orgFake
+	return g, f
 }
 
 // runCLI executes the root command with args and returns stdout, stderr, and the
@@ -312,6 +364,12 @@ func TestSetupRequestWritesABundleAndMakesNoAWSCall(t *testing.T) {
 	g.newOrg = func(context.Context, string, string) (awsapi.OrgAPI, error) {
 		return nil, refuse("an Organizations client")
 	}
+	g.newOrgInit = func(context.Context, string, string) (awsapi.OrgInitAPI, error) {
+		return nil, refuse("an Organizations init client")
+	}
+	g.newOrgVend = func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
+		return nil, refuse("an Organizations vend client")
+	}
 	g.newIAM = func(context.Context, string, string) (awsapi.IAMAPI, error) { return nil, refuse("an IAM client") }
 	g.newQuota = func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 		return nil, refuse("a Service Quotas client")
@@ -478,6 +536,8 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 		{"preflight"},
 		{"version"},
 		{"setup"},
+		{"init"},
+		{"init", "--dry-run"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			g := &globals{configPath: filepath.Join(t.TempDir(), "absent.toml")}
@@ -488,6 +548,12 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 			}
 			g.newSTS = func(context.Context, string, string) (awsapi.STSAPI, error) { return nil, note("STS") }
 			g.newOrg = func(context.Context, string, string) (awsapi.OrgAPI, error) { return nil, note("Organizations") }
+			g.newOrgInit = func(context.Context, string, string) (awsapi.OrgInitAPI, error) {
+				return nil, note("Organizations (init)")
+			}
+			g.newOrgVend = func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
+				return nil, note("Organizations (vend)")
+			}
 			g.newIAM = func(context.Context, string, string) (awsapi.IAMAPI, error) { return nil, note("IAM") }
 			g.newQuota = func(context.Context, string, string) (awsapi.QuotaAPI, error) { return nil, note("Quotas") }
 			g.newSSOOIDC = func(context.Context, string) (awsapi.SSOOIDCAPI, error) { return nil, note("SSOOIDC") }

@@ -168,7 +168,7 @@ func TestPlanTouchesNothing(t *testing.T) {
 	if _, _, err := f.E.EnsureOrganization(ctx(), f.Read); err != nil {
 		t.Fatalf("EnsureOrganization: %v", err)
 	}
-	if _, err := f.E.EnsureSCPEnabled(ctx(), testRoot); err != nil {
+	if _, err := f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read); err != nil {
 		t.Fatalf("EnsureSCPEnabled: %v", err)
 	}
 

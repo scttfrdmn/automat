@@ -633,6 +633,102 @@ func TestReRunningInitIsRefusedRatherThanSilentlyDuplicated(t *testing.T) {
 	}
 }
 
+// TestObservingLinksTheCreateToWhatAReaderSees.
+//
+// `automat init` is one command that creates an organization and then READS the
+// root of the organization it just created, because EnablePolicyType needs the root
+// id and ListRoots is on the read interface. Against unlinked fakes that read
+// returns AWSOrganizationsNotInUseException for an organization that exists — a
+// state AWS never presents — so the whole command would be untestable end to end
+// and the ordering it depends on would be asserted nowhere.
+//
+// Both halves are checked, and the second is the one worth having: the reader's
+// view of the root's policy type is a different field on a different object from
+// the one AttachPolicy consults, and if they diverge a test can assert enforcement
+// is live while the reader still reports a root with no policy type at all.
+func TestObservingLinksTheCreateToWhatAReaderSees(t *testing.T) {
+	s := NewOrgState(testOrgID, testMgmtAcct)
+	read := &Org{} // zero value: standalone, as a pre-init account is
+	init := NewOrgInit(s).Observing(read)
+
+	_, preErr := read.DescribeOrganization(ctx(), &organizations.DescribeOrganizationInput{})
+	if awsapi.APIErrorCode(preErr) != "AWSOrganizationsNotInUseException" {
+		t.Fatalf("a standalone account's DescribeOrganization returned %v, want "+
+			"AWSOrganizationsNotInUseException — the fixture is not a pre-init account", preErr)
+	}
+
+	if _, err := init.CreateOrganization(ctx(), &organizations.CreateOrganizationInput{
+		FeatureSet: orgtypes.OrganizationFeatureSetAll,
+	}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	out, err := read.DescribeOrganization(ctx(), &organizations.DescribeOrganizationInput{})
+	if err != nil {
+		t.Fatalf("after the create, the reader still denies the organization exists: %v", err)
+	}
+	if got := aws.ToString(out.Organization.Id); got != testOrgID {
+		t.Errorf("reader reports org %q, want %q", got, testOrgID)
+	}
+	if got := out.Organization.FeatureSet; got != orgtypes.OrganizationFeatureSetAll {
+		t.Errorf("reader reports feature set %q, want ALL", got)
+	}
+
+	// A brand-new root reports NO policy types rather than a disabled one, which is
+	// the empty SCPStatus. The distinction matters because "disabled" is the shape a
+	// reader is most likely to pattern-match on, and AWS does not produce it here.
+	roots, err := read.ListRoots(ctx(), &organizations.ListRootsInput{})
+	if err != nil {
+		t.Fatalf("ListRoots after the create: %v", err)
+	}
+	if len(roots.Roots) != 1 {
+		t.Fatalf("ListRoots returned %d roots, want 1", len(roots.Roots))
+	}
+	if n := len(roots.Roots[0].PolicyTypes); n != 0 {
+		t.Errorf("a fresh root reports %d policy types, want none: %+v",
+			n, roots.Roots[0].PolicyTypes)
+	}
+
+	if _, eerr := init.EnablePolicyType(ctx(), &organizations.EnablePolicyTypeInput{
+		RootId: aws.String(s.RootID), PolicyType: orgtypes.PolicyTypeServiceControlPolicy,
+	}); eerr != nil {
+		t.Fatalf("EnablePolicyType: %v", eerr)
+	}
+	roots, err = read.ListRoots(ctx(), &organizations.ListRootsInput{})
+	if err != nil {
+		t.Fatalf("ListRoots after the enable: %v", err)
+	}
+	var status orgtypes.PolicyTypeStatus
+	for _, pt := range roots.Roots[0].PolicyTypes {
+		if pt.Type == orgtypes.PolicyTypeServiceControlPolicy {
+			status = pt.Status
+		}
+	}
+	if status != orgtypes.PolicyTypeStatusEnabled {
+		t.Errorf("after EnablePolicyType the reader reports the SCP type as %q, want ENABLED — "+
+			"the write side and the read side disagree about whether anything is enforced", status)
+	}
+}
+
+// TestOrgInitWithoutObservingLeavesTheReaderAlone. The link is opt-in, and the
+// fakes it is not given must not be touched: every other command's writes leave its
+// own classification unchanged, and a fake that coupled them globally would hide a
+// command reading a state it never established.
+func TestOrgInitWithoutObservingLeavesTheReaderAlone(t *testing.T) {
+	s := NewOrgState(testOrgID, testMgmtAcct)
+	init := NewOrgInit(s)
+	if _, err := init.CreateOrganization(ctx(), &organizations.CreateOrganizationInput{
+		FeatureSet: orgtypes.OrganizationFeatureSetAll,
+	}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	// Nothing to assert about a reader that was never supplied; what this pins is
+	// that the call does not panic reaching for one.
+	if !init.Created {
+		t.Error("CreateOrganization succeeded without recording it")
+	}
+}
+
 // TestInitRefusesAnythingButTheAllFeatureSet. Stricter than AWS, deliberately:
 // AWS accepts CONSOLIDATED_BILLING and automat has no reason to ever send it, so a
 // test that did should fail loudly rather than proceed into an org where no SCP can

@@ -606,13 +606,15 @@ func TestEnsurePolicySetTagsAreEnsuredWithoutRemovingOthers(t *testing.T) {
 // init.
 // -----------------------------------------------------------------------------
 
-// TestEnsureSCPEnabledToleratesAlreadyEnabled. AWS's usual shape for an idempotent
-// call it does not implement idempotently.
+// TestEnsureSCPEnabledToleratesAlreadyEnabled, with no read client: the write goes
+// out blind and AWS's refusal of the second one is read as success. This is the
+// shape AWS gives an idempotent call it does not implement idempotently, and it
+// stays supported because the read client is optional.
 func TestEnsureSCPEnabledToleratesAlreadyEnabled(t *testing.T) {
 	f := newFixture(t)
 	f.State.SCPEnabled = false
 
-	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot)
+	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot, nil)
 	if err != nil {
 		t.Fatalf("EnsureSCPEnabled: %v", err)
 	}
@@ -624,7 +626,7 @@ func TestEnsureSCPEnabledToleratesAlreadyEnabled(t *testing.T) {
 	}
 
 	f.resetCalls()
-	act, err = f.E.EnsureSCPEnabled(ctx(), testRoot)
+	act, err = f.E.EnsureSCPEnabled(ctx(), testRoot, nil)
 	if err != nil {
 		t.Fatalf("second EnsureSCPEnabled: %v", err)
 	}
@@ -633,12 +635,132 @@ func TestEnsureSCPEnabledToleratesAlreadyEnabled(t *testing.T) {
 	}
 }
 
+// TestEnsureSCPEnabledReadsBeforeWriting is the same property one level stricter,
+// and the level is the one that matters for CLAUDE.md rule 4.
+//
+// Tolerating the already-enabled error makes the ORGANIZATION unchanged on a second
+// run. It does not make the second run quiet: an unconditional EnablePolicyType is a
+// write automat knows will be refused, so "run twice writes nothing" is false at the
+// API. With a read client the second run issues no write at all.
+func TestEnsureSCPEnabledReadsBeforeWriting(t *testing.T) {
+	f := newFixture(t)
+	f.State.SCPEnabled = false
+	f.Read.SCPStatus = "" // a root where the type was never enabled reports none
+
+	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("EnsureSCPEnabled: %v", err)
+	}
+	if act.Verb != VerbEnable || !act.Applied {
+		t.Errorf("action = %s, want an applied enable", act)
+	}
+
+	f.resetCalls()
+	f.Read.SCPStatus = orgtypes.PolicyTypeStatusEnabled
+	act, err = f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("second EnsureSCPEnabled: %v", err)
+	}
+	if act.Verb != VerbUnchanged || act.Applied {
+		t.Errorf("action = %s, want an unapplied unchanged", act)
+	}
+	if n := f.Init.CallCount("EnablePolicyType"); n != 0 {
+		t.Errorf("the second run issued %d EnablePolicyType calls; the read had already "+
+			"established the answer", n)
+	}
+}
+
+// TestEnsureSCPEnabledPlanReadsTheRealStatus. A plan that could not tell whether the
+// type was on had to hedge — "would be enabled if it is not already" — which is the
+// one line of an init plan an operator most wants a straight answer to, since it
+// decides whether their existing controls enforce anything.
+func TestEnsureSCPEnabledPlanReadsTheRealStatus(t *testing.T) {
+	f := newFixture(t)
+	f.E.Mode = ModePlan
+
+	// On: the plan says unchanged, and issues no write.
+	f.Read.SCPStatus = orgtypes.PolicyTypeStatusEnabled
+	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("EnsureSCPEnabled in plan mode: %v", err)
+	}
+	if act.Verb != VerbUnchanged {
+		t.Errorf("action = %s, want unchanged against an enabled root", act)
+	}
+
+	// Off: the plan says it would be enabled, without hedging.
+	f.resetCalls()
+	f.Read.SCPStatus = ""
+	act, err = f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("EnsureSCPEnabled in plan mode: %v", err)
+	}
+	if act.Verb != VerbEnable || act.Applied {
+		t.Errorf("action = %s, want an unapplied enable", act)
+	}
+	if strings.Contains(act.Detail, "if it is not already") {
+		t.Errorf("the plan hedges about a status it read: %s", act.Detail)
+	}
+	if got := f.writeCalls(); len(got) != 0 {
+		t.Errorf("plan mode issued mutating calls %v", got)
+	}
+}
+
+// TestEnsureSCPEnabledTreatsPendingAsNotEnabled. PENDING_ENABLE is neither on nor
+// off: enforcement is not yet a fact, so reading it as "on" would be automat
+// asserting a control is live while AWS is still deciding. The write goes out, and
+// AWS's answer to it is authoritative.
+func TestEnsureSCPEnabledTreatsPendingAsNotEnabled(t *testing.T) {
+	f := newFixture(t)
+	f.State.SCPEnabled = false
+	f.Read.SCPStatus = orgtypes.PolicyTypeStatusPendingEnable
+
+	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("EnsureSCPEnabled: %v", err)
+	}
+	if act.Verb == VerbUnchanged {
+		t.Errorf("action = %s: PENDING_ENABLE was read as enabled, which reports a control as "+
+			"live while AWS is still deciding", act)
+	}
+}
+
+// TestEnsureSCPEnabledAdoptsAConcurrentEnable is the TOCTOU window on this
+// operation. The read says off, somebody else turns it on, and the write is refused
+// — both callers wanted the same end state, so this is success. The record says the
+// race happened rather than "already enabled", so an operator reading the manifest
+// does not conclude automat's own read was wrong.
+func TestEnsureSCPEnabledAdoptsAConcurrentEnable(t *testing.T) {
+	f := newFixture(t)
+	f.State.SCPEnabled = false
+	f.Read.SCPStatus = ""
+	f.State.Before = map[string]func() error{
+		"EnablePolicyType": func() error {
+			f.State.SCPEnabled = true
+			f.Read.SCPStatus = orgtypes.PolicyTypeStatusEnabled
+			return &orgtypes.PolicyTypeAlreadyEnabledException{}
+		},
+	}
+
+	act, err := f.E.EnsureSCPEnabled(ctx(), testRoot, f.Read)
+	if err != nil {
+		t.Fatalf("EnsureSCPEnabled: %v", err)
+	}
+	if act.Verb != VerbUnchanged || act.Applied {
+		t.Errorf("action = %s, want an unapplied unchanged", act)
+	}
+	if !strings.Contains(act.Detail, "between automat's read and this call") {
+		t.Errorf("the record does not distinguish a concurrent enable from a status automat "+
+			"read for itself: %s", act.Detail)
+	}
+}
+
 // TestEnsureSCPEnabledRequiresTheInitClient. Only `automat init` enables a policy
 // type, and it is the only command that should hold that capability — so an
 // Ensurer without the init client says so rather than nil-panicking.
 func TestEnsureSCPEnabledRequiresTheInitClient(t *testing.T) {
 	e := &Ensurer{Mode: ModeApply}
-	_, err := e.EnsureSCPEnabled(ctx(), testRoot)
+	_, err := e.EnsureSCPEnabled(ctx(), testRoot, nil)
 	mustErr(t, err, "no organization-init client", "automat init")
 }
 

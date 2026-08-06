@@ -12,7 +12,8 @@ That direction matters: checking §13 against a summary of the code would find n
 
 ## Commands
 
-§13 lists eleven command forms. Phase 1 ships three plus two cobra built-ins.
+§13 lists eleven command forms. Phase 1 shipped three plus two cobra built-ins; Phase 2
+adds `init`.
 
 | §13 command | State | Where |
 |---|---|---|
@@ -20,7 +21,7 @@ That direction matters: checking §13 against a summary of the code would find n
 | `automat preflight` | **Shipped** | `cmd/automat/preflight.go` |
 | `automat setup --request` | **Shipped** | `cmd/automat/setup.go` |
 | `automat setup` (MANAGEMENT) | Not yet — Phase 3 | Refuses with the phase named |
-| `automat init` | Not yet — Phase 2 | ROADMAP Phase 2 |
+| `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
 | `automat vend` | Not yet — Phase 2 | ROADMAP Phase 2 |
 | `automat compile` | Not yet — see below | `gen/catalog` today |
 | `automat verify` | Not yet — Phase 4 | ROADMAP Phase 4 |
@@ -43,12 +44,22 @@ shipped command is absent from §13.**
 | `login` | `--start-url`, `--sso-region` | Implied by "credential-profile-aware" / SSO |
 | `preflight` | none | — |
 | `setup` | `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`, `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`, `--vendor-role-name`, `--contact` | §13 names none of these |
+| `init` | `--ou-name`, `--dry-run`, `--yes` | §13 names none of these |
 
 §13 specifies commands, not flags, so a flag cannot contradict it by existing. The two
 with security semantics remain the ones AUDIT-1 flagged: `--force` (discards a hand
 edit — the mechanism an operator uses to apply a correction central IT asked for) and
 `--out` (a path, hence the control-byte refusal and the `os.Root` work in
 `internal/bundle/write.go`).
+
+`init --yes` joins them, and it is the CLAUDE.md rule 5 plumbing rather than a
+convenience: creating an organization is the only act in this command AWS provides no
+call to undo, so it is the only step gated. The gate is keyed off the **printed plan**
+(`plansOrgCreation`) rather than off a boolean threaded out of the step function, so the
+gate and the operator read the same list — a gate consulting a different source could
+refuse for a reason the plan does not mention, or wave through something it does. Every
+other step is create-or-verify, so `--yes` is not required for them and an operator does
+not learn to pass it reflexively.
 
 ### One flag was removed since AUDIT-1: `--external-id`
 
@@ -97,7 +108,8 @@ intended: `TestPreflightNeverPrintsTheExternalID` covers the CLI's output paths.
 
 ## Deviations
 
-One, found by writing this page.
+Two. D1 was found by writing this page; D2 was found by building `init` and is a
+deviation automat is keeping.
 
 ### D1 — The CLI named the wrong phase for `setup` without `--request`. FIXED
 
@@ -113,6 +125,51 @@ refusal message, the command's doc comment) plus `docs/phase-1.md`, all fixed, w
 the test now asserting the phase *number* rather than the word "Phase" so the next
 drift fails loudly. CLAUDE.md's rule — when design and code disagree, flag it rather
 than reinterpret — puts ROADMAP as the sequencing authority, so the code was wrong.
+
+### D2 — `automat init` runs in MANAGEMENT as well as STANDALONE. ACCEPTED, deliberate
+
+§13 writes the command as **"STANDALONE only: CreateOrganization(ALL) + research OU"**.
+As built, `init` permits STANDALONE **and** MANAGEMENT, and refuses MEMBER. Recorded as
+its own line item rather than a footnote, per the audit ritual: it is a shipped command
+whose implemented behavior differs from §13's sentence.
+
+Two reasons, and the second is a security argument rather than an ergonomic one.
+
+**"STANDALONE only" and CLAUDE.md rule 4 cannot both hold literally.** Rule 4 requires
+every mutating command to be safely re-runnable. After `init` succeeds the account is no
+longer standalone — it is the management account of the organization it just created — so
+the idempotent second run is *necessarily* from MANAGEMENT. A command that refused it
+would be a mutating command with no safe second run. `TestInitRunsTwiceWithNoSecondChange`
+is that second run, and it passes no `--yes`, because by then nothing irreversible is left
+in the plan.
+
+**An operator who created their organization in the console was never STANDALONE to
+automat, and is the operator most likely to need this command.** Their root may have the
+service control policy type DISABLED — the state where `CreatePolicy` succeeds,
+`AttachPolicy` succeeds, and nothing is enforced (DESIGN §3 fact 8). `init` is what fixes
+that. Refusing to run it there would send exactly that operator to the console for the one
+call deciding whether every control automat later attaches enforces anything.
+`TestInitAdoptsAnOrganizationCreatedInTheConsole` fixes that shape — all features on, root
+reporting no policy types — and asserts `init` enables it and calls `CreateOrganization`
+zero times.
+
+**MEMBER is refused, and it is the state §13's "only" is really about.** A member account
+cannot create an organization, cannot enable a policy type on a root it does not own, and
+cannot create a root-level OU; AWS delegates none of the three. The refusal says all of
+that and points at `automat setup --request`, and it arrives having mutated nothing —
+`EnsureOrganization` reads before it writes and creates only when the account is in no
+organization at all, so the check is reached with nothing done.
+
+Also worth stating because it is invisible from the flag list: **step order inside `init`
+is load-bearing.** The policy type is enabled *before* the OU is created, so a half-failed
+init leaves a root that enforces policy and no OU, rather than an OU that policies attach
+to and silently do not enforce. Of the two partial states, the second is the one that looks
+finished. `TestInitReportsWhatItDidBeforeFailing` drives exactly that half-failure and
+asserts the partial-progress report names the step that did succeed.
+
+**For AUDIT-2:** either §13's `init` line is amended to name the two states it permits, or
+this deviation is re-ratified as it stands. Do not resolve it by narrowing the command —
+that would reintroduce a mutating command with no safe second run.
 
 ### Not a deviation: `automat compile` lives in `gen/catalog`
 

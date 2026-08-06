@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
+
+	"github.com/scttfrdmn/automat/internal/awsapi"
 )
 
 // PolicySpec is one service control policy a vend wants attached.
@@ -343,7 +345,22 @@ const maxPoliciesPerTarget = 5
 //
 // PolicyTypeAlreadyEnabledException is success — AWS's usual shape for an
 // idempotent call it does not implement idempotently.
-func (e *Ensurer) EnsureSCPEnabled(ctx context.Context, rootID string) (*Action, error) {
+//
+// read is the organization read client, and it may be nil. Given one, this reads
+// the root's current status first, which is the same read-then-write discipline
+// every other operation in this package follows and it is not merely cosmetic here:
+// without it the second run of `init` issues an EnablePolicyType it knows will be
+// refused, so "run twice writes nothing" is false at the API even though the
+// organization is unchanged. Tolerating the already-enabled error stays, because it
+// is still the outcome when the status changes between the read and the write.
+//
+// With no read client the write is attempted blind, which is safe — the write is
+// idempotent in effect, if not in return value — but it cannot report the status a
+// plan wants, and PENDING_ENABLE is the case that makes the read worth doing: the
+// status is neither on nor off, EnablePolicyType against it errors, and an
+// unconditional write would report that as a failure of the command rather than as
+// AWS still deciding.
+func (e *Ensurer) EnsureSCPEnabled(ctx context.Context, rootID string, read awsapi.OrgAPI) (*Action, error) {
 	if e.Init == nil {
 		return nil, fmt.Errorf("cannot enable the service control policy type: this Ensurer has no " +
 			"organization-init client. Only `automat init` enables a policy type, and it is the only " +
@@ -352,11 +369,29 @@ func (e *Ensurer) EnsureSCPEnabled(ctx context.Context, rootID string) (*Action,
 	if rootID == "" {
 		return nil, fmt.Errorf("cannot enable the service control policy type: no root id was given")
 	}
+
+	// Read first when there is something to read with.
+	if read != nil {
+		on, err := SCPEnabled(ctx, read)
+		if err != nil {
+			return nil, e.denied(err, "organizations:ListRoots", "root "+rootID)
+		}
+		if on {
+			return e.record(Action{
+				Verb: VerbUnchanged, Kind: "service control policy type", Target: rootID,
+				Detail: "already enabled on the root",
+			}), nil
+		}
+	}
+
 	if e.planning() {
+		detail := "would be enabled on the root; until this is on, an attached policy enforces nothing"
+		if read == nil {
+			detail = "would be enabled on the root if it is not already; automat cannot tell which " +
+				"without a read client, and ListRoots is not on the init client's interface"
+		}
 		return e.record(Action{
-			Verb: VerbEnable, Kind: "service control policy type", Target: rootID,
-			Detail: "would be enabled on the root if it is not already; automat cannot tell which " +
-				"without ListRoots, which is not on the init client's interface",
+			Verb: VerbEnable, Kind: "service control policy type", Target: rootID, Detail: detail,
 		}), nil
 	}
 
@@ -372,9 +407,18 @@ func (e *Ensurer) EnsureSCPEnabled(ctx context.Context, rootID string) (*Action,
 			Applied: true,
 		}), nil
 	case isCode(err, "PolicyTypeAlreadyEnabledException"):
+		detail := "already enabled on the root"
+		if read != nil {
+			// The read said otherwise moments ago, so somebody else enabled it in the
+			// window. Worth distinguishing in the record: both runs wanted the same
+			// end state, and the operator reading the manifest should not conclude
+			// that automat's own read was wrong.
+			detail = "enabled by another caller between automat's read and this call; " +
+				"adopted rather than treated as a failure"
+		}
 		return e.record(Action{
 			Verb: VerbUnchanged, Kind: "service control policy type", Target: rootID,
-			Detail: "already enabled on the root",
+			Detail: detail,
 		}), nil
 	default:
 		return nil, e.denied(err, "organizations:EnablePolicyType", rootID)

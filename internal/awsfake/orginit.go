@@ -30,6 +30,26 @@ type OrgInit struct {
 	// has to be safe, and "safe" here means recognizing
 	// AlreadyInOrganizationException as success rather than as failure.
 	Created bool
+
+	// Read, when set, is the read fake that observes this organization, and a
+	// successful call here updates it.
+	//
+	// These two calls are the only ones in automat that change what a READER sees
+	// about an organization rather than what is in it: whether an organization
+	// exists at all, and whether the root's service control policy type is on. Org
+	// is deliberately not backed by OrgState — most of what it answers (a member
+	// account's denials, a resource policy the caller cannot read) has no
+	// representation in the write state — and for every other command that
+	// separation is correct, because no other command's writes change its own
+	// classification.
+	//
+	// `automat init` is the exception, and it is not a fake convenience: creating
+	// the organization and then reading its root to enable a policy type on it is
+	// one command. Against unlinked fakes that read fails with
+	// AWSOrganizationsNotInUseException against an organization that now exists,
+	// which is a state AWS never presents. Setting this makes the reader see what
+	// this client did, so the ordering `init` depends on is testable at all.
+	Read *Org
 }
 
 // NewOrgInit returns an init fake over a state that does not yet have an
@@ -37,6 +57,42 @@ type OrgInit struct {
 // test can name the org it expects to come into being.
 func NewOrgInit(s *OrgState) *OrgInit {
 	return &OrgInit{State: s}
+}
+
+// Observing returns an init fake whose successful calls also update the read fake,
+// so a test can run the whole of `automat init` — create the organization, then
+// read the root it created in order to enable a policy type on it. See the Read
+// field for why this is a link rather than shared state.
+func (f *OrgInit) Observing(read *Org) *OrgInit {
+	f.Read = read
+	return f
+}
+
+// observeOrg makes the read fake report the organization this client created.
+func (f *OrgInit) observeOrg() {
+	if f.Read == nil {
+		return
+	}
+	s := f.State
+	f.Read.InOrg = true
+	f.Read.OrgID = s.OrgID
+	f.Read.ManagementAccountID = s.ManagementAccountID
+	f.Read.FeatureSet = orgtypes.OrganizationFeatureSetAll
+	f.Read.RootID = s.RootID
+	if f.Read.ManagementEmail == "" {
+		f.Read.ManagementEmail = "org-management@example.edu"
+	}
+	if f.Read.OUs == nil {
+		f.Read.OUs = map[string]OU{}
+	}
+	if f.Read.Errs == nil {
+		f.Read.Errs = map[string]error{}
+	}
+	// The root of a brand-new organization reports NO policy types, which is Org's
+	// empty SCPStatus rather than a DISABLED one. Writing "disabled" here would be
+	// a shape AWS does not produce, and it is the shape a reader is most likely to
+	// pattern-match on.
+	f.Read.SCPStatus = ""
 }
 
 // CreateOrganization implements awsapi.OrgInitAPI.
@@ -77,6 +133,7 @@ func (f *OrgInit) CreateOrganization(_ context.Context, in *organizations.Create
 	}
 
 	f.Created = true
+	f.observeOrg()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.FeatureSet = orgtypes.OrganizationFeatureSetAll
@@ -138,6 +195,15 @@ func (f *OrgInit) EnablePolicyType(_ context.Context, in *organizations.EnablePo
 		}
 	}
 	s.SCPEnabled = true
+	if f.Read != nil {
+		// The read side is what `preflight` and `vend` consult to decide whether an
+		// attached policy enforces anything, and it is a different field on a
+		// different object from the one AttachPolicy checks. Leaving them to diverge
+		// would let a test assert enforcement is on while the reader still says the
+		// root carries no policy type at all — which is the exact pair of facts the
+		// enable step exists to reconcile.
+		f.Read.SCPStatus = orgtypes.PolicyTypeStatusEnabled
+	}
 
 	return &organizations.EnablePolicyTypeOutput{Root: &orgtypes.Root{
 		Id:   aws.String(s.RootID),
