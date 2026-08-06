@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/scttfrdmn/automat/internal/artifact"
 )
 
 // LoadOptions controls how strictly Load treats a document.
@@ -49,6 +51,14 @@ func Decode(data []byte, opts LoadOptions) (*Profile, error) {
 	// Reject trailing content; a file with two JSON documents in it is a mistake,
 	// not a profile.
 	if err := ensureEOF(dec); err != nil {
+		return nil, err
+	}
+	// A duplicate key is a second document hiding in this one — see
+	// artifact.RejectDuplicateKeys. Established on THIS type: a second "review_by"
+	// appended to an environment profile vends and prints 2099-12-31 on the birth
+	// certificate while the file says 2027-06-30. Unknown-field rejection does not
+	// fire, because the key is known twice.
+	if err := artifact.RejectDuplicateKeys(data); err != nil {
 		return nil, err
 	}
 

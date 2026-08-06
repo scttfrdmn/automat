@@ -841,6 +841,55 @@ func TestVendRefusesToResumeAnotherProfilesRequest(t *testing.T) {
 	}
 }
 
+// TestVendRefusesAProfileWithASecondCopyOfAHashedField is the AUDIT-2 duplicate-key
+// finding asserted where its consequence was demonstrated, rather than only at the
+// loader.
+//
+// The probe that found it: append a second `"review_by"` to the profile a vend is
+// about to run against. Before the fix that vend SUCCEEDED, and the birth certificate
+// printed `review by 2099-12-31` while the file on disk still read 2027-06-30 on the
+// line a reviewer's eye lands on. encoding/json takes the last occurrence and reports
+// nothing; DisallowUnknownFields does not fire, because the key is known twice; and the
+// schema's `additionalProperties: false` constrains which names may appear, not how
+// often.
+//
+// Asserted at the command rather than only in internal/envprofile because that is where
+// the value became a printed claim. A unit test on the loader would pass equally well if
+// vend later read the profile some other way.
+func TestVendRefusesAProfileWithASecondCopyOfAHashedField(t *testing.T) {
+	g, _ := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	data, err := os.ReadFile(profile) //nolint:gosec // a path this test just created
+	if err != nil {
+		t.Fatalf("read the profile: %v", err)
+	}
+	const original = `"review_by": "2027-06-30",`
+	if !strings.Contains(string(data), original) {
+		t.Fatalf("test setup: no review_by to duplicate in:\n%s", data)
+	}
+	// Appended after the original, which is the direction that wins: the visible line
+	// stays and the value automat acts on is the one below it.
+	doubled := strings.Replace(string(data), original,
+		original+"\n  "+`"review_by": "2099-12-31",`, 1)
+	if werr := os.WriteFile(profile, []byte(doubled), 0o600); werr != nil {
+		t.Fatalf("write the profile: %v", werr)
+	}
+
+	out, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatalf("vend accepted a profile with two review_by keys.\noutput:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "appears twice") {
+		t.Errorf("the refusal does not name the duplicate key, so an operator is pointed at the wrong "+
+			"thing:\n%v", err)
+	}
+	// And it must not have got as far as printing the winning value as a fact.
+	if strings.Contains(out, "2099-12-31") {
+		t.Errorf("the output states the appended review date as though it were the profile's:\n%s", out)
+	}
+}
+
 // TestVendWillNotAdoptAnAccountItWasNotAskedToVend is the same harm as the test
 // above, reached through a different door — and the door nobody had to type an id
 // into.

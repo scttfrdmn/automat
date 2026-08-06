@@ -38,6 +38,11 @@ func Decode(data []byte, opts LoadOptions) (*Artifact, error) {
 	if err := dec.Decode(&a); err != nil {
 		return nil, decodeError(err)
 	}
+	// After the decode, so a malformed document gets decodeError's offset and type
+	// rather than a duplicate-key message about a file that does not parse.
+	if err := RejectDuplicateKeys(data); err != nil {
+		return nil, err
+	}
 	// Reject trailing content; a file with two JSON documents in it is a
 	// mistake, not an artifact.
 	if err := ensureEOF(dec); err != nil {

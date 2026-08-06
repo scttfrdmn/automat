@@ -203,6 +203,74 @@ func TestDecodeChecksAttestationSubjectsUnlessAskedNotTo(t *testing.T) {
 	}
 }
 
+// TestDecodeRefusesASecondCopyOfAHashedField is the AUDIT-2 duplicate-key finding,
+// asserted on the document type the harm was demonstrated against.
+//
+// The probe: append a second `"review_by"` to an environment profile and vend. It
+// succeeds, and the birth certificate prints 2099-12-31 while the file on disk still
+// reads 2027-06-30 on the line a reviewer's eye lands on. encoding/json takes the last
+// occurrence and says nothing; DisallowUnknownFields does not fire because the key is
+// known, twice; and `additionalProperties: false` in the schema constrains which names
+// may appear, not how often.
+//
+// review_by is the sharpest instance because it is inside the content hash for exactly
+// this reason — deferring a re-reading is a change no earlier attestation vouches for —
+// but the check is unconditional, because the attestation that would catch it is
+// optional and the unattested profile is the ordinary case. The subtests below assert
+// that both the attested and the unattested document are refused.
+func TestDecodeRefusesASecondCopyOfAHashedField(t *testing.T) {
+	p := sampleProfile(t)
+	data, err := p.MarshalIndented()
+	if err != nil {
+		t.Fatalf("MarshalIndented: %v", err)
+	}
+	if !strings.Contains(string(data), `"review_by": "`) {
+		t.Fatalf("test setup: no review_by to duplicate in:\n%s", data)
+	}
+	// Appended AFTER the original, which is the direction that wins: the visible line
+	// stays, and the value automat acts on is the one below it.
+	doubled := []byte(strings.Replace(string(data),
+		`"review_by": "`+p.ReviewBy+`",`,
+		`"review_by": "`+p.ReviewBy+`",`+"\n  "+`"review_by": "2099-12-31",`, 1))
+	if string(doubled) == string(data) {
+		t.Fatal("test setup: the substitution did not fire")
+	}
+
+	for _, opts := range []struct {
+		name string
+		opts LoadOptions
+	}{
+		// The attested case: VerifyAttestationSubjects would also catch this one, since
+		// the effective review date changed inside the hash. Asserted anyway, so the
+		// refusal is not silently downgraded to that later, weaker check.
+		{"attestations checked", LoadOptions{}},
+		// The case with no backstop whatsoever. Signatures are optional, and a profile
+		// that carries none has nothing else that notices.
+		{"attestations skipped", LoadOptions{SkipAttestationSubjects: true}},
+		// And validation off too, since SkipValidate is documented as skipping
+		// validation rather than parsing.
+		{"validation and attestations skipped", LoadOptions{SkipValidate: true, SkipAttestationSubjects: true}},
+	} {
+		t.Run(opts.name, func(t *testing.T) {
+			got, err := Decode(doubled, opts.opts)
+			if err == nil {
+				t.Fatalf("Decode accepted a profile with two review_by keys and read it as %q; the "+
+					"file says %q on the line a reviewer reads", got.ReviewBy, p.ReviewBy)
+			}
+			if !strings.Contains(err.Error(), "appears twice") {
+				t.Errorf("the refusal does not name the duplicate, so an operator is told the wrong "+
+					"thing to fix:\n%v", err)
+			}
+		})
+	}
+
+	// The unmodified profile still loads. A duplicate-key scanner that rejects valid
+	// documents is not a stricter load path, it is a broken one.
+	if _, err := Decode(data, LoadOptions{}); err != nil {
+		t.Errorf("the scan refused an unmodified profile:\n%v", err)
+	}
+}
+
 // TestSkipValidateIsForConstructingInvalidDocumentsDeliberately. It exists for tests, and
 // the assertion is that it does not also skip the parse-level refusals: a malformed
 // document is still malformed.

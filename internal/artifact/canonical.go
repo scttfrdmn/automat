@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -509,4 +511,169 @@ func (a *Artifact) clone() *Artifact {
 		return a
 	}
 	return &dup
+}
+
+// RejectDuplicateKeys refuses a JSON document that names any object key twice.
+//
+// encoding/json takes the LAST occurrence of a duplicate key and reports nothing,
+// which turns a hashed document into two documents: the one a person reads, and the
+// one automat loaded. AUDIT-2 established the reach empirically rather than by
+// argument — a second `"review_by"` appended to an environment profile vends
+// successfully and prints 2099-12-31 on the birth certificate while the file on disk
+// says 2027-06-30, and `review_by` is inside the content hash precisely so that
+// extending a review date is a change no earlier attestation vouches for.
+//
+// # Why the existing checks do not cover this
+//
+//   - DisallowUnknownFields does not fire: the key IS known, twice.
+//   - The JSON Schema does not either. `additionalProperties: false` constrains
+//     which names may appear, not how often; RFC 8259 permits duplicates and leaves
+//     the behavior to the implementation.
+//   - VerifyContentHash catches it only where a hash is already recorded and the
+//     duplicate falls inside the hashed payload. A duplicate in Meta does not, and
+//     the hash is computed FROM the parse, so a document whose hash is set after the
+//     duplicate was introduced is self-consistent and wrong.
+//   - An attestation catches it, and only for a document that carries one.
+//     Signatures are optional everywhere, so the ordinary unattested profile — the
+//     usual case — has no backstop at all.
+//
+// Scanned with a token decoder rather than by unmarshalling into map[string]any,
+// which would itself collapse the duplicates this is looking for. Nesting is tracked
+// with an explicit stack of per-container frames: two sibling objects may of course
+// use the same key, and only a repeat within ONE object is the defect.
+//
+// # Why the frame records whether its container is an object
+//
+// json.Decoder.Token does not say whether a string token is a key or a value, and
+// alternation alone cannot recover it: an array of strings has no keys at all, so
+// counting "every other string is a key" misreads every element of one. The first
+// draft of this function did exactly that and refused a valid artifact, reporting
+// `the key "scp" appears twice` — "scp" being an enforcement CLASS, a value, listed
+// once per control. An over-strict check that rejects real documents is not a safe
+// direction to fail in; it is a load path that stops working.
+//
+// So each frame records its container kind. Only an object frame holds a key set, and
+// a string is a key only when the innermost open container is an object AND the frame
+// is positioned for a key — which is true after '{' and after each value completes.
+//
+// The path in the error names the offending object, because "review_by appears twice"
+// in a document with several objects that could hold one is not actionable on its own.
+func RejectDuplicateKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+
+	// One frame per open container. pending is the key the next container will be
+	// labelled with in the path.
+	var stack []*keyFrame
+	var pending string
+
+	// valueDone advances the enclosing container past a completed value: an object
+	// expects a key next, an array counts one more element.
+	//
+	// It also clears pending, which is what a key is held in only until the value it
+	// labels begins. Left set, it labels the NEXT container instead: in
+	// {"controls":[{"id":1},{"id":2}]} the "id" of the first element would still be
+	// pending when the second element opens, so a duplicate inside that element was
+	// reported at `controls.id` — a path that does not exist in the document.
+	valueDone := func() {
+		pending = ""
+		if n := len(stack); n > 0 {
+			if top := stack[n-1]; top.object {
+				top.expectKey = true
+			} else {
+				top.elems++
+			}
+		}
+	}
+
+	for {
+		tok, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			// Malformed JSON is not this function's finding to report: the caller's
+			// own decode produces a better message, with an offset and a type. Return
+			// nil and let it speak.
+			return nil //nolint:nilerr // syntax errors are the caller's to report
+		}
+
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{', '[':
+				f := &keyFrame{object: t == '{', label: pending}
+				if f.object {
+					f.keys = map[string]bool{}
+					f.expectKey = true
+				}
+				if f.label == "" && len(stack) > 0 && !stack[len(stack)-1].object {
+					// An element of an array has no key; name it by position.
+					f.label = fmt.Sprintf("[%d]", stack[len(stack)-1].elems)
+				}
+				stack = append(stack, f)
+				pending = ""
+			case '}', ']':
+				stack = stack[:len(stack)-1]
+				// The container that just closed was a value in its parent.
+				valueDone()
+			}
+		case string:
+			top := len(stack) - 1
+			if top >= 0 && stack[top].object && stack[top].expectKey {
+				if stack[top].keys[t] {
+					return fmt.Errorf("the key %q appears twice in %s.\n"+
+						"JSON parsers take the last occurrence and report nothing, so the document "+
+						"automat loaded is not the document you are reading: a hashed field can be "+
+						"changed by APPENDING a second copy of it, leaving the original line visible "+
+						"and inert. Delete whichever of the two is wrong", t, framePath(stack))
+				}
+				stack[top].keys[t] = true
+				stack[top].expectKey = false
+				pending = t
+				continue
+			}
+			valueDone()
+		default:
+			// A number, bool, or null: always a value.
+			valueDone()
+		}
+	}
+}
+
+// keyFrame is one open JSON container during a duplicate-key scan.
+type keyFrame struct {
+	// object distinguishes {} from []. An array frame never holds keys — see
+	// RejectDuplicateKeys for why guessing from alternation is wrong.
+	object bool
+	// keys is the set already seen in this object; nil for an array frame.
+	keys map[string]bool
+	// expectKey is true when the next string token in this object is a key.
+	expectKey bool
+	// elems counts completed elements of an array frame, for the path label.
+	elems int
+	// label is the key (or [index]) this container hangs off its parent by.
+	label string
+}
+
+// framePath renders the dotted path to the innermost open container.
+func framePath(stack []*keyFrame) string {
+	var b strings.Builder
+	for _, f := range stack {
+		switch {
+		case f.label == "":
+			continue
+		case strings.HasPrefix(f.label, "["):
+			b.WriteString(f.label)
+		default:
+			if b.Len() > 0 {
+				b.WriteByte('.')
+			}
+			b.WriteString(f.label)
+		}
+	}
+	if b.Len() == 0 {
+		return "the top-level object"
+	}
+	return b.String()
 }

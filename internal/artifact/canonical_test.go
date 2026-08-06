@@ -633,6 +633,134 @@ func TestVerifyContentHashDetectsTampering(t *testing.T) {
 	}
 }
 
+// TestRejectDuplicateKeysFindsTheSecondCopyAndNothingElse covers both halves of the
+// check, and the second half is the one that has already been wrong once.
+//
+// A duplicate key is a second document hiding inside the first: encoding/json takes the
+// LAST occurrence silently, so appending a copy of a hashed field changes what automat
+// loaded while the original line stays visible and inert.
+//
+// The accept cases exist because the first draft of this scanner guessed key-vs-value by
+// alternation and refused a valid artifact — `the key "scp" appears twice`, "scp" being
+// an enforcement class, a value, appearing once per control in an array. A load-path
+// check that rejects real documents does not fail safe; it fails closed on everything.
+func TestRejectDuplicateKeysFindsTheSecondCopyAndNothingElse(t *testing.T) {
+	refused := []struct {
+		name  string
+		json  string
+		where string
+	}{
+		{
+			name:  "at the top level",
+			json:  `{"review_by":"2027-06-30","x":1,"review_by":"2099-12-31"}`,
+			where: "the top-level object",
+		},
+		{
+			name:  "inside a nested object",
+			json:  `{"meta":{"issuer":"a","issuer":"b"}}`,
+			where: "meta",
+		},
+		{
+			name:  "inside an object in an array, named by position",
+			json:  `{"controls":[{"id":"1"},{"id":"2","id":"3"}]}`,
+			where: "controls[1]",
+		},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RejectDuplicateKeys([]byte(tc.json))
+			if err == nil {
+				t.Fatalf("accepted a document with a duplicate key: %s", tc.json)
+			}
+			if !strings.Contains(err.Error(), tc.where) {
+				t.Errorf("the refusal does not name %q, so an operator cannot find the offending "+
+					"object:\n%v", tc.where, err)
+			}
+			if !strings.Contains(err.Error(), "last occurrence") {
+				t.Errorf("the refusal does not say which copy won, which is the whole hazard:\n%v", err)
+			}
+		})
+	}
+
+	accepted := []struct {
+		name string
+		json string
+	}{
+		{
+			// The regression: repeated string values in arrays, which is what
+			// enforcement classes look like across a real catalog.
+			name: "a repeated string value in an array",
+			json: `{"a":["scp","config"],"b":["scp","config"],"c":["scp"]}`,
+		},
+		{
+			name: "an odd number of strings in an array",
+			json: `{"a":["x","y","z"],"b":"x"}`,
+		},
+		{
+			name: "the same key in sibling objects",
+			json: `{"one":{"id":"a"},"two":{"id":"b"}}`,
+		},
+		{
+			name: "a key equal to a sibling's value",
+			json: `{"kind":"kind"}`,
+		},
+		{
+			name: "nested arrays of strings",
+			json: `{"a":[["p","q"],["p","q"]]}`,
+		},
+		{
+			name: "an array of arrays of objects",
+			json: `{"a":[[{"k":1}],[{"k":2}]]}`,
+		},
+		{
+			name: "scalars of every kind as values",
+			json: `{"a":1,"b":true,"c":null,"d":"s","e":1.5}`,
+		},
+		{
+			name: "a top-level array",
+			json: `[{"k":1},{"k":2},"k","k"]`,
+		},
+	}
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := RejectDuplicateKeys([]byte(tc.json)); err != nil {
+				t.Errorf("refused a valid document — this is the false-positive direction, which "+
+					"breaks the load path for real files:\n%s\n%v", tc.json, err)
+			}
+		})
+	}
+
+	// Malformed input is the caller's to report: decodeError gives an offset and a type,
+	// and a duplicate-key message about a file that does not parse would misdirect.
+	t.Run("malformed JSON is left to the caller", func(t *testing.T) {
+		for _, bad := range []string{`{`, `{"a":}`, `{"a":1,,}`, `not json`, ``} {
+			if err := RejectDuplicateKeys([]byte(bad)); err != nil {
+				t.Errorf("RejectDuplicateKeys reported on malformed input %q, pre-empting the "+
+					"decoder's better message: %v", bad, err)
+			}
+		}
+	})
+}
+
+// TestEveryShippedCatalogPassesTheDuplicateKeyScan is the false-positive guard against
+// real documents rather than hand-written ones.
+//
+// The scanner runs on every load, so a bug in it takes the catalogs offline. The unit
+// cases above are the shapes I thought of; this one is the shapes that actually ship.
+func TestEveryShippedCatalogPassesTheDuplicateKeyScan(t *testing.T) {
+	a := sampleArtifact()
+	if err := a.SetContentHash(); err != nil {
+		t.Fatalf("SetContentHash: %v", err)
+	}
+	data, err := a.MarshalIndented()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := RejectDuplicateKeys(data); err != nil {
+		t.Errorf("refused an artifact automat itself just wrote: %v", err)
+	}
+}
+
 func reverse(s []string) {
 	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
 		s[i], s[j] = s[j], s[i]

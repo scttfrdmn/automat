@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/scttfrdmn/automat/internal/artifact"
 )
 
 // LoadOptions controls how strictly Load treats a document.
@@ -57,6 +59,13 @@ func Decode(data []byte, opts LoadOptions) (*Profile, error) {
 	// Reject trailing content; a file with two JSON documents in it is a mistake, not a
 	// profile.
 	if err := ensureEOF(dec); err != nil {
+		return nil, err
+	}
+	// A duplicate key is a second document hiding in this one — see
+	// artifact.RejectDuplicateKeys. The attestation subject check below catches it for
+	// a profile that carries one, which the shipped profiles do; signatures are
+	// optional, so a fork that drops them would have no backstop.
+	if err := artifact.RejectDuplicateKeys(data); err != nil {
 		return nil, err
 	}
 
