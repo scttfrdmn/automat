@@ -1,0 +1,1040 @@
+{
+  "schema_version": "1.0.0",
+  "classification_profile": {
+    "id": "stanford-risk-classifications",
+    "title": "Stanford University Risk Classifications (Low / Moderate / High)",
+    "description": "The three risk-based classifications published by Stanford University IT, together with the Minimum Security Standards stated per classification for endpoints, servers, and applications. Two living web pages, read as retrieved: neither carries a version or an effective date, which is why every citation here is dated by retrieval rather than by publication.\n\nPaired with the UC profile deliberately. Three word-named levels against four ascending alphanumeric codes is the pairing that stresses the model hardest: any implementation that assumed four levels, or that derived order from a label, works on one of these two and silently fails on the other.\n\nAn EXAMPLE, not a maintained document. Fork it, correct automat's reading against your own reading, and re-attest."
+  },
+  "issuer": {
+    "id": "stanford",
+    "name": "Stanford University",
+    "unit": "University IT, Information Security Office"
+  },
+  "status": "in-force",
+  "review_by": "2027-02-06",
+  "authorship": "derived-interpretation",
+  "maintenance": "example-and-forkable",
+  "interpretation": {
+    "interpreter": "automat maintainers",
+    "source_id": "stanford-risk-classifications",
+    "attribution": "Risk Classifications and Minimum Security Standards, published by Stanford University IT (Information Security Office) at uit.stanford.edu. Quoted and closely read here for interoperability; the published pages are the authoritative text and are revised in place without a version bump — the hashes in sources[] are the only fixed reference to what was read.",
+    "non_endorsement": "This is automat's interpretation of a published policy. It was not authored, reviewed, or endorsed by Stanford University. The institution's own policy governs; verify against it."
+  },
+  "signatures": [
+    {
+      "role": "interpreted-by",
+      "identity": "automat maintainers",
+      "statement": "We read the two cited published pages and wrote this profile as our own reading of them. This attests to authorship of the reading and to nothing else: not that the reading is correct, not that it is complete, and not that Stanford University has seen it. Both sources are living pages that may have changed since the retrieval timestamps recorded here. No signature material accompanies this attestation, and automat verifies none in v1.",
+      "content_sha256": "f6405756d5b541f958688fbe0aa6e4aafafefb31394f28b6142aeae36b81825b",
+      "attested_at": "2026-08-06"
+    }
+  ],
+  "determination": {
+    "roles": [
+      "Data owner"
+    ],
+    "process": "Review the classification definitions and the published example tables, and select the highest applicable risk designation across all of them. The Minimum Security Standards state the rule per asset class in the same words each time: determine the risk level by reviewing the data, server, and application risk classification examples and selecting the highest applicable risk designation across all — so an endpoint storing Low Risk data but used to access a High Risk application is designated High Risk. For High Risk servers and applications the standards add a security, privacy, and legal review: follow the institution's data risk assessment process and implement its recommendations prior to deployment.\n\nThe source names no formal determination authority beyond the data owner, whose discretion it names twice — for research data and for unpublished research data. Where a classification is unclear, the pages direct questions to the Information Security Office and the University Privacy Office; those are contacts the source names for questions, not roles it makes responsible for determining a level, and they are deliberately not listed as determination roles here.\n\nGo and ask the data owner. There is no step in this process that a tool performs.",
+    "automat_determines": false,
+    "citation": {
+      "source_id": "stanford-minimum-security-standards",
+      "section": "Minimum Security Standards: Endpoints, introductory paragraph",
+      "quote": "Determine the risk level by reviewing the data risk classification examples, server risk classification examples, and application risk classification examples and selecting the highest applicable risk designation across all. For example, an endpoint storing Low Risk Data but utilized to access a High Risk application is designated as High Risk."
+    },
+    "may_raise": "not-stated",
+    "notes": "Neither published page addresses whether a determiner may classify above or below the level the examples indicate, and the record shows that asymmetrically on purpose. may_raise carries the explicit value not-stated, which records that automat looked and the source was silent. may_lower is ABSENT rather than carrying an equivalent value: its vocabulary has no not-stated member, because the block exists to describe a route the source names, and an absent block is the unambiguous way to say there is none.\n\nThe contrast with the UC profile is the whole reason both are shipped. UC states the raise and lower rules explicitly and asymmetrically, naming an exception process for lowering. Any consumer that read a missing may_lower as permission would be wrong in the permissive direction on this profile and correct on the other, which is the hardest kind of defect to notice."
+  },
+  "levels": [
+    {
+      "id": "low",
+      "label": "Low Risk",
+      "rank": 1,
+      "definition": "Data and systems are classified as Low Risk if they are not considered to be Moderate or High Risk, and: the data is intended for public disclosure, or the loss of confidentiality, integrity, or availability of the data or system would have no adverse impact on our mission, safety, finances, or reputation.",
+      "citation": {
+        "source_id": "stanford-risk-classifications",
+        "section": "Risk Classifications, Low Risk definition",
+        "quote": "Data and systems are classified as Low Risk if they are not considered to be Moderate or High Risk, and: The data is intended for public disclosure, or The loss of confidentiality, integrity, or availability of the data or system would have no adverse impact on our mission, safety, finances, or reputation."
+      },
+      "examples": [
+        "Research data (at data owner's discretion)",
+        "Network account identifiers",
+        "Information authorized to be available on or through the university's website without authentication",
+        "Policy and procedure manuals designated by the owner as public",
+        "Job postings",
+        "University contact information not designated by the individual as \"private\"",
+        "Information in the public domain",
+        "Publicly available campus maps"
+      ],
+      "notes": "The definition is residual — Low Risk is what is left after Moderate and High are ruled out — which is the source's own construction and is preserved rather than rewritten into a positive definition. Note the consequence for composition: a residual bottom level cannot be reached by elimination in a mixed dataset, because the highest-water-mark rule resolves the mixture upward first.",
+      "controls": [
+        {
+          "id": "endpoints-patching",
+          "title": "Patching (endpoints)",
+          "requirement": "Apply security patches within seven days of publish. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Patching row, Low Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-whole-disk-encryption",
+          "title": "Whole Disk Encryption (endpoints)",
+          "requirement": "Enable whole-disk encryption using the platform's native facility. Install mobile device management on mobile devices.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Whole Disk Encryption row, Low Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-malware-protection",
+          "title": "Malware Protection (endpoints)",
+          "requirement": "Install antivirus software.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Malware Protection row, Low Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-backups",
+          "title": "Backups (endpoints)",
+          "requirement": "Back up user data at least daily. Encrypt backup data in transit and at rest.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Backups row, Low Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-inventory",
+          "title": "Inventory (endpoints)",
+          "requirement": "Review and update network database records quarterly. A maximum of one node per record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Inventory row, Low Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-patching",
+          "title": "Patching (servers)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Patching row, Low Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-vulnerability-management",
+          "title": "Vulnerability Management (servers)",
+          "requirement": "Perform a monthly vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Vulnerability Management row, Low Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-inventory",
+          "title": "Inventory (servers)",
+          "requirement": "Review and update network database, system inventory, and department inventory records quarterly. A maximum of one node per network database record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Inventory row, Low Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-firewall",
+          "title": "Firewall (servers)",
+          "requirement": "Enable a host-based firewall in default deny mode and permit the minimum necessary services.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Firewall row, Low Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-credentials-access-control",
+          "title": "Credentials and Access Control (servers)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Credentials and Access Control row, Low Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-patching",
+          "title": "Patching (applications)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported version of the application. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Patching row, Low Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-vulnerability-management",
+          "title": "Vulnerability Management (applications)",
+          "requirement": "Perform a monthly application vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Vulnerability Management row, Low Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-inventory",
+          "title": "Inventory (applications)",
+          "requirement": "Review and update department application inventory records quarterly. Records must indicate the associated risk classification and data volume estimates. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Inventory row, Low Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-firewall",
+          "title": "Firewall (applications)",
+          "requirement": "Permit the minimum necessary services through the network firewall.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Firewall row, Low Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-credentials-access-control",
+          "title": "Credentials and Access Control (applications)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Credentials and Access Control row, Low Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        }
+      ]
+    },
+    {
+      "id": "moderate",
+      "label": "Moderate Risk",
+      "rank": 2,
+      "definition": "Data and systems are classified as Moderate Risk if they are not considered to be High Risk, and: the data is not generally available to the public, or the loss of confidentiality, integrity, or availability of the data or system could have a mildly adverse impact on our mission, safety, finances, or reputation.",
+      "citation": {
+        "source_id": "stanford-risk-classifications",
+        "section": "Risk Classifications, Moderate Risk definition",
+        "quote": "Data and systems are classified as Moderate Risk if they are not considered to be High Risk, and: The data is not generally available to the public, or The loss of confidentiality, integrity, or availability of the data or system could have a mildly adverse impact on our mission, safety, finances, or reputation."
+      },
+      "examples": [
+        "Unpublished research data (at data owner's discretion)",
+        "Student records and admission applications",
+        "Faculty and staff employment applications, personnel files, benefits, salary, birth date, personal contact information",
+        "Non-public university policies and policy manuals",
+        "Non-public contracts",
+        "University internal memos and email, non-public reports, budgets, plans, financial information",
+        "University and employee ID numbers",
+        "Project, task, and award numbers",
+        "Engineering, design, and operational information regarding university infrastructure"
+      ],
+      "controls": [
+        {
+          "id": "endpoints-patching",
+          "title": "Patching (endpoints)",
+          "requirement": "Apply security patches within seven days of publish. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Patching row, Moderate Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-whole-disk-encryption",
+          "title": "Whole Disk Encryption (endpoints)",
+          "requirement": "Enable whole-disk encryption using the platform's native facility. Install mobile device management on mobile devices.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Whole Disk Encryption row, Moderate Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-malware-protection",
+          "title": "Malware Protection (endpoints)",
+          "requirement": "Install antivirus software.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Malware Protection row, Moderate Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-backups",
+          "title": "Backups (endpoints)",
+          "requirement": "Back up user data at least daily. Encrypt backup data in transit and at rest.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Backups row, Moderate Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-inventory",
+          "title": "Inventory (endpoints)",
+          "requirement": "Review and update network database records quarterly. A maximum of one node per record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Inventory row, Moderate Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-patching",
+          "title": "Patching (servers)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Patching row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-vulnerability-management",
+          "title": "Vulnerability Management (servers)",
+          "requirement": "Perform a monthly vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Vulnerability Management row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-inventory",
+          "title": "Inventory (servers)",
+          "requirement": "Review and update network database, system inventory, and department inventory records quarterly. A maximum of one node per network database record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Inventory row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-firewall",
+          "title": "Firewall (servers)",
+          "requirement": "Enable a host-based firewall in default deny mode and permit the minimum necessary services.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Firewall row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-credentials-access-control",
+          "title": "Credentials and Access Control (servers)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Credentials and Access Control row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-two-step-authentication",
+          "title": "Two-Step Authentication (servers)",
+          "requirement": "Require two-step authentication for all user and administrator logins.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Two-Step Authentication row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-centralized-logging",
+          "title": "Centralized Logging (servers)",
+          "requirement": "Forward logs to a remote log server.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Centralized Logging row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-sysadmin-training",
+          "title": "Sysadmin Training (servers)",
+          "requirement": "Attend at least one institutional information security training course annually. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Sysadmin Training row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-malware-protection",
+          "title": "Malware Protection (servers)",
+          "requirement": "Deploy endpoint detection and response on the server. Review alerts as they are received. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Malware Protection row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-intrusion-detection",
+          "title": "Intrusion Detection (servers)",
+          "requirement": "Deploy host intrusion detection. Review alerts as they are received. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Intrusion Detection row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-physical-protection",
+          "title": "Physical Protection (servers)",
+          "requirement": "Place system hardware in a data center.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Physical Protection row, Moderate Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-patching",
+          "title": "Patching (applications)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported version of the application. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Patching row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-vulnerability-management",
+          "title": "Vulnerability Management (applications)",
+          "requirement": "Perform a monthly application vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Vulnerability Management row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-inventory",
+          "title": "Inventory (applications)",
+          "requirement": "Review and update department application inventory records quarterly. Records must indicate the associated risk classification and data volume estimates. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Inventory row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-firewall",
+          "title": "Firewall (applications)",
+          "requirement": "Permit the minimum necessary services through the network firewall.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Firewall row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-credentials-access-control",
+          "title": "Credentials and Access Control (applications)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Credentials and Access Control row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-two-step-authentication",
+          "title": "Two-Step Authentication (applications)",
+          "requirement": "Require two-step authentication for all user and administrator logins.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Two-Step Authentication row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-centralized-logging",
+          "title": "Centralized Logging (applications)",
+          "requirement": "Forward logs to a remote log server.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Centralized Logging row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-secure-software-development",
+          "title": "Secure Software Development (applications)",
+          "requirement": "Include security as a design requirement. Review all code and correct identified security flaws prior to deployment.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Secure Software Development row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-developer-training",
+          "title": "Developer Training (applications)",
+          "requirement": "Attend at least one institutional information security training course annually. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Developer Training row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-backups",
+          "title": "Backups (applications)",
+          "requirement": "Back up application data at least weekly. Encrypt backup data in transit and at rest.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Backups row, Moderate Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        }
+      ]
+    },
+    {
+      "id": "high",
+      "label": "High Risk",
+      "rank": 3,
+      "definition": "Data and systems are classified as High Risk if: protection of the data is required by law or regulation, the university is required to self-report to the government and/or provide notice to the individual if the data is inappropriately accessed, or the loss of confidentiality, integrity, or availability of the data or system could have a significant adverse impact on our mission, safety, finances, or reputation.",
+      "citation": {
+        "source_id": "stanford-risk-classifications",
+        "section": "Risk Classifications, High Risk definition",
+        "quote": "Data and systems are classified as High Risk if: Protection of the data is required by law/regulation, Stanford is required to self-report to the government and/or provide notice to the individual if the data is inappropriately accessed, or The loss of confidentiality, integrity, or availability of the data or system could have a significant adverse impact on our mission, safety, finances, or reputation."
+      },
+      "examples": [
+        "Health information, including Protected Health Information (PHI)",
+        "Health insurance policy ID numbers",
+        "Social Security numbers",
+        "Credit card numbers",
+        "Financial account numbers",
+        "Export controlled information",
+        "Driver's license numbers",
+        "Passport and visa numbers",
+        "Donor contact information and non-public gift information"
+      ],
+      "external_obligations": [
+        {
+          "name": "PCI DSS",
+          "relation": "informational-reference",
+          "declared_by_operator": true,
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Regulated Data Security Controls row, High Risk column",
+            "quote": "Implement PCI DSS, HIPAA, or export controls as applicable."
+          },
+          "note": "The source names the regime and says \"as applicable\" — it does not state that the regime applies. Whether it applies to this operator is the operator's declaration, which is why declared_by_operator is true and no obligation_profile_id is given: automat ships no PCI DSS obligation profile, and naming one that does not exist would be a claim about a document nobody has read."
+        },
+        {
+          "name": "HIPAA",
+          "relation": "informational-reference",
+          "declared_by_operator": true,
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Regulated Data Security Controls row, High Risk column",
+            "quote": "Implement PCI DSS, HIPAA, or export controls as applicable."
+          }
+        },
+        {
+          "name": "FISMA",
+          "relation": "informational-reference",
+          "declared_by_operator": true,
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Regulated Data Security Controls row, High Risk column",
+            "quote": "Implement PCI DSS, HIPAA, FISMA, or export controls as applicable."
+          },
+          "note": "Cited to the APPLICATIONS table specifically. FISMA appears in that table's regulated-data row and not in the endpoints or servers rows, and the difference is preserved rather than smoothed: a citation naming the servers table for a regime that table does not name would be unverifiable at the cell a reader turns to."
+        },
+        {
+          "name": "export controls",
+          "relation": "informational-reference",
+          "declared_by_operator": true,
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Regulated Data Security Controls row, High Risk column",
+            "quote": "Implement PCI DSS, HIPAA, or export controls as applicable."
+          }
+        }
+      ],
+      "notes": "The published service table on the risk-classifications page states which classifications of data are permitted on which institutional services, including cloud infrastructure — and for cloud accounts it makes approval conditional on the provision being set up and managed by a named institutional team rather than on the classification alone. That table is not transcribed here, and its absence is not coverage: a per-service approval matrix changes far faster than a classification scheme, and a stale copy of it inside automat would tell an operator a service is approved for High Risk data when the institution has since said otherwise. Read it at the source.",
+      "controls": [
+        {
+          "id": "endpoints-patching",
+          "title": "Patching (endpoints)",
+          "requirement": "Apply security patches within seven days of publish. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Patching row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-whole-disk-encryption",
+          "title": "Whole Disk Encryption (endpoints)",
+          "requirement": "Enable whole-disk encryption using the platform's native facility. Install mobile device management on mobile devices.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Whole Disk Encryption row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-malware-protection",
+          "title": "Malware Protection (endpoints)",
+          "requirement": "Install antivirus software.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Malware Protection row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-backups",
+          "title": "Backups (endpoints)",
+          "requirement": "Back up user data at least daily. Encrypt backup data in transit and at rest.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Backups row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-inventory",
+          "title": "Inventory (endpoints)",
+          "requirement": "Review and update network database records quarterly. A maximum of one node per record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Inventory row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-configuration-management",
+          "title": "Configuration Management (endpoints)",
+          "requirement": "Manage endpoint configuration centrally.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Configuration Management row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "endpoints-regulated-data-controls",
+          "title": "Regulated Data Security Controls (endpoints)",
+          "requirement": "Implement PCI DSS, HIPAA, or export controls as applicable.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Endpoints, Regulated Data Security Controls row, High Risk column"
+          },
+          "applies_to": "endpoints",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-patching",
+          "title": "Patching (servers)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported operating system version. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Patching row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-vulnerability-management",
+          "title": "Vulnerability Management (servers)",
+          "requirement": "Perform a monthly vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Vulnerability Management row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-inventory",
+          "title": "Inventory (servers)",
+          "requirement": "Review and update network database, system inventory, and department inventory records quarterly. A maximum of one node per network database record. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Inventory row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-firewall",
+          "title": "Firewall (servers)",
+          "requirement": "Enable a host-based firewall in default deny mode and permit the minimum necessary services.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Firewall row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-credentials-access-control",
+          "title": "Credentials and Access Control (servers)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Credentials and Access Control row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-two-step-authentication",
+          "title": "Two-Step Authentication (servers)",
+          "requirement": "Require two-step authentication for all user and administrator logins.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Two-Step Authentication row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-centralized-logging",
+          "title": "Centralized Logging (servers)",
+          "requirement": "Forward logs to a remote log server.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Centralized Logging row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-sysadmin-training",
+          "title": "Sysadmin Training (servers)",
+          "requirement": "Attend at least one institutional information security training course annually. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Sysadmin Training row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-malware-protection",
+          "title": "Malware Protection (servers)",
+          "requirement": "Deploy endpoint detection and response on the server. Review alerts as they are received. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Malware Protection row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-intrusion-detection",
+          "title": "Intrusion Detection (servers)",
+          "requirement": "Deploy host intrusion detection. Review alerts as they are received. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Intrusion Detection row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-physical-protection",
+          "title": "Physical Protection (servers)",
+          "requirement": "Place system hardware in a data center.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Physical Protection row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-secure-admin-workstation",
+          "title": "Secure Admin Workstation (servers)",
+          "requirement": "Access administrative accounts only through a privileged access workstation. A privileged access workstation is required for ring0 access.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Secure Admin Workstation row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-security-privacy-legal-review",
+          "title": "Security, Privacy, and Legal Review (servers)",
+          "requirement": "Follow the institution's data risk assessment process and implement its recommendations prior to deployment.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Security, Privacy, and Legal Review row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "servers-regulated-data-controls",
+          "title": "Regulated Data Security Controls (servers)",
+          "requirement": "Implement PCI DSS, HIPAA, or export controls as applicable.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Servers, Regulated Data Security Controls row, High Risk column"
+          },
+          "applies_to": "servers",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-patching",
+          "title": "Patching (applications)",
+          "requirement": "Based on National Vulnerability Database ratings, apply high severity security patches within seven days of publish and all other security patches within 90 days. Use a supported version of the application. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Patching row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-vulnerability-management",
+          "title": "Vulnerability Management (applications)",
+          "requirement": "Perform a monthly application vulnerability scan. Remediate severity 4 and 5 vulnerabilities within seven days of discovery and severity 3 vulnerabilities within 90 days. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Vulnerability Management row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-inventory",
+          "title": "Inventory (applications)",
+          "requirement": "Review and update department application inventory records quarterly. Records must indicate the associated risk classification and data volume estimates. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Inventory row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-firewall",
+          "title": "Firewall (applications)",
+          "requirement": "Permit the minimum necessary services through the network firewall.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Firewall row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-credentials-access-control",
+          "title": "Credentials and Access Control (applications)",
+          "requirement": "Review existing accounts and privileges quarterly. Enforce password complexity. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Credentials and Access Control row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-two-step-authentication",
+          "title": "Two-Step Authentication (applications)",
+          "requirement": "Require two-step authentication for all user and administrator logins.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Two-Step Authentication row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-centralized-logging",
+          "title": "Centralized Logging (applications)",
+          "requirement": "Forward logs to a remote log server.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Centralized Logging row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-secure-software-development",
+          "title": "Secure Software Development (applications)",
+          "requirement": "Include security as a design requirement. Review all code and correct identified security flaws prior to deployment.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Secure Software Development row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-developer-training",
+          "title": "Developer Training (applications)",
+          "requirement": "Attend at least one institutional information security training course annually. A recurring task.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Developer Training row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-backups",
+          "title": "Backups (applications)",
+          "requirement": "Back up application data at least weekly. Encrypt backup data in transit and at rest.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Backups row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-secure-admin-workstation",
+          "title": "Secure Admin Workstation (applications)",
+          "requirement": "Access administrative accounts only through a privileged access workstation. A privileged access workstation is required for ring0 access.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Secure Admin Workstation row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-security-privacy-legal-review",
+          "title": "Security, Privacy, and Legal Review (applications)",
+          "requirement": "Follow the institution's data risk assessment process and implement its recommendations prior to deployment.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Security, Privacy, and Legal Review row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        },
+        {
+          "id": "applications-regulated-data-controls",
+          "title": "Regulated Data Security Controls (applications)",
+          "requirement": "Implement PCI DSS, HIPAA, FISMA, or export controls as applicable.",
+          "citation": {
+            "source_id": "stanford-minimum-security-standards",
+            "section": "Minimum Security Standards: Applications, Regulated Data Security Controls row, High Risk column"
+          },
+          "applies_to": "applications",
+          "automat_enforces": "no"
+        }
+      ]
+    }
+  ],
+  "composition": {
+    "rule": "highest-water-mark",
+    "statement": "When mixed data falls into multiple risk categories, use the highest risk classification across all.",
+    "citation": {
+      "source_id": "stanford-risk-classifications",
+      "section": "Data Risk Classification Examples, introductory paragraph",
+      "quote": "Use the examples below to determine which risk classification is appropriate for a particular type of data. When mixed data falls into multiple risk categories, use the highest risk classification across all."
+    }
+  },
+  "citations": [
+    {
+      "id": "Risk Classifications",
+      "title": "Risk Classifications — Stanford University IT",
+      "date_basis": "retrieved-only",
+      "source_id": "stanford-risk-classifications",
+      "uri": "https://uit.stanford.edu/guide/riskclassifications",
+      "role": "defines-levels",
+      "note": "A living page carrying no version, no revision history, and no effective date. date_basis is retrieved-only because that is the truth about the document: the retrieval timestamp and hash in sources[] are the only dating available, and an effective date supplied here would be automat's own invention sitting in the field a reader checks for staleness."
+    },
+    {
+      "id": "Minimum Security Standards",
+      "title": "Minimum Security Standards — Stanford University IT",
+      "date_basis": "retrieved-only",
+      "source_id": "stanford-minimum-security-standards",
+      "uri": "https://uit.stanford.edu/guide/securitystandards",
+      "role": "states-controls",
+      "note": "A living page, dateless for the same reason as the other. The page states of itself that these standards \"will be revised and updated accordingly\", which is as close to a staleness warning as the source gives — and it is why review_by matters more for this profile than for one read from a versioned PDF."
+    }
+  ],
+  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
+  "sources": [
+    {
+      "id": "stanford-risk-classifications",
+      "title": "Risk Classifications — Stanford University IT",
+      "retrieved_at": "2026-08-06T18:10:13Z",
+      "uri": "https://uit.stanford.edu/guide/riskclassifications",
+      "media_type": "text/html",
+      "sha256": "bef7b7896ab68b6ebd82b63dc5c32f4b496f44f56199b382f02622dbc6808a8d",
+      "note": "The hash is over the HTML bytes as retrieved, not over extracted text — a hash whose input nobody can reproduce is decoration, and for a living page the hash is the only fixed reference to what was read.\n\nNo version and no date appear anywhere in the page, which is what date_basis retrieved-only records. The retrieved body contains the three level definitions, the data, server, and application example tables, and the approved-services table; the server and application example tables are NOT transcribed into this profile's examples, so that one example vocabulary is not mixed with another in a single list, and the approved-services table is not transcribed at all (see the note on the high level)."
+    },
+    {
+      "id": "stanford-minimum-security-standards",
+      "title": "Minimum Security Standards — Stanford University IT",
+      "retrieved_at": "2026-08-06T18:20:59Z",
+      "uri": "https://uit.stanford.edu/guide/securitystandards",
+      "media_type": "text/html",
+      "sha256": "11de2d6780805b62509c3340b3a133a910c7a17daf796cebdf162c07b4299e39",
+      "note": "The hash is over the HTML bytes as retrieved.\n\nTWO LIMITS ON WHAT MAY BE CLAIMED FROM THIS DOCUMENT.\n\nFirst, scope. The page presents its standards under several tabs — endpoints, servers, applications, and further ones for infrastructure services, connected devices, and research — but only the endpoints, servers, and applications tables are present in the retrieved body; the remaining tabs are navigation with no content behind them at this URL. This profile therefore transcribes those three tables and claims NOTHING from the others. A level here is not a complete account of what the institution requires.\n\nSecond, transcription. Each row's \"What to do\" cell states an obligation and then names specific tools the institution recommends or provides for meeting it. The obligation is transcribed; the named tools are not. Two reasons, and the second is the load-bearing one: automat carries a standing rule against naming products or vendors other than AWS anywhere in its code, docs, or data, and a vendored catalog file is data automat ships. But independently of that rule, the source itself marks most of these as \"recommended\" — the requirement is encryption, not a particular disk-encryption product — so transcribing the tool as though it were the requirement would misstate the policy in the stricter direction. Where a tool is named without the word recommended, the requirement is transcribed generically (\"require two-step authentication\", \"deploy host intrusion detection\") and the institution's specific implementation is left at the source. Verify against the cited cell before relying on any control here; the citations name the exact row and column so that comparison is a line-by-line one."
+    }
+  ]
+}

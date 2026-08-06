@@ -76,7 +76,7 @@ worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
 
 ## What is data, not code
 
-Three kinds of file are versioned contracts rather than implementation, which is most of
+Four kinds of file are versioned contracts rather than implementation, which is most of
 why this tool is reviewable at all:
 
 - **`schema/`** — JSON Schemas with a [changelog](schema/CHANGELOG.md). A change to a
@@ -88,6 +88,12 @@ why this tool is reviewable at all:
   profile answers under what instrument, assessed how, signed by whom, and whether gaps may
   be deferred. Three ship: `cmmc-l1`, `dfars-7012`, `nih-cadr-dua`. Profiles are data with
   no code behind them yet — `assess` is Phase 4.
+- **`catalogs/classification/`** — institutional classification profiles: one university's
+  data levels, what each means, and what its published policy requires there, so that "this
+  account is rated for P4 – High" is a sentence with a citation behind it. Two ship as
+  **examples to fork, not maintained documents** — automat is the interpreter and the
+  institution has endorsed nothing. See
+  [`docs/institutional-profiles.md`](docs/institutional-profiles.md).
 
 ## Building
 
@@ -106,6 +112,9 @@ live testing — see [`docs/smoke.md`](docs/smoke.md).
 - [`ROADMAP.md`](ROADMAP.md) — what lands when.
 - [`docs/cli-surface.md`](docs/cli-surface.md) — every flag reconciled against the design's
   CLI section, read from the built binary rather than from the design.
+- [`docs/institutional-profiles.md`](docs/institutional-profiles.md) — the classification
+  model, the six universities it was derived from, and why automat proposes a format and
+  never a governance body.
 - [`audits/`](audits/) — the adversarial self-audit at the end of each phase, findings
   ranked and each one resolved or accepted in writing.
 - [`docs/open-questions.md`](docs/open-questions.md) — what is genuinely unresolved,

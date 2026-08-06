@@ -1,0 +1,560 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "automat.dev/schema/classification-profile/v1",
+  "title": "automat classification profile",
+  "description": "An INSTITUTIONAL DATA-CLASSIFICATION profile: one institution's ordered levels, what each level means, what its published policy requires at that level, and who at that institution decides. The third of automat's document types and a SIBLING to the obligation profile, not a variant of it — an obligation profile answers 'under what instrument, assessed how', this one answers 'which of this institution's levels is this environment rated for'. An account is RATED FOR a level; the rating is an operator determination, recorded and hashed.\n\nAUTOMAT NEVER CLASSIFIES DATA. There is deliberately no matcher, no trigger expression, and no evaluable form anywhere in this document. Determination is a human role the profile NAMES (see `determination`), because a tool that concluded 'this dataset is Level 4' would be believed — it came from a tool that is right about everything else — and wrong in the permissive direction it tells an institution its regulated data is unregulated. Level examples are a bounded reading aid for a person, in the same way an obligation profile's `applicability.hints` are, and for the same reason.\n\nComposition is HIGHEST WATER MARK: an element meeting two definitions takes the higher, and a dataset takes the highest of any element it contains. That is DESIGN 9's union law on a different lattice — union of controls, intersection of permitted behavior, join of classification levels — and all three are the same principle: the stricter reading wins, so composing can never relax anything.\n\nWhere a profile is automat's reading of someone else's published policy it declares `authorship: derived-interpretation`, and then EVERY control must trace to a cited section of a hashed source. Where the source is silent, the profile is silent: filling a gap with a sensible-looking control converts 'this institution's policy says' into 'automat thinks this institution should say'. automat is not and must never become a registry, a standards owner, or a governance body for institutional classification — it proposes a format.",
+  "type": "object",
+  "required": ["schema_version", "classification_profile", "issuer", "status", "review_by", "authorship", "maintenance", "determination", "levels", "composition", "citations", "policy_caveat", "sources"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "classification_profile": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The profile id. A ROUND-TRIP FIELD (CLAUDE.md rule 8): an operator reads it back and types it, so it is patterned here and in the Go validator alike.",
+          "$ref": "#/$defs/slug"
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "description": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "issuer": {
+      "description": "The institution whose scheme this is. Separate from `classification_profile` and INSIDE the content hash, unlike the id and title: which institution's levels these are is the whole of what the document claims, so it must not be editable under an attestation that still verifies. Renaming or retitling the document does not invalidate an attestation; changing whose scheme it describes does.",
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The issuer id, e.g. `uc` or `stanford`. A ROUND-TRIP FIELD (rule 8) for the same reason the profile id is, and additionally the key `inherits.issuer_id` is checked against — an institution's overlay policy may only inherit from that same institution's.",
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "description": "The institution as it names itself, e.g. 'University of California'. Rendered verbatim into the non-endorsement statement, which is why it is prose rather than free text of any length.",
+          "$ref": "#/$defs/prose"
+        },
+        "unit": {
+          "description": "The office or body within the institution that issued the scheme, where the source names one — 'UCOP Systemwide CISO Office', 'University IT Information Security Office'. Absent where the source does not say.",
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+
+    "status": {
+      "description": "Whether the scheme is the institution's current one. `superseded` is recordable rather than deletable: an account rated years ago was rated under whatever was current then, and an evidence record naming a superseded profile is still a true record of what was believed.",
+      "enum": ["in-force", "proposed", "superseded"]
+    },
+
+    "review_by": {
+      "description": "The date by which this profile must be re-read against the institution's published policy. REQUIRED, no default. An institutional scheme moves less than a federal clause but it does move — Georgia Tech adopted Harvard's five levels wholesale, and either could revise — and a profile nobody re-reads keeps rating accounts under a policy that changed. Inside the content hash, per DESIGN 11a, so extending the date is a change no earlier attestation vouches for.",
+      "$ref": "#/$defs/date"
+    },
+
+    "authorship": {
+      "description": "Who wrote this document, which is a different question from whose policy it describes. `derived-interpretation` — automat (or a third party) read the institution's published policy and wrote this; the institution has reviewed and endorsed nothing, `interpretation` is required, and every control must cite a section of a hashed source. `issuer-authored` — the institution wrote it about its own scheme, so there is no interpretation to disclose and `interpretation` is forbidden. The two are not stylistic: they are the difference between 'UC says' and 'automat's reading of what UC says', and a reader who cannot tell them apart will assume the first.",
+      "enum": ["derived-interpretation", "issuer-authored"]
+    },
+
+    "maintenance": {
+      "description": "Whether this document is maintained as part of automat, or shipped as an example to fork. Every DERIVED institutional profile automat ships is `example-and-forkable`: automat is not the maintainer of an institution's classification scheme and must never appear to be. `shipped-and-maintained` exists for the documents automat genuinely does maintain, and no derived profile may claim it.",
+      "enum": ["example-and-forkable", "shipped-and-maintained"]
+    },
+
+    "interpretation": {
+      "description": "REQUIRED when `authorship` is `derived-interpretation`, FORBIDDEN otherwise. The provenance disclosure, and for a derived profile it is the most load-bearing block in the document: the whole risk of publishing a reading of someone else's policy is that the reading gets mistaken for the policy.",
+      "type": "object",
+      "required": ["interpreter", "source_id", "attribution", "non_endorsement"],
+      "additionalProperties": false,
+      "properties": {
+        "interpreter": {
+          "description": "Who produced the interpretation — the identity that would sign `interpreted-by`.",
+          "$ref": "#/$defs/prose"
+        },
+        "source_id": {
+          "description": "The `sources[]` entry this profile is a reading OF: the primary document, distinct from any supporting source a single control cites. Resolved against `sources` by the Go validator, which the schema cannot do.",
+          "$ref": "#/$defs/slug"
+        },
+        "attribution": {
+          "description": "How the source is credited, in the terms the source itself sets — a copyright line, a terms-of-use statement, a required notice.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "non_endorsement": {
+          "description": "REQUIRED, and asserted by test rather than trusted. In substance: 'This is automat's interpretation of a published policy. It was not authored, reviewed, or endorsed by <institution>. The institution's own policy governs; verify against it.' The issuer's own name must appear in it, because a disclaimer that names no institution is one a reader will attach to whichever institution they had in mind. Inside the content hash, so it cannot be softened under material that still verifies.",
+          "$ref": "#/$defs/long_prose"
+        }
+      }
+    },
+
+    "determination": {
+      "description": "WHO DECIDES, at this institution. The answer is always a human role, never this tool. Recorded because an operator rating an account has to know whose determination they are recording, and because naming the role is what makes the absence of a matcher a design rather than an omission.",
+      "type": "object",
+      "required": ["roles", "process", "automat_determines", "citation"],
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "description": "The roles the institution's policy makes responsible for determining a level — 'Proprietors', 'Security Subject Matter Experts', 'Unit Information Security Leads'. Roles as the source names them, never individuals: this is vendored data shared across institutions.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "process": {
+          "description": "The determination process, as PROSE FOR A HUMAN, in the source's own terms. Prose deliberately: a process expressed as steps a machine could walk is a matcher with extra words, and the point of this field is to tell an operator who to go and ask.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "automat_determines": {
+          "description": "Always false, and required to be, so a reader of any profile sees the rule rather than having to know it. A profile cannot opt into automat classifying data. Same device as the obligation profile's `applicability.declared_by_operator: const true`, pointing the other way.",
+          "const": false
+        },
+        "citation": { "$ref": "#/$defs/citation_ref" },
+        "may_raise": {
+          "description": "Whether the determiner may classify ABOVE the published level for a data type. Absent where the source does not say. Recorded separately from `may_lower` because the two are asymmetric in every scheme that addresses them at all: raising is deliberate over-classification and generally permitted, lowering is an exception process.",
+          "enum": ["yes", "no", "not-stated"]
+        },
+        "may_lower": {
+          "description": "Whether the determiner may classify BELOW the published level, and by what route. Absent where the source does not say.",
+          "type": "object",
+          "required": ["permitted"],
+          "additionalProperties": false,
+          "properties": {
+            "permitted": { "enum": ["yes", "no", "only-by-exception"] },
+            "exception_process": {
+              "description": "The named exception process, where the source names one — 'IS-3 III.2.2, Exception Process'.",
+              "$ref": "#/$defs/prose"
+            },
+            "citation": { "$ref": "#/$defs/citation_ref" }
+          }
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "levels": {
+      "description": "The institution's levels, one entry each. NEVER ASSUME FOUR: the published schemes run three (Stanford, MIT), four (UC, U-M), and five (Harvard, Georgia Tech). Order comes from the explicit integer `rank` and from nowhere else — never from the labels, which sort opposite between institutions: U-M's `Restricted` is the TOP of a list whose names run downward, while Harvard's DSL 1-5 and UC's P1-P4 run upward. Any implementation that ordered by label passes on four of the six published schemes and silently rates an account at the wrong end of the other two.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/level" }
+    },
+
+    "composition": {
+      "description": "HIGHEST WATER MARK, which is the one rule every published scheme shares. Modeled as data with a cited statement rather than as a compiled-in assumption, because a profile whose source does not state the rule should not have automat's belief about it silently attributed to the institution.\n\nThis is DESIGN 9's union law on a different lattice, and the cross-reference is the point: union of controls, INTERSECTION of permitted behavior, JOIN of classification levels. Three operations, one principle — the stricter reading wins, so composing inputs can never relax what any single input required. `automat compile` gets idempotence, commutativity, associativity, and monotonicity as property tests over control sets; the level join gets the same four over levels, because it is the same algebra.",
+      "type": "object",
+      "required": ["rule", "statement", "citation"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "description": "Single-valued on purpose. A second composition rule is not a data change: it would mean this document type models a lattice with two joins, which is not a lattice. Adding one is a schema version event with a review, not a new enum member.",
+          "const": "highest-water-mark"
+        },
+        "statement": {
+          "description": "The rule as the SOURCE states it, so a reader can see automat did not supply it. Stanford: 'When mixed data falls into multiple risk categories, use the highest risk classification across all.' UC: 'If Institutional Information with higher Protection and/or Availability Levels also contains some lower-level information, the Institutional Information must be secured to meet the requirements of the highest Protection Level.'",
+          "$ref": "#/$defs/long_prose"
+        },
+        "citation": { "$ref": "#/$defs/citation_ref" },
+        "over_classification": {
+          "description": "Whether deliberate over-classification is addressed by the source, and whether it must be documented. Absent where the source is silent — automat has an opinion here and it does not belong in a document attributed to an institution.",
+          "type": "object",
+          "required": ["permitted", "documentation_required"],
+          "additionalProperties": false,
+          "properties": {
+            "permitted": { "type": "boolean" },
+            "documentation_required": { "type": "boolean" },
+            "citation": { "$ref": "#/$defs/citation_ref" },
+            "note": { "$ref": "#/$defs/long_prose" }
+          }
+        }
+      }
+    },
+
+    "inherits": {
+      "description": "One profile layered over another FROM THE SAME ISSUER. Harvard is the case this exists for: an enterprise policy and a research overlay, two documents sharing one classification table. `issuer_id` must equal this profile's own issuer id — checked by the Go validator, which the schema cannot do — because an overlay of another institution's scheme is not an overlay, it is an assertion about somebody else's policy.\n\nDeliberately NOT composition: inheriting does not merge levels or controls automatically. It records that a reader of this profile needs the other one too.",
+      "type": "object",
+      "required": ["profile_id", "issuer_id", "relation"],
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": { "$ref": "#/$defs/slug" },
+        "issuer_id": { "$ref": "#/$defs/slug" },
+        "relation": {
+          "description": "`overlays` — this profile adds requirements on top of the named one for a narrower scope, sharing its levels. `shares-levels-with` — the two use one classification table and neither is on top.",
+          "enum": ["overlays", "shares-levels-with"]
+        },
+        "note": { "$ref": "#/$defs/long_prose" },
+        "citation": { "$ref": "#/$defs/citation_ref" }
+      }
+    },
+
+    "unmodeled_axes": {
+      "description": "Axes the source defines that THIS PROFILE DOES NOT MODEL, each with a citation. Present so an omission is a disclosure rather than a silence.\n\nUC is why this field exists: IS-3 classifies on two independent axes, Protection (P1-P4) and Availability (A1-A4), and automat models the protection axis alone because that is what an account is rated for. A profile that simply omitted the availability axis would read to someone who knows IS-3 as an incomplete transcription, and to someone who does not as though UC had one axis. `minItems` is 1 because this field's whole purpose is disclosure, and an empty disclosure list is the one shape that cannot be one.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["name", "statement", "citation"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/prose" },
+          "statement": {
+            "description": "What the axis is, and why this profile does not model it.",
+            "$ref": "#/$defs/long_prose"
+          },
+          "citation": { "$ref": "#/$defs/citation_ref" }
+        }
+      }
+    },
+
+    "citations": {
+      "description": "The published documents this profile reads, in the order a reader should follow them. Every entry declares HOW IT IS DATED (`date_basis`) rather than being forced to produce an effective date, because institutional policy is published in two forms that differ exactly here: a versioned standard carries an approval date, while a living web page carries nothing at all. An invented effective date on the second kind would be automat's own fabrication in the field a reader checks for staleness.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/citation" }
+    },
+
+    "policy_caveat": {
+      "description": "The policy caveat, in substance (docs/policy-caveat.md). REQUIRED for the reason it is required on an obligation profile: this is a reading of published policy that an institution acts on, so a profile that does not say what kind of claim it is making is not a valid profile. Asserted by test rather than trusted.",
+      "$ref": "#/$defs/long_prose"
+    },
+
+    "sources": {
+      "description": "Every document retrieved, with its hash. A claim automat renders into a human-facing document must trace to a hashed source; that is a standing audit item, and for a derived profile it is the entire basis of the document. Every `citation_ref.source_id` in this profile is resolved against these entries by the Go validator.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/hashed_reference" }
+    },
+
+    "signatures": {
+      "description": "Optional attestations over this document's content hash (see $defs/attestation). PROVENANCE ONLY: an attestation says who stood behind this document in what capacity, never that its contents are correct, applicable to a given institution, or approved for use. On a DERIVED profile the only admissible role is `interpreted-by` — see the constraint below.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/attestation" }
+    }
+  },
+
+  "allOf": [
+    {
+      "description": "`interpretation` is required exactly when the document is a reading of someone else's policy, and forbidden when it is not. An issuer-authored profile carrying a non-endorsement statement would be disclaiming itself; a derived one without it is the failure this whole document type is shaped to prevent.",
+      "if": { "properties": { "authorship": { "const": "derived-interpretation" } }, "required": ["authorship"] },
+      "then": { "required": ["interpretation"] },
+      "else": { "not": { "required": ["interpretation"] } }
+    },
+    {
+      "description": "A DERIVED profile may carry ONLY `interpreted-by` attestations. The weaker roles are the danger, not the stronger ones: `reviewed-by` or `adopted-by` on automat's reading of an institution's policy is one inference away from 'the institution reviewed this', which is the single claim a derived profile must never support. `authored-by` on a derived profile is simply false about the policy.",
+      "if": { "properties": { "authorship": { "const": "derived-interpretation" } }, "required": ["authorship"] },
+      "then": {
+        "properties": {
+          "signatures": { "items": { "properties": { "role": { "const": "interpreted-by" } } } }
+        }
+      }
+    },
+    {
+      "description": "No derived profile may claim to be maintained. automat reads an institution's policy; it does not maintain that institution's classification scheme, and a document that said otherwise would be inviting an operator to treat automat as the upstream.",
+      "if": { "properties": { "authorship": { "const": "derived-interpretation" } }, "required": ["authorship"] },
+      "then": { "properties": { "maintenance": { "const": "example-and-forkable" } } }
+    }
+  ],
+
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+
+    "level_id": {
+      "description": "A level id: `p4`, `dsl3`, `high`, `restricted`. A ROUND-TRIP FIELD (CLAUDE.md rule 8) and the one an operator types most often — a rating is recorded per account, so this value travels from a policy document through automat's output and back onto a command line. Bounded at 32 characters and to lowercase alphanumerics and hyphens: not injection prevention, but a refusal to RECORD a value whose whole purpose is to pass through human hands, since one carrying whitespace cannot be selected by double-click and gets retyped wrong.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$"
+    },
+
+    "level": {
+      "description": "One level of the institution's scheme.",
+      "type": "object",
+      "required": ["id", "label", "rank", "definition", "citation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/level_id" },
+        "label": {
+          "description": "The level as the institution writes it — 'P4 - High', 'High Risk', 'DSL 3', 'Restricted'. Rendered into every output that states what an account is rated for, so it is the institution's spelling rather than automat's normalization: an operator comparing automat's output against their own policy page is doing a string comparison by eye.",
+          "$ref": "#/$defs/prose"
+        },
+        "rank": {
+          "description": "The level's position in the order, as an EXPLICIT INTEGER — 1 is the least protective. Required, with no default and no inference: label-derived ordering is the defect this field exists to make impossible. The Go validator additionally requires the ranks to be unique and to run 1..N with no gaps, which the schema cannot express; a gap is how a transcribed scheme silently loses a level.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "definition": {
+          "description": "What the level means, in the source's terms. For a derived profile this is a close reading of the cited section rather than a paraphrase written from memory.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "citation": { "$ref": "#/$defs/citation_ref" },
+        "examples": {
+          "description": "At most a handful of data types the source itself places at this level, as a READING AID FOR A PERSON. NOT a matcher, NOT exhaustive, and NOT evaluated: presence of an example does not establish a level and absence does not rule one out, exactly as an obligation profile's `applicability.hints` are bounded and non-exhaustive. Capped at 32 to keep it a list someone reads rather than a rule set something walks, and `minItems` is 1 so `[]` is refused: an empty array asserts the cited section places nothing at this level, which is a claim about the source rather than the absence of one. Every entry must come from the cited section — an example automat added is automat classifying data, which is the one thing this document type forbids.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "controls": {
+          "description": "What the institution's policy REQUIRES at this level. Absent where the source states nothing — a level with no published controls has no `controls` array, and that silence is the honest rendering. `minItems` is 1 so that `[]` is refused rather than accepted as the same thing: an empty array claims the source was consulted and stated no controls, an absent one declines to claim anything, and the two render identically to a reader. Every entry cites a section of a hashed source, because a control with no citation in a derived profile is automat's opinion wearing an institution's name.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/control" }
+        },
+        "external_obligations": {
+          "description": "External regimes the source ROUTES TO at this level — U-M maps its levels onto NIST directly, Stanford's high-risk standards name PCI DSS, HIPAA, and export controls. Informational only: NOTHING IS COMPOSED AUTOMATICALLY. An institutional scheme saying 'HIPAA applies here' is not automat concluding that HIPAA applies to this operator; the operator declares which obligation profiles apply, the same rule an obligation profile's `applicability` states from the other side. `minItems` is 1 for the reason it is on `controls`: `[]` and absent read the same to a person and differently to a validator.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/external_obligation" }
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "control": {
+      "description": "One requirement the institution's policy states at a level.",
+      "type": "object",
+      "required": ["id", "title", "requirement", "citation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A stable id for the requirement WITHIN this profile. automat's own handle, not an institutional identifier — most published classification policies number nothing, and inventing an official-looking identifier would be the same error as inventing a control.",
+          "$ref": "#/$defs/slug"
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "requirement": {
+          "description": "What is required, in the source's terms.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "citation": { "$ref": "#/$defs/citation_ref" },
+        "applies_to": {
+          "description": "The asset class the source scopes the requirement to, where it scopes it at all — 'servers', 'endpoints', 'applications'. Institutional standards are usually written per asset class, and flattening them would attribute an endpoint requirement to a server.",
+          "$ref": "#/$defs/prose"
+        },
+        "automat_enforces": {
+          "description": "Whether automat can enforce or monitor this requirement in a vended account. DEFAULTS TO `no` BY BEING ABSENT, and `no` is the expected value for most entries: institutional classification standards are written about endpoints, patch cadence, and training, and a document that implied automat delivered them would be claiming coverage it does not have. Present and `no` is the same claim as absent; the value exists so a profile can state it rather than leave a reader inferring.",
+          "enum": ["no", "partially", "yes"]
+        },
+        "notes": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "external_obligation": {
+      "description": "One external regime an institutional level routes to.",
+      "type": "object",
+      "required": ["name", "relation", "declared_by_operator", "citation"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The regime as the source names it — 'PCI DSS', 'HIPAA', 'export controls'. Prose rather than an id because the source names a regime, not an automat document, and most named regimes have no automat obligation profile.",
+          "$ref": "#/$defs/prose"
+        },
+        "obligation_profile_id": {
+          "description": "The automat obligation profile implementing this regime, WHERE ONE EXISTS. Absent is the normal case and does not weaken the entry: the institution named the regime either way. Never invented to make a reference resolvable — an id naming no document is a claim about a document nobody has read.",
+          "$ref": "#/$defs/slug"
+        },
+        "relation": {
+          "description": "Single-valued: a reference is informational. There is no composing relation, and adding one would be adding automatic composition under a different name.",
+          "const": "informational-reference"
+        },
+        "declared_by_operator": {
+          "description": "Always true, and required to be. The operator declares which obligations apply; a classification level mentioning a regime does not make that regime apply, and automat must never conclude that it does.",
+          "const": true
+        },
+        "citation": { "$ref": "#/$defs/citation_ref" },
+        "note": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "citation_ref": {
+      "description": "A pointer into a hashed source: which document, and which section of it. This is what 'every control traces to a cited section' means mechanically — `source_id` resolves against `sources[]` and `section` names the place a reader turns to. A claim with no citation_ref cannot be checked, and in a derived profile an unverifiable claim renders exactly as confidently as a verified one.",
+      "type": "object",
+      "required": ["source_id", "section"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": { "$ref": "#/$defs/slug" },
+        "section": {
+          "description": "Where in the source, as the source labels it plus enough locator to find it — 'Section 3.1 Protection Levels (page 4)', 'Minimum Security Standards: Servers, Two-Step Authentication row'.",
+          "$ref": "#/$defs/prose"
+        },
+        "quote": {
+          "description": "The source's own words, where quoting them is what makes the claim checkable at a glance. Optional: a quote for every control would be a transcription of the source rather than a reading of it.",
+          "$ref": "#/$defs/long_prose"
+        }
+      }
+    },
+
+    "citation": {
+      "description": "One published document this profile reads.",
+      "type": "object",
+      "required": ["id", "title", "date_basis"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The document's own identifier as published, where it has one — 'IS-3 Part III Section 8', 'SC-0002'. The institution's designation, not automat's.",
+          "$ref": "#/$defs/prose"
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "date_basis": {
+          "description": "WHERE THE DATE COMES FROM, which institutional policy makes a real question rather than a formality. `published-effective-date` — the document states when it took effect or was approved. `last-updated-in-document` — it carries only a revision or last-updated stamp. `retrieved-only` — it is a living web page bearing no date at all, and the retrieval timestamp in `sources` is the only fact available. The third value exists so that a dateless source is recorded as dateless: an effective date invented for a living page would be automat's fabrication sitting in the field a reader checks for staleness.",
+          "enum": ["published-effective-date", "last-updated-in-document", "retrieved-only"]
+        },
+        "effective_date": {
+          "description": "The date, required unless `date_basis` is `retrieved-only` and forbidden when it is.",
+          "$ref": "#/$defs/date"
+        },
+        "source_id": {
+          "description": "The `sources[]` entry holding the retrieved bytes of this citation, where it was retrieved.",
+          "$ref": "#/$defs/slug"
+        },
+        "uri": { "$ref": "#/$defs/prose" },
+        "role": {
+          "description": "What this document does — `defines-levels` is the classification scheme itself, `states-controls` is a standard stating requirements per level, `governs` is the parent policy the scheme sits under, `related` is context.",
+          "enum": ["defines-levels", "states-controls", "governs", "related"]
+        },
+        "note": { "$ref": "#/$defs/long_prose" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "date_basis": { "const": "retrieved-only" } }, "required": ["date_basis"] },
+          "then": { "not": { "required": ["effective_date"] } },
+          "else": { "required": ["effective_date"] }
+        }
+      ]
+    },
+
+    "hashed_reference": {
+      "description": "A retrieved document, by hash. The same shape a control artifact uses for compile sources and an obligation profile uses for its instruments, for the same reason: a claim traceable to a hash can be re-verified, and one that is not cannot.",
+      "type": "object",
+      "required": ["id", "title", "sha256", "retrieved_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The id `citation_ref.source_id` names. Patterned rather than free prose because it is a key resolved within the document.",
+          "$ref": "#/$defs/slug"
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "version": {
+          "description": "The document's own version or date designation, as published. Distinct from `retrieved_at`: a standard has a version an operator can name, and a reading defended in a review is defended by version rather than by when someone downloaded it.",
+          "$ref": "#/$defs/prose"
+        },
+        "retrieved_at": {
+          "description": "REQUIRED here, unlike on the obligation profile's sources. For a living policy web page the retrieval timestamp is frequently the ONLY dating available, so it is the field a staleness check has to fall back on.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "uri": { "$ref": "#/$defs/prose" },
+        "media_type": {
+          "description": "What was hashed, e.g. `application/pdf` or `text/html`. Recorded because re-verifying the hash of a web page requires knowing that HTML bytes were hashed rather than extracted text, and a hash nobody can reproduce the input for is decoration.",
+          "$ref": "#/$defs/prose"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "note": { "$ref": "#/$defs/long_prose" }
+      }
+    },
+
+    "attestation": {
+      "description": "One attestation over this document's content hash: an identity, the CAPACITY it acted in, and the statement it makes. A SIGNATURE ATTESTS PROVENANCE ONLY — never that the document is correct, that it applies to any particular institution, or that anyone approves of its use. Whether any identity here is TRUSTED is an operator determination against a trust policy the operator maintains; automat ships NO trust anchor, performs no verification in v1, and is not and must never become a registry or a standards owner. The vocabulary is the same closed five-value set the environment and obligation profiles use, and on a derived classification profile only `interpreted-by` is admissible (see the top-level constraint).",
+      "type": "object",
+      "required": ["role", "identity", "statement", "content_sha256", "attested_at"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "description": "The capacity the identity acted in, and the only thing an attestation asserts. `authored-by` — this identity wrote the document. `adopted-by` — this identity uses it, which says nothing about who wrote it. `reviewed-by` — this identity read it and stands behind having read it, not behind the contents. `interpreted-by` — this identity produced the document as its own reading of someone else's published policy, and the source institution has neither reviewed nor endorsed it. `format-validated-by` — this identity checked that the document satisfies the published schema, which is a statement about syntax and nothing else. No role means 'approved', 'certified', or 'compliant', and none may be added that does.",
+          "enum": ["authored-by", "adopted-by", "reviewed-by", "interpreted-by", "format-validated-by"]
+        },
+        "identity": {
+          "description": "Who attests, as they wish to be identified — an institution, an office, an email address, an OIDC subject.",
+          "$ref": "#/$defs/prose"
+        },
+        "statement": {
+          "description": "REQUIRED, and the reason this is an attestation rather than a signature. The identity says in its own words what it is claiming, so a reader evaluates a sentence rather than a tick. A bare signature invites the reader to supply the claim themselves, and they supply the strongest one available.",
+          "$ref": "#/$defs/long_prose"
+        },
+        "content_sha256": {
+          "description": "The document content hash this attestation is over. Recorded inside the document, which the schema cannot check for self-consistency — a validator must recompute it. Present anyway, because an attestation whose subject is implicit is one that can be moved to a different document.",
+          "$ref": "#/$defs/sha256"
+        },
+        "attested_at": {
+          "description": "When the attestation was made. Required for the same reason a citation's date is: an undated claim cannot be checked for staleness, and this one ages against `review_by`.",
+          "$ref": "#/$defs/date"
+        },
+        "signature": {
+          "description": "The cryptographic material, WHEN THERE IS ANY. Optional and deliberately subordinate to the fields above: the claim is the attestation and the bytes are evidence for it, never the other way round. automat performs NO verification in v1.",
+          "type": "object",
+          "required": ["format", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "format": { "enum": ["detached-ed25519", "oidc-identity-bundle"] },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384,
+              "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+            },
+            "key_id": {
+              "description": "Which key signed, for the detached form. Required there: a detached signature nobody can locate a key for is unverifiable, which is worse than absent because it looks verifiable.",
+              "$ref": "#/$defs/prose"
+            },
+            "identity_issuer": {
+              "description": "The OIDC issuer that authenticated `identity`, for the keyless form. Required there and FORBIDDEN on the detached form, because in the keyless model the issuer is the whole of what makes the identity mean anything.",
+              "$ref": "#/$defs/prose"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "format": { "const": "oidc-identity-bundle" } }, "required": ["format"] },
+              "then": {
+                "required": ["identity_issuer"],
+                "not": { "required": ["key_id"] }
+              },
+              "else": {
+                "required": ["key_id"],
+                "not": { "required": ["identity_issuer"] }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "prose": {
+      "description": "Single-line human text. Control characters are rejected because these strings are rendered into reports and tables, where a newline forges a row.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+
+    "long_prose": {
+      "description": "Multi-line human text. Newlines and tabs are permitted; other control characters are not.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$"
+    },
+
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

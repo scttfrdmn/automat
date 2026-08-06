@@ -1021,3 +1021,210 @@ mode it removes is the one this project's hash tests exist for: two documents a
 reviewer reads as identical carrying different content hashes, which would make
 `verify` report drift on a profile nobody touched — and an operator who saw that once
 would stop believing the next report.
+
+## classification-profile/v1 — 1.0.0 (unreleased, item C)
+
+New schema, added for ROADMAP item C (institutional classification profiles).
+**Listed here for AUDIT-2 ratification** under rule 6: it is a new contract rather
+than a change to a published one, so nothing is bumped and nothing migrates, but a
+new file in `schema/` is a new promise and belongs in the changelog on the way in.
+
+**Why it exists, and why it is a sibling of `obligation-profile/v1` rather than a
+variant of it.** An obligation profile answers *under what instrument, assessed
+how*. A classification profile answers *which of this institution's levels is this
+environment rated for* — a question every research university already has a
+published answer to, and which no federal clause answers. The two axes are
+independent: DFARS 7012 says nothing about whether a dataset is UC P4 or Stanford
+High Risk, and UC's Protection Level 4 says nothing about which award clause
+applies. An account is **rated for** a level; the rating is an operator
+determination, recorded and hashed like every other one.
+
+**automat never classifies data.** There is deliberately no matcher, no trigger
+expression, and no evaluable form anywhere in this document. `determination` names
+the human roles the institution's own policy makes responsible, `automat_determines`
+is pinned `const false`, and level `examples` are a bounded reading aid for a person
+in exactly the way an obligation profile's `applicability.hints` are. The reasoning
+is the same and it is worth restating because this document type is where the
+temptation is strongest: a tool that concluded "this dataset is Level 4" would be
+*believed*, because it came from a tool that is right about everything else, and
+wrong in the permissive direction it tells an institution its regulated data is
+unregulated. `TestNoShippedProfileCarriesAMatcherOrTriggerExpression` walks the raw
+JSON of every shipped document for predicate syntax and for two dozen field names a
+match language would arrive under, because a match language arrives one plausible
+entry at a time.
+
+Notes on the choices that constrain future changes:
+
+- **`rank` is a required explicit integer, and order comes from nowhere else.** Not
+  from array position, not from the id, and above all not from the label. The
+  published schemes run three levels (Stanford, MIT), four (UC, U-M), and five
+  (Harvard, Georgia Tech) — so any code that indexed a fixed count would be correct
+  on a third of the sample. Worse, the labels sort *opposite* between institutions:
+  U-M's run Restricted / High / Moderate / Low downward, Harvard's DSL 1–5 upward.
+  Sorting by label orders one correctly and the other exactly backwards, which is
+  what makes label-sorting look right to anyone who tests one scheme. Both
+  directions are fixtures for that reason, and `TestLabelOrderIsNotRankOrder`
+  asserts they still disagree — if it ever passes trivially the fixtures stopped
+  covering the case.
+- **Ranks must be a dense run 1..N, which the schema cannot state.** It bounds a
+  rank to 1..64; only the Go validator can see the sequence. Four entries ranked 1,
+  2, 4, and 5 read as a complete four-level scheme, and nothing in the rendering
+  says the third one is missing.
+- **`composition.rule` is pinned `const "highest-water-mark"`.** Not an enum with
+  one member for later expansion: a lattice with two joins is not a lattice. This is
+  DESIGN §9's union law on a different lattice — *union of controls, intersection of
+  permitted behavior, join of classification levels* — and all three say the
+  stricter reading wins, so composing can never relax anything. `Join` is asserted
+  idempotent, commutative, associative, and monotone over all three fixture widths,
+  because a principle claimed in a doc comment and asserted nowhere is a claim about
+  intent. Adding a second rule is a major version event, not an enum member.
+- **`Join` refuses a level id from another institution's scheme** rather than
+  answering. UC's P3 and Stanford's Moderate are not comparable, and a tool that
+  ranked them would be publishing an equivalence neither institution stated.
+  `UnknownLevelError` lists the profile's own ids least-protective-first, because the
+  likeliest cause is a value typed from the other document.
+- **`authorship` and `maintenance` are separate fields, and a derived profile may
+  only be `example-and-forkable`.** Every institutional profile automat ships is
+  automat's *reading* of somebody else's published policy. `authorship:
+  derived-interpretation` then requires the `interpretation` block, and
+  `maintenance: shipped-and-maintained` is refused outright — automat is not the
+  upstream for anybody's data classification policy, and a document claiming
+  maintenance implies a promise to track policy revisions that nobody made.
+- **On a derived profile the only admissible attestation role is `interpreted-by`.**
+  Pinned in the schema by an `if`/`then` and in Go. The *weaker* roles are the
+  danger rather than the stronger ones: one inference from `reviewed-by` is "the
+  institution reviewed this", which is the single claim a derived profile must never
+  support. The vocabulary itself is unchanged — `evidence.Role`'s five values, shared
+  with the other two document types, and `AllSignatureFormats` is asserted to match
+  the environment profile's so that two documents cannot become two trust models.
+- **The non-endorsement statement is checked in substance AND must name the
+  institution.** Four phrases are required, each because dropping it changes what
+  the paragraph claims; all three verbs in "not authored, reviewed, or endorsed"
+  matter, because a reader who sees only "not authored" concludes the institution
+  reviewed it. The name check is the half a phrase list alone would miss: "It was
+  not authored, reviewed, or endorsed by the institution" is a grammatically
+  complete disclaimer that disclaims nobody, and a reader will attach it to
+  whichever institution they had in mind. Substance rather than verbatim, for the
+  reason the policy caveat is: a check that failed on a hard wrap would be enforcing
+  formatting while claiming to enforce meaning.
+- **Every control cites a section of a hashed source, and where the source is silent
+  the profile is silent.** The Go validator resolves *every* `citation_ref.source_id`
+  in the document against `sources[]` — eleven distinct reference sites, each with
+  its own case in `TestEveryCitationMustResolveToAHashedSource`, because a new
+  citation field added without a corresponding line is a claim whose provenance
+  nobody checks. Filling a gap with a sensible-looking control converts "this
+  institution's policy says" into "automat thinks this institution should say".
+- **`citation.date_basis` is three-valued rather than a required effective date.**
+  Institutional policy is published in two forms that differ exactly here: a
+  versioned standard carries an approval date, and a living web page carries nothing
+  at all. Both shipped Stanford sources are dateless pages. An invented effective
+  date on one of those would be automat's own fabrication sitting in the field a
+  reader checks for staleness, so `retrieved-only` says so and requires a
+  `source_id`, since the retrieval record is then the only thing dating the claim.
+  `last-updated-in-document` is the third value because the UC PDF's footer date is
+  printed *in* the document without necessarily being when the policy took effect.
+- **`unmodeled_axes` makes an omission a disclosure.** UC is why the field exists:
+  IS-3 classifies on two independent axes, Protection (P1–P4) and Availability
+  (A1–A4), and automat models the protection axis alone because that is what an
+  account is rated for. Silently omitting the other one would read to someone who
+  knows IS-3 as an incomplete transcription and to someone who does not as though UC
+  had one axis. The shipped entry additionally records that the two axes are *not
+  parallel* — a Proprietor may select a lower Availability Level but may not lower a
+  Protection Level outside the exception process — so an implementation that treated
+  them as one axis would be wrong in the permissive direction.
+- **`inherits` is within one issuer.** `issuer_id` must equal the profile's own, and
+  `profile_id` must not. An enterprise policy and its research overlay sharing one
+  classification table is the case the field exists for, and both belong to the same
+  institution; across institutions it would assert something about somebody else's
+  policy in a document attributed to this one.
+- **Rule 8 applies to `$defs/level_id` and `$defs/slug`,** at both layers.
+  `level_id` is the most-typed value in the model — an operator reads a level id off
+  a rating and types it onto a command line — and it is patterned more tightly than
+  the general slug (32 characters rather than 64) because it is short by nature in
+  every published scheme: `p3`, `dsl4`, `high`. Issuer ids are patterned for the
+  same reason plus one more: `inherits.issuer_id` is compared against `issuer.id`, so
+  a value that differed only in whitespace would read as a match.
+- **`status: superseded` is recordable rather than deletable.** An account rated
+  years ago was rated under whatever was current then, and an evidence record naming
+  a superseded profile is still a true record of what was believed.
+
+### Four constraints were added while writing the drift detector
+
+Found the way `environment-profile/v1`'s five were: by writing
+`TestGoAndSchemaAgreeOnRejection` and `TestBothValidatorsRejectAPresentButEmptyArrayOnDisk`
+and having to decide, field by field, what each layer claims. All four **strictly
+tighten**, so they land under rule 6's audit-driven clause; pre-publication, no
+version bump.
+
+| field | was | now |
+| --- | --- | --- |
+| `levels[].controls` | `maxItems: 256` | `minItems: 1`, `maxItems: 256` |
+| `levels[].examples` | `maxItems: 32` | `minItems: 1`, `maxItems: 32` |
+| `levels[].external_obligations` | `maxItems: 32` | `minItems: 1`, `maxItems: 32` |
+| `unmodeled_axes` | `maxItems: 8` | `minItems: 1`, `maxItems: 8` |
+
+All four are the same defect and it is gate 4's: **`[]` and absent are different
+claims, and they render identically to a reader.** An empty `controls` array says
+the cited source was consulted and states no controls at this level. An absent one
+declines to claim anything. The Go validator already refused the empty form on all
+four ("present but empty"); the schema accepted it, so an institution editing a
+fork against the published contract would have been told the ambiguous document was
+fine.
+
+The asymmetry between the two shipped documents is exactly this distinction in
+practice, which is why it is tested rather than described: the UC Standard defines
+four Protection Levels and defers controls to BFB-IS-3, so **no level in the UC
+profile has a `controls` key at all**; Stanford's Minimum Security Standards *are* a
+retrieved source, so every level there states controls (15 / 26 / 34, cumulative).
+`TestWhereTheShippedSourceIsSilentTheShippedProfileIsSilent` asserts both halves,
+because the tempting mistake available in this package is filling UC's empty control
+lists in from a document automat has not retrieved.
+
+### Four asymmetries are recorded as tests rather than closed
+
+Each is asserted to **remain** asymmetric — the test checks both that Go refuses the
+document and that the schema does not — so the day a case moves it fails and has to
+be reclassified rather than silently double-covered:
+
+- **The schema cannot reject an unsupported major version**, for the reason it
+  cannot on the other two document types: a published contract that refused `2.0.0`
+  would make every v2 document invalid against v1 rather than unreadable by a v1
+  build.
+- **The schema cannot state a cross-field rule.** Fourteen are Go-only and each has
+  its own case in `TestGoOnlyChecksAreTheOnesNoSchemaCanState`: unresolved
+  `source_id`s, duplicate level ranks / ids / labels, the dense-run check, the
+  non-endorsement name and substance checks, `inherits` pointing at another issuer or
+  at itself, duplicate source / citation / control ids, `only-by-exception` with no
+  exception process, and `retrieved-only` with no source.
+- **The schema cannot compute a hash**, so it cannot check that an attestation names
+  *this* document. This matters more here than on an environment profile: a fork
+  inherits automat's `interpreted-by` attestation, and if nothing recomputed the
+  subject, automat's signature would appear to vouch for the institution's edits.
+- **The schema cannot see whether `Join` implements the rule it declares.** Pinning
+  `composition.rule` means the *document* declares highest-water-mark; nothing in a
+  schema can assert that the code behaves. The four union laws are asserted in
+  `TestJoinHoldsTheUnionLaws`, and `TestTheSchemaCannotSeeTheJoinLaws` records that
+  the schema's agreement is about the declaration rather than the behaviour.
+
+### The two shipped documents are pinned by name
+
+`catalogs/classification/` holds exactly two profiles and
+`TestTheShippedProfileSetIsTheOneThatWasApproved` names them. Adding a third is not
+a data change: each of these states, under an institution's name, what that
+institution requires, and the cost of being wrong is borne by an institution that
+never agreed to be represented. The pair was chosen to maximally stress the model —
+four ascending alphanumeric codes (UC P1–P4) against three word names (Stanford
+Low / Moderate / High), so id-sorting works on one and fails on the other.
+
+One rule-3 note, since a vendored catalog file is data automat ships: the Stanford
+Minimum Security Standards name specific tools in nearly every control row, and the
+transcription records the **obligation** rather than the tool ("Enable whole-disk
+encryption using the platform's native facility"). Rule 3 requires that anyway, and
+there is an independent second reason: the source marks most named tools as
+*recommended*, so transcribing one as the requirement would misstate the policy in
+the stricter direction. `TestNoShippedProfileNamesAVendorProduct` pins the specific
+names this transcription had the opportunity to get wrong.
+
+The model, the six published schemes it was derived from, the trust model for
+cosigning a derived profile, and the four things automat must never become as a
+result of publishing this format: `docs/institutional-profiles.md`.
