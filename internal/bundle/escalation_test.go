@@ -469,16 +469,40 @@ func TestREADMEDisclosesWhatTheDelegateCanDoToAutomatsOwnControls(t *testing.T) 
 // question is not "what shape is this file" but "which tag names does anything in
 // this bundle trust". A regex over the rendered output cannot miss a document a
 // structural walker was never taught about.
+//
+// # The character class, and what it used to exclude (AUDIT-2)
+//
+// This read `(automat:[a-z-]+)`, which excludes digits. One of the three keys in
+// mutableTagKeys is automat:artifact-sha256 — writable by design, and the moment any
+// condition reads it, the invariant below is what must catch the pair. It would not
+// have: the regex truncated the key to "automat:artifact-sha", tagKeyIsWritable's
+// explicit-list branch found no grant naming THAT, and the test passed. Verified by
+// construction against a synthetic document carrying exactly that read/write pair.
+//
+// The truncation was inert today, because no condition reads a digit-bearing key. An
+// invariant that holds only because nothing has exercised it is not the same as one
+// that holds, and this is the test the audit ritual names as the thing standing
+// between a shipped bundle and AUDIT-1's C1 coming back.
+//
+// So the class is now every character AWS permits in a tag key, minus the colon,
+// which is the delimiter in both renderings and would swallow the value. Anything
+// narrower is a silent narrowing of the invariant rather than of the regex.
+//
+// The pattern is a package-level var so the negative control below exercises THIS
+// one rather than a copy of it. A second literal would reproduce the original defect
+// in the very test written to catch it: the control would pass against its own
+// widened copy while the enumerator stayed narrow.
+var reConditionTagKey = regexp.MustCompile(`aws:(?:Resource|Request)Tag/(automat:[A-Za-z0-9._+=@-]+)`)
+
 func conditionKeysRead(t *testing.T, r *Request) map[string]bool {
 	t.Helper()
 	keys := map[string]bool{}
-	re := regexp.MustCompile(`aws:(?:Resource|Request)Tag/(automat:[a-z-]+)`)
 	for name, render := range allRenderers() {
 		data, err := render(r)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		for _, m := range re.FindAllStringSubmatch(string(data), -1) {
+		for _, m := range reConditionTagKey.FindAllStringSubmatch(string(data), -1) {
 			keys[m[1]] = true
 		}
 	}
@@ -530,6 +554,76 @@ func TestNoConditionReadsATagTheBundleLetsTheDelegateWrite(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestTheEscalationInvariantCanActuallyFail is the negative control the invariant
+// above went without, and the reason AUDIT-2 found a hole in it by reading rather
+// than by running the suite.
+//
+// An invariant test that has never been shown to fail is a test whose green is
+// uninformative: it is consistent both with "the bundle is sound" and with "the
+// machinery no longer looks". The regex truncation was exactly the second case, and
+// it survived because nothing ever asked the enumerator to catch a document that
+// SHOULD trip it.
+//
+// So this drives the same two helpers over a synthetic document carrying the pair the
+// invariant forbids — one statement gating an action on a tag, another statement able
+// to write that same tag — and fails if they report it clean. The key is deliberately
+// automat:artifact-sha256, the digit-bearing one, because that is the case the old
+// character class dropped.
+func TestTheEscalationInvariantCanActuallyFail(t *testing.T) {
+	const key = "automat:artifact-sha256"
+
+	// A document in the shape the real renderers produce: two statements, the first
+	// reading the tag in a condition, the second granting TagResource with an
+	// explicit key list that names it.
+	doc := `
+        - Sid: ReadsADigitBearingTag
+          Effect: Allow
+          Action:
+            - organizations:UpdatePolicy
+          Resource: 'arn:aws:organizations::111122223333:policy/o-x/service_control_policy/*'
+          Condition:
+            StringEquals:
+              aws:ResourceTag/` + key + `: 'abc123'
+        - Sid: WritesThatVeryTag
+          Effect: Allow
+          Action:
+            - organizations:TagResource
+          Resource: 'arn:aws:organizations::111122223333:account/o-x/*'
+          Condition:
+            ForAllValues:StringEquals:
+              aws:TagKeys:
+                - '` + key + `'
+`
+
+	var read []string
+	for _, m := range reConditionTagKey.FindAllStringSubmatch(doc, -1) {
+		read = append(read, m[1])
+	}
+	if len(read) != 1 || read[0] != key {
+		t.Fatalf("the enumerator read %v from a document conditioned on %q — a key it cannot "+
+			"extract is a key the invariant cannot check, which is how AUDIT-2's truncation hid",
+			read, key)
+	}
+
+	stmts := tagWritingStatements(doc)
+	if len(stmts) == 0 {
+		t.Fatal("tagWritingStatements found no tag-writing statement in a document that grants " +
+			"organizations:TagResource; the invariant above cannot fail if this returns nothing")
+	}
+	var caught bool
+	for _, stmt := range stmts {
+		if tagKeyIsWritable(stmt, key) {
+			caught = true
+		}
+	}
+	if !caught {
+		t.Fatalf("the invariant machinery reports NO escalation on a document where a statement can "+
+			"write %s and another gates organizations:UpdatePolicy on it. That pair is precisely what "+
+			"TestNoConditionReadsATagTheBundleLetsTheDelegateWrite exists to refuse, so its green on "+
+			"the real bundle currently proves nothing", key)
 	}
 }
 

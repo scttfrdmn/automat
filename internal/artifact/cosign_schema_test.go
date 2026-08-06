@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -199,8 +200,26 @@ func TestTheSchemaCannotSayReviewByIsInTheFuture(t *testing.T) {
 // The bound is each profile's own citations: a profile that cites a phase-in date
 // and then schedules its re-reading for after that date is a profile predicting
 // its own obsolescence and sleeping through it. dfars-7012 names CMMC Phase 2 at
-// 2026-11-10 and nih-cadr-dua names the agreement-stipulation date at 2026-02-26;
-// neither may have a review date later than the latest future date it cites.
+// 2026-11-10; a profile may not have a review date later than the latest future
+// date it cites.
+//
+// # AUDIT-2 M1: the horizon was a hardcoded date, and dates arrive
+//
+// This test used to skip any citation effective on or before a literal
+// `"2026-08-05"`, reasoning that a citation already in force says nothing about
+// when a reading goes stale. Correct on the day it was written, and it decayed
+// without a code change: by 2026-08-06 every one of the thirteen citations across
+// the three shipped profiles had passed that literal, so the inner comparison
+// executed zero times and the test asserted only that `review_by` was non-empty —
+// which the schema already requires. A scratch probe counted it: 13 citations, 0
+// through the gate.
+//
+// The lesson is more general than the date. A test that hardcodes "now" does not
+// fail when it goes stale; it silently narrows to a tautology, and it keeps
+// reporting PASS in a suite the audit ritual treats as evidence. So the horizon is
+// the build clock, and the profiles are also checked from the other side: a review
+// date already behind us is a lapsed reading, which is the condition this test's
+// own name promises to catch and previously could not.
 func TestEveryShippedProfileSchedulesItsOwnReReading(t *testing.T) {
 	type doc struct {
 		Profile struct {
@@ -213,11 +232,15 @@ func TestEveryShippedProfileSchedulesItsOwnReReading(t *testing.T) {
 		} `json:"citations"`
 	}
 
+	// today, not a literal. Lexical ISO-8601, matching the schema's pattern, so
+	// string comparison is date comparison.
+	today := time.Now().UTC().Format("2006-01-02")
+
 	entries, err := os.ReadDir(obligationDir)
 	if err != nil {
 		t.Fatalf("read %s: %v", obligationDir, err)
 	}
-	var checked int
+	var checked, compared int
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -236,15 +259,30 @@ func TestEveryShippedProfileSchedulesItsOwnReReading(t *testing.T) {
 			}
 			checked++
 
+			// The lapse check. A review date in the past is the failure the
+			// freshness field exists to prevent, and it is the one a suite that
+			// only compared review dates to citation dates could never see: a
+			// profile whose citations are all historical passed while its own
+			// re-reading deadline slid by.
+			if d.ReviewBy < today {
+				t.Errorf("profile %q was to be re-read by %s and today is %s — the reading is LAPSED. "+
+					"A profile renders its citations exactly as confidently after its review date as "+
+					"before, so this is not a scheduling nit: re-verify the citations against the "+
+					"primary sources, then move review_by forward with the audit that did it. "+
+					"Moving the date alone is the one repair that makes this worse",
+					d.Profile.ID, d.ReviewBy, today)
+			}
+
 			// The comparison is lexical, which is correct for zero-padded ISO
 			// dates and is why the pattern requires that form.
 			for _, c := range d.Citations {
 				// Only dates the profile itself treats as still ahead of it
 				// matter. A citation effective in 2017 says nothing about when
 				// this reading goes stale.
-				if c.EffectiveDate <= "2026-08-05" {
+				if c.EffectiveDate <= today {
 					continue
 				}
+				compared++
 				if d.ReviewBy > c.EffectiveDate {
 					t.Errorf("profile %q reviews by %s but cites %q as effective %s — the profile "+
 						"schedules its own re-reading for AFTER a change it already knows about, "+
@@ -258,6 +296,16 @@ func TestEveryShippedProfileSchedulesItsOwnReReading(t *testing.T) {
 	if checked == 0 {
 		t.Error("no profile was checked, so this test verified nothing")
 	}
+	// Reported, not asserted, and the distinction is the finding's whole point.
+	//
+	// Zero forward-looking citations is a legitimate state — every date a profile
+	// cites can genuinely be in force — so failing here would break the build for
+	// the passage of time. But zero is also exactly what the vacuous version
+	// reported while claiming to check the ordering, so it is logged: a run
+	// showing 0 has verified the lapse half and nothing else, and a reader of the
+	// audit needs to be able to tell those apart.
+	t.Logf("forward-looking citations compared against their profile's review date: %d "+
+		"(0 is valid and means only the lapse check ran)", compared)
 }
 
 // ---------------------------------------------------------------------------

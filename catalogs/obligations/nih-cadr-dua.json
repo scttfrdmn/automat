@@ -9,7 +9,7 @@
 
   "status": "phased",
 
-  "review_by": "2027-02-26",
+  "review_by": "2027-02-25",
 
   "citations": [
     {
@@ -21,10 +21,10 @@
     },
     {
       "id": "NOT-OD-25-159",
-      "title": "Security Expectations for NIH Controlled-Access Data Repositories",
-      "effective_date": "2025-01-25",
+      "title": "Required Security and Operational Standards for NIH Controlled-Access Data Repositories",
+      "effective_date": "2025-09-24",
       "role": "creates",
-      "note": "The repository-facing half of the same requirement. Recorded because a user's obligations are shaped by what their repository requires of them."
+      "note": "The repository-facing half of the same requirement. Recorded because a user's obligations are shaped by what their repository requires of them. Released 2025-09-24 and effective in three tranches — immediately, then 2025-11-01, then 2026-02-25 — all of which bind the REPOSITORY and none of which bind the user, so the earliest is recorded as this citation's date and the tranches are not modeled: an obligation profile states what its subject owes, and a user's own dates are the two on NOT-OD-24-157. Corrected at AUDIT-2 (M2), which found this entry carrying 2025-01-25, the neighbouring notice's date, and a title that was a paraphrase rather than the published one."
     },
     {
       "id": "NIH Security Best Practices for Users of Controlled-Access Data",
@@ -36,16 +36,16 @@
     {
       "id": "NOT-OD-24-157 (agreement stipulation date)",
       "title": "Stipulation in new or renewed agreements",
-      "effective_date": "2026-02-26",
+      "effective_date": "2026-02-25",
       "role": "operationalizes",
-      "note": "From 2026-02-26 the expectations are stipulated in NEW OR RENEWED agreements. Users approved before that date continue under their existing agreement's standards until close-out or renewal. This is why the profile's status is `phased` and not simply `in-force`: two Approved Users at the same institution can be under different standards on the same day, distinguished only by when their agreement was signed. An operator must know which one they are, and automat cannot tell them."
+      "note": "From 2026-02-25 the expectations are stipulated in NEW OR RENEWED agreements: 'Users approved prior to February 25, 2026, should secure data according to the security standards outlined in the agreement until project close-out or renewal.' This is why the profile's status is `phased` and not simply `in-force`: two Approved Users at the same institution can be under different standards on the same day, distinguished only by when their agreement was signed. An operator must know which one they are, and automat cannot tell them. THE DATE HAS PASSED — corrected at AUDIT-2 (M2) from 2026-02-26, which was off by one day and which the profile's own review_by had been derived from. A date that has arrived does not make the phase-in over: the standard still follows the agreement rather than the calendar, so an agreement executed before this date remains under its own terms and `phased` remains the correct status."
     },
     {
       "id": "NOT-OD-25-081",
-      "title": "Use of Generative AI with NIH Controlled-Access Data",
-      "effective_date": "2025-01-25",
+      "title": "Protecting Human Genomic Data when Developing Generative Artificial Intelligence Tools and Applications",
+      "effective_date": "2025-03-28",
       "role": "related",
-      "note": "Treats generative AI models and their parameters trained on controlled-access data as Data Derivatives: approval required, no sharing outside Approved Users, no retention at closeout. Recorded here because it is the provision most likely to be missed by a research computing group that has otherwise done everything right — a fine-tuned model is not obviously 'data' to the person who trained it, and the retention rule reaches model artifacts an account may hold long after the source data is gone."
+      "note": "Treats generative AI models and their parameters trained on controlled-access data as Data Derivatives: approval required, no sharing outside Approved Users, no retention at closeout. Recorded here because it is the provision most likely to be missed by a research computing group that has otherwise done everything right — a fine-tuned model is not obviously 'data' to the person who trained it, and the retention rule reaches model artifacts an account may hold long after the source data is gone. Title and date corrected at AUDIT-2 (M2): the title recorded here was a descriptive paraphrase rather than the notice's published title, and the date was 2025-01-25 — the neighbouring notice's — where the notice's own release date is 2025-03-28. The notice states no separate effective date, so the release date is recorded and the absence is stated here rather than left to be inferred from a date that looks effective."
     }
   ],
 
@@ -124,7 +124,7 @@
       "id": "pending",
       "title": "No citation for this profile has been retrieved and hashed yet",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "note": "The notices and the best-practices document are recorded from their published identifiers and effective dates, not from retrieved copies. Not renderable until vendored, asserted by TestNoUnresolvedHashInARenderableProfile. This profile is the one where the standing re-verification obligation bites hardest: the notice chain is recent, the 2026-02-26 stipulation date is inside the phase-in, and the revision question is unresolved upstream — three ways for a citation here to go stale between phase gates."
+      "note": "The notices and the best-practices document are recorded from their published identifiers and effective dates, not from retrieved copies. Not renderable until vendored, asserted by TestNoUnresolvedHashInARenderableProfile. This profile is the one where the standing re-verification obligation bites hardest: the notice chain is recent, the 2026-02-25 stipulation date is inside the phase-in, and the revision question is unresolved upstream — three ways for a citation here to go stale between phase gates. AUDIT-2 proved the point and named the mechanism (M2): three of this profile's five citations carried a wrong date or a paraphrased title, and the reason all three were wrong in the same direction is that they were recorded from the published identifier and read back from memory rather than from a retrieved copy. That is exactly what an unresolved hash means, so the placeholder is not an incomplete chore — it is the accurate statement that nothing here has been checked against bytes."
     }
   ]
 }
