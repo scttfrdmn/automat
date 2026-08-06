@@ -19,8 +19,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
-        "title": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" }
+        "title": {
+          "description": "Rendered into reports, tables, and the birth certificate `vend` prints. `$defs/prose` rather than a bare non-empty string because a newline in it forges a row of one — the same reason the obligation profile's title is prose and the same defect class as an unescaped control id.",
+          "$ref": "#/$defs/prose"
+        },
+        "description": { "$ref": "#/$defs/long_prose" }
       }
     },
 
@@ -96,7 +99,7 @@
           "description": "OU names to ensure beneath target_ou, outermost first. At most five levels total under the root.",
           "type": "array",
           "maxItems": 5,
-          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+          "items": { "$ref": "#/$defs/ou_name" }
         }
       }
     },
@@ -107,9 +110,10 @@
       "additionalProperties": false,
       "properties": {
         "email_pattern": {
-          "description": "Email template; '{name}' is substituted with the account name. Each account needs a globally unique email (DESIGN 3, fact 11).",
+          "description": "Email template; '{name}' is substituted with the account name. Each account needs a globally unique email (DESIGN 3, fact 11).\n\nAn explicit charset rather than `[^@\\s]+@[^@\\s]+`: the negated form admits control characters, and this value reaches `CreateAccount` and is echoed into the birth certificate, the onboarding bundle, and every error message about the vend. The braces are admitted only for the `{name}` placeholder, which a validator checks for separately — the schema can bound the alphabet but cannot say the substitution is well-formed.",
           "type": "string",
-          "pattern": "^[^@\\s]+@[^@\\s]+$"
+          "maxLength": 254,
+          "pattern": "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$"
         },
         "role_name": {
           "description": "Name of the management-assumable role created in the child. Defaults to OrganizationAccountAccessRole (DESIGN 3, fact 6).",
@@ -123,10 +127,11 @@
           "default": "ALLOW"
         },
         "tags": {
-          "description": "Additional tags applied at creation. automat's own conventional tags (DESIGN 14) are always applied and may not be overridden here.",
+          "description": "Additional tags applied at creation. automat's own conventional tags (DESIGN 14) are always applied and may not be overridden here.\n\nThe `automat:` prefix is reserved in BOTH directions, which is not a naming nicety: DESIGN 10's baseline-protection SCPs read automat's own tags in `aws:ResourceTag` conditions, so a tag an operator can write at the same scope is a tag that can be forged, and a condition that reads a forgeable tag is not a condition (AUDIT-1's C1). `propertyNames` refuses the prefix here; the SCP side is asserted by the test that enumerates which keys the policies read.",
           "type": "object",
-          "additionalProperties": { "type": "string" },
-          "propertyNames": { "not": { "pattern": "^automat:" } }
+          "maxProperties": 48,
+          "additionalProperties": { "$ref": "#/$defs/tag_value" },
+          "propertyNames": { "$ref": "#/$defs/tag_key" }
         }
       }
     },
@@ -193,7 +198,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "local_dir": { "type": "string", "minLength": 1, "default": "compliance" },
+            "local_dir": { "$ref": "#/$defs/local_dir", "default": "compliance" },
             "in_account_bucket": {
               "type": "string",
               "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
@@ -205,7 +210,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "local_dir": { "type": "string", "minLength": 1, "default": "evidence" },
+            "local_dir": { "$ref": "#/$defs/local_dir", "default": "evidence" },
             "in_account_bucket": {
               "type": "string",
               "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
@@ -224,6 +229,39 @@
     "date": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+
+    "ou_name": {
+      "description": "An organizational-unit name automat will ensure exists. Bounded to the characters AWS documents for an OU name, minus the ones that make a name unusable as a name: no control bytes, no leading or trailing space, no path separator. Not a traversal defense — nothing resolves an OU name as a path — but a value with a newline in it is rendered into the plan `vend` prints before it acts, and a plan whose lines can be forged is not a plan an operator can approve.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9+=,.@_-][A-Za-z0-9 +=,.@_-]{0,126}[A-Za-z0-9+=,.@_-]$|^[A-Za-z0-9+=,.@_-]$"
+    },
+
+    "local_dir": {
+      "description": "A directory on the operator's own machine, relative to the working directory. RELATIVE AND CONTAINED: no absolute path, no `..` segment, no leading `~`. The environment profile is a file an operator may have received from a central IT office or forked from an example, so it is attacker-controlled input in the threat model, and this is the one field in it naming somewhere automat WRITES. An absolute path here would let a profile choose the destination of every attestation stub and evidence manifest a vend produces.\n\nThe `..` refusal is a separate `not` rather than a lookahead inside `pattern` because Go's regexp engine has no lookahead, and a bound the Go layer cannot state is a bound this schema must not state either — the two layers are required to agree (CLAUDE.md rule 8).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*$",
+      "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+    },
+
+    "tag_key": {
+      "description": "An operator-supplied tag key. The `automat:` prefix is refused because automat's own conventional tags (DESIGN 14) are read by baseline-protection SCP conditions, and a key an operator can write at the same scope is one that can be forged. A separate `not` for the same reason `local_dir` gives.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9 +=,.@_:/-]+$",
+      "not": { "pattern": "^automat:" }
+    },
+
+    "tag_value": {
+      "description": "An operator-supplied tag value, bounded to the characters AWS permits in one. Control bytes are refused for the reason `prose` gives: tag values are rendered into the birth certificate and into `list` output.",
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9 +=,.@_:/-]*$"
     },
 
     "obligation_reference": {
