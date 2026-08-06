@@ -593,3 +593,53 @@ at the call site under any reading, which is why the packer was not held up for 
 
 **Relevant to `verify` (Phase 4)** more than to `vend`: whatever `vend` names a policy,
 `verify` has to find it again, and finding it by name means the name is a contract.
+
+**Task #13 has now made the call-site choice, which narrows the question without
+answering it.** `vend` passes `NamePrefix: "automat-" + p.Meta.ID`, so a packed policy is
+`automat-<environment-profile-id>-<n>` — reading 1, chosen because it is the only reading
+`vend` could implement without the packer changing, and because the profile id is the one
+id a packed policy has exactly one of. Two consequences worth recording before AUDIT-2
+re-opens this:
+
+- **Reading 2 is now more expensive than it looks.** `vend` orders the packed set with the
+  baseline-protection-carrying policies last (Q13), which is an ordering over policies the
+  packer produced. Packing by class would make that ordering structural rather than a sort,
+  and the slot arithmetic in reading 2 above becomes a refusal `vend` has to render.
+- **Reading 3 is untouched and still cheap.** `vend` writes no tags onto the policies it
+  creates — see the account-tag gap in `docs/cli-surface.md` D3, which is the same missing
+  capability in `internal/org`. Whoever implements tagging can satisfy reading 3 in the same
+  pass, and reading 1's ordinal names stay as they are.
+
+### Q17 — `evidence-manifest/v1`'s `artifact` admits one document, but a vend compiles a union
+
+`Record.artifact` is a single `DocRef` (id + sha256). A vend resolves *several* control
+sets — at minimum a control artifact plus `baseline-protection`, and the union is the
+design's whole premise (DESIGN §9) — so there is no one artifact a vend's records are
+"the" artifact of.
+
+**What the code assumes now:** `cmd/automat/vend.go`'s `artifactRef` fills the field only
+when the union is unambiguous, meaning exactly one non-baseline artifact, and leaves it
+absent otherwise. Absent is honest and checkable; naming one member of a union as though
+it were the artifact would not be. But it means the field is present on simple vends and
+missing on exactly the composed ones an auditor is most likely to be reading, which is a
+poor property for an evidence field.
+
+Three answers, and the first is what the shape of the data suggests:
+
+1. **A repeated block.** `artifacts[]` of `DocRef`, one per resolved set, which is what a
+   vend actually has. Restructures a published contract, so rule 6's "ask first" applies,
+   and it is a versioning event if any manifest exists in the wild.
+2. **A compiled-set hash.** One `DocRef` whose id names the merged set and whose hash is
+   over the canonicalized merge. Keeps the shape, and is arguably the *more* useful claim —
+   "vended under this exact compiled union" rather than a list of inputs. Needs a
+   definition of the merged canonical form, which `internal/compilesets` does not expose,
+   and inherits Q15's question of which bytes.
+3. **Leave it, and let the environment-profile record carry the provenance.** The
+   environment profile names its control sets and is already hashed in its own record, so
+   the inputs are recoverable one hop away. Cheapest, and it concedes that `artifact` is a
+   field the manifest does not really have.
+
+**Settled by a maintainer decision, not a live org**, and the same shape of question as
+Q15 — both are "what does this hash cover", and answering them together is likely cheaper
+than answering either alone. Wanted before Phase 4's `verify`, which has to decide what it
+is verifying an account *against*.
