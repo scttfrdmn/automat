@@ -7,52 +7,6 @@
           "aws:PrincipalArn": [
             "arn:aws:iam::333333333333:role/automat-automation"
           ]
-        }
-      },
-      "Effect": "Deny",
-      "NotAction": [
-        "access-analyzer:*",
-        "account:*",
-        "acm:*",
-        "aws-marketplace:*",
-        "aws-portal:*",
-        "batch:*",
-        "budgets:*",
-        "ce:*",
-        "cloudfront:*",
-        "config:*",
-        "cur:*",
-        "directconnect:*",
-        "ec2:*",
-        "fsx:*",
-        "globalaccelerator:*",
-        "health:*",
-        "iam:*",
-        "kms:*",
-        "networkmanager:*",
-        "organizations:*",
-        "pricing:*",
-        "route53:*",
-        "route53domains:*",
-        "s3:*",
-        "shield:*",
-        "sts:*",
-        "support:*",
-        "trustedadvisor:*",
-        "waf:*",
-        "wellarchitected:*"
-      ],
-      "Resource": [
-        "*"
-      ],
-      "Sid": "AutomatDenyServicesOutsideAllowlist"
-    },
-    {
-      "Condition": {
-        "ArnNotLike": {
-          "aws:PrincipalArn": [
-            "arn:aws:iam::333333333333:role/automat-automation"
-          ]
         },
         "StringNotEquals": {
           "aws:RequestedRegion": [
@@ -96,6 +50,52 @@
       "Sid": "AutomatDenyRegionsOutsideAllowlist"
     },
     {
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "NotAction": [
+        "access-analyzer:*",
+        "account:*",
+        "acm:*",
+        "aws-marketplace:*",
+        "aws-portal:*",
+        "batch:*",
+        "budgets:*",
+        "ce:*",
+        "cloudfront:*",
+        "config:*",
+        "cur:*",
+        "directconnect:*",
+        "ec2:*",
+        "fsx:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "kms:*",
+        "networkmanager:*",
+        "organizations:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "s3:*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "trustedadvisor:*",
+        "waf:*",
+        "wellarchitected:*"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Sid": "AutomatDenyServicesOutsideAllowlist"
+    },
+    {
       "Action": [
         "*"
       ],
@@ -110,7 +110,17 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automat186d154f156fa914"
+      "Sid": "Automat67fe9f6858eba533"
+    },
+    {
+      "Action": [
+        "securityhub:DisableSecurityHub"
+      ],
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat40bb15434da67e52"
     },
     {
       "Action": [
@@ -128,7 +138,7 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automat3cecb82c76ed0eea"
+      "Sid": "Automat0a8f65dae1cc8a35"
     },
     {
       "Action": [
@@ -146,17 +156,7 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automata6f3f604f5c36c91"
-    },
-    {
-      "Action": [
-        "securityhub:DisableSecurityHub"
-      ],
-      "Effect": "Deny",
-      "Resource": [
-        "*"
-      ],
-      "Sid": "Automat1004f9ed05db2091"
+      "Sid": "Automat4cd1a69b072d88f9"
     }
   ]
 }

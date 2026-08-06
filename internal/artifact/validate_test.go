@@ -291,6 +291,47 @@ func TestValidateRejects(t *testing.T) {
 			wantFix:  "list the actions",
 		},
 		{
+			// AUDIT-2 H5's second half. The published schema has always said
+			// minLength:1 on these items; the Go validator did not, and the packer's
+			// guard key could not tell resource [""] from an absent resource — so the
+			// two merged, and the merged statement came out scoped to [""], which
+			// matches nothing.
+			name: "empty resource member",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Resource = []string{""}
+			},
+			wantPath: "resource[0]",
+			wantFix:  "matches nothing",
+		},
+		{
+			name: "empty action member",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Action = []string{"config:StopConfigurationRecorder", ""}
+			},
+			wantPath: "action[1]",
+			wantFix:  "matches nothing",
+		},
+		{
+			name: "duplicate action member",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Action = []string{"config:StopConfigurationRecorder", "config:StopConfigurationRecorder"}
+			},
+			wantPath: "action[1]",
+			wantFix:  "disagree with itself",
+		},
+		{
+			name: "duplicate resource member",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Resource = []string{"*", "*"}
+			},
+			wantPath: "resource[1]",
+			wantFix:  "disagree with itself",
+		},
+		{
 			name: "non-alphanumeric sid",
 			mutate: func(a *Artifact) {
 				c := mustControl(t, a, "BB.L1-b.1.b")

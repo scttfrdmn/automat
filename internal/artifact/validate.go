@@ -390,6 +390,27 @@ func (s *SCP) validate(p *problems, path string) {
 		if len(st.Action) == 0 {
 			p.add(spath+".action", "missing", "list the actions this statement covers")
 		}
+		// Empty and duplicate members in action and resource, which the published
+		// schema has always refused (minLength: 1, uniqueItems) and this validator
+		// did not. AUDIT-2 H5's second half.
+		//
+		// The divergence mattered more than a schema/code mismatch usually does,
+		// because the packer's guard key is what decides whether two prohibitions
+		// merge. An empty resource member was indistinguishable there from an absent
+		// resource list, so a statement carrying resource [""] merged with one
+		// carrying no resource at all — and the merged statement came out scoped to
+		// [""], which matches nothing. The Deny stays in the document an operator
+		// reads and enforces nothing. The key is length-prefixed now, so the
+		// collision is closed at that layer too; this closes it at the boundary,
+		// where a document that cannot express the shape is better than a key that
+		// survives it.
+		//
+		// A duplicate is the milder half and is here for the same reason as
+		// region_deny_exempt_services above: two spellings of one list are two
+		// claims about one prohibition, and the operator reading the rendered policy
+		// cannot tell which the merge honored.
+		checkStatementList(p, spath+".action", st.Action, "action")
+		checkStatementList(p, spath+".resource", st.Resource, "resource")
 		st.ExemptPrincipals.validate(p, spath+".exempt_principals")
 
 		for op, keys := range st.Condition {
@@ -420,6 +441,32 @@ func (s *SCP) validate(p *problems, path string) {
 			p.add(fmt.Sprintf("%s.service_allowlist[%d]", path, i), fmt.Sprintf("%q is not a service namespace", sv),
 				"use IAM service namespaces like s3, ec2, or organizations")
 		}
+	}
+}
+
+// checkStatementList enforces minLength:1 and uniqueItems over a statement's action
+// or resource list, matching the published schema.
+//
+// One helper for both because the two fields carry the same constraint and the same
+// consequence: the packer keys on both, so an empty or repeated member in either is a
+// statement that does not mean what it appears to.
+func checkStatementList(p *problems, path string, vals []string, kind string) {
+	seen := make(map[string]bool, len(vals))
+	for i, v := range vals {
+		ipath := fmt.Sprintf("%s[%d]", path, i)
+		if v == "" {
+			p.add(ipath, "is empty",
+				fmt.Sprintf("name a real %s or remove the entry; an empty %s matches nothing, so the "+
+					"statement is present in the rendered policy and enforces less than it appears to",
+					kind, kind))
+			continue
+		}
+		if seen[v] {
+			p.add(ipath, fmt.Sprintf("duplicate entry %s", safe(v)),
+				fmt.Sprintf("list each %s once; a repeated entry prohibits nothing extra and makes the "+
+					"statement disagree with itself about its own scope", kind))
+		}
+		seen[v] = true
 	}
 }
 

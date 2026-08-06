@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/scttfrdmn/automat/internal/artifact"
@@ -567,12 +568,17 @@ func exemptMapKey(m map[string]string) string {
 
 // guardKey is the canonical identity of a statement's guard: what must match for
 // two prohibitions to be about the same thing.
+// Length-prefixed for the reason given at the canonical-keys section: this key
+// decides which prohibitions get merged, so a collision here is a widening, and the
+// probe that found it neutralized a root-user Deny with no control byte anywhere.
 func guardKey(st Statement) string {
-	return strings.Join([]string{
-		st.Effect,
-		strings.Join(sortedUnique(st.Resource), "\x01"),
-		conditionKey(st.Condition),
-	}, "\x00")
+	var sb strings.Builder
+	writeField(&sb, st.Effect)
+	sb.WriteString("\x00")
+	writeList(&sb, st.Resource)
+	sb.WriteString("\x00")
+	writeField(&sb, conditionKey(st.Condition))
+	return sb.String()
 }
 
 // joinReasons combines two justifications for the same exemption into one.
@@ -613,25 +619,85 @@ const reasonSeparator = " / "
 // comparison in this file goes through one of these rather than through
 // reflect.DeepEqual — which would call a nil slice and an empty one different
 // and merge two identical statements into two policy slots.
+//
+// # Every variable-length field is LENGTH-PREFIXED (AUDIT-2 H5)
+//
+// These keys used to be built by joining on control bytes: fields separated by
+// "\x00", list members by "\x01", condition structure by "\x02".."\x04". That is a
+// non-injective encoding, and for a key whose whole job is deciding whether two
+// prohibitions are about the same thing, non-injective means WIDENING. Two distinct
+// guards that produce one key are merged, and the merged statement carries the union
+// of their actions under one of their resources — so an action denied on resource A
+// ends up denied only on resource B, and the deny that protected A is gone.
+//
+// Three collisions were reproduced. Two are reachable from a document that survives
+// validation with no control byte anywhere in it:
+//
+//   - Resource {"a\x01b"} against {"a", "b"}. Needs a literal separator in a field
+//     value, and the JSON decoder rejects a raw control byte in a string — but that is
+//     the decoder's accident, not this function's guarantee, and a \u0001 escape or a
+//     future non-JSON producer is not covered by it.
+//   - Resource {""} against Resource {} (absent). The empty string joins to "", which
+//     is what an absent list joins to. No control byte required. This one neutralized a
+//     root-user Deny in the probe: the merged statement's Resource became [""], which
+//     matches nothing, so the Deny stopped applying while still being present in the
+//     document an operator reads.
+//   - The same shape one level down in conditionKey, where an empty condition-value
+//     list is indistinguishable from an absent one.
+//
+// The fix is structural rather than a list of rejected byte values: each field is
+// written as its decimal length, a colon, then its bytes. "" encodes as "0:" and an
+// absent list as "" — distinct — and no value can forge a boundary, because the reader
+// of the encoding is told how many bytes to take. This is the same reasoning as
+// artifact's canonicalization: an encoding that can be confused is a hash that can be
+// confused.
+//
+// Keeping the control bytes as well is deliberate: they make a dumped key readable in
+// a test failure, and they cost nothing now that the lengths carry the meaning.
 // ---------------------------------------------------------------------------
+
+// writeField appends one length-prefixed field to a key under construction.
+//
+// Length in decimal, then a colon, then the bytes. A colon needs no escaping: the
+// length says where the field ends, so a colon inside it is just a byte.
+func writeField(sb *strings.Builder, s string) {
+	sb.WriteString(strconv.Itoa(len(s)))
+	sb.WriteByte(':')
+	sb.WriteString(s)
+}
+
+// writeList appends a length-prefixed encoding of a string list.
+//
+// The member count is written first, then each member length-prefixed. So {"a\x01b"}
+// is "1:3:a\x01b" and {"a","b"} is "2:1:a1:b" — different at the first character.
+// A nil list and an empty one both encode as "0:", which is correct here: sortedUnique
+// erases the distinction anyway, and no caller treats them differently.
+func writeList(sb *strings.Builder, xs []string) {
+	vals := sortedUnique(xs)
+	sb.WriteString(strconv.Itoa(len(vals)))
+	sb.WriteByte(':')
+	for _, v := range vals {
+		writeField(sb, v)
+	}
+}
 
 func statementKey(st Statement) string {
 	var sb strings.Builder
-	sb.WriteString(st.Effect)
+	writeField(&sb, st.Effect)
 	sb.WriteString("\x00")
-	sb.WriteString(strings.Join(sortedUnique(st.Action), "\x01"))
+	writeList(&sb, st.Action)
 	sb.WriteString("\x00")
 	// NotAction in the key, so the two allowlist statements never collapse into
 	// one another: they are both "Deny, Resource *, no Action", and a key that
 	// omitted the field would make dedupeIdentical drop the service restriction
 	// on the grounds that it looks like the region one.
-	sb.WriteString(strings.Join(sortedUnique(st.NotAction), "\x01"))
+	writeList(&sb, st.NotAction)
 	sb.WriteString("\x00")
-	sb.WriteString(strings.Join(sortedUnique(st.Resource), "\x01"))
+	writeList(&sb, st.Resource)
 	sb.WriteString("\x00")
-	sb.WriteString(conditionKey(st.Condition))
+	writeField(&sb, conditionKey(st.Condition))
 	sb.WriteString("\x00")
-	sb.WriteString(exemptKey(st.ExemptPrincipals))
+	writeField(&sb, exemptKey(st.ExemptPrincipals))
 	// Sid is deliberately NOT in the key. Two catalogs denying the same actions
 	// under the same conditions have written the same statement, and a differing
 	// Sid is a naming choice, not a semantic difference — keying on it would
@@ -650,18 +716,22 @@ func conditionKey(c artifact.Condition) string {
 	}
 	sort.Strings(ops)
 	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(len(ops)))
+	sb.WriteByte(':')
 	for _, op := range ops {
-		sb.WriteString(op)
+		writeField(&sb, op)
 		sb.WriteString("\x02")
 		keys := make([]string, 0, len(c[op]))
 		for k := range c[op] {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		sb.WriteString(strconv.Itoa(len(keys)))
+		sb.WriteByte(':')
 		for _, k := range keys {
-			sb.WriteString(k)
+			writeField(&sb, k)
 			sb.WriteString("\x03")
-			sb.WriteString(strings.Join(sortedUnique(c[op][k]), "\x01"))
+			writeList(&sb, c[op][k])
 			sb.WriteString("\x04")
 		}
 	}
@@ -680,7 +750,9 @@ func exemptKey(es artifact.ExemptPrincipals) string {
 	for _, e := range es {
 		names = append(names, e.Principal)
 	}
-	return strings.Join(sortedUnique(names), "\x01")
+	var sb strings.Builder
+	writeList(&sb, names)
+	return sb.String()
 }
 
 func sameStrings(a, b []string) bool {

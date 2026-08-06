@@ -16,7 +16,7 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automat752b20c6e253c45e"
+      "Sid": "Automat535f97c651738478"
     },
     {
       "Action": [
@@ -33,7 +33,7 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automatf120fb36fab8942b"
+      "Sid": "Automat5311ea112878cbbd"
     }
   ]
 }

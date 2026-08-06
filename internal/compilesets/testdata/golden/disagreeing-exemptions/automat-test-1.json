@@ -16,7 +16,51 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automat186d154f156fa914"
+      "Sid": "Automat67fe9f6858eba533"
+    },
+    {
+      "Action": [
+        "kms:ScheduleKeyDeletion"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::111111111111:role/break-glass"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatee6f2ff8038b944f"
+    },
+    {
+      "Action": [
+        "config:StopConfigurationRecorder"
+      ],
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automatb83595cfccbf6577"
+    },
+    {
+      "Action": [
+        "config:DeleteConfigurationRecorder"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::333333333333:role/automat-automation"
+          ]
+        }
+      },
+      "Effect": "Deny",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "Automat4d188839cceef9f6"
     },
     {
       "Action": [
@@ -34,51 +78,7 @@
       "Resource": [
         "*"
       ],
-      "Sid": "Automat3cecb82c76ed0eea"
-    },
-    {
-      "Action": [
-        "config:DeleteConfigurationRecorder"
-      ],
-      "Condition": {
-        "ArnNotLike": {
-          "aws:PrincipalArn": [
-            "arn:aws:iam::333333333333:role/automat-automation"
-          ]
-        }
-      },
-      "Effect": "Deny",
-      "Resource": [
-        "*"
-      ],
-      "Sid": "Automatfe61910e9a0a5800"
-    },
-    {
-      "Action": [
-        "config:StopConfigurationRecorder"
-      ],
-      "Effect": "Deny",
-      "Resource": [
-        "*"
-      ],
-      "Sid": "Automat0f259e887587edd0"
-    },
-    {
-      "Action": [
-        "kms:ScheduleKeyDeletion"
-      ],
-      "Condition": {
-        "ArnNotLike": {
-          "aws:PrincipalArn": [
-            "arn:aws:iam::111111111111:role/break-glass"
-          ]
-        }
-      },
-      "Effect": "Deny",
-      "Resource": [
-        "*"
-      ],
-      "Sid": "Automatb6c3e62b74e78d5d"
+      "Sid": "Automat0a8f65dae1cc8a35"
     }
   ]
 }

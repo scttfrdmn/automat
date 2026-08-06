@@ -4,6 +4,7 @@
 package compilesets
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -94,9 +95,54 @@ var (
 		{artifact.AutomationRolePlaceholder},
 	}
 
+	// probeResources are the resource lists a statement may carry.
+	//
+	// # Every entry used to be a single-element list, and that starved the suite
+	//
+	// AUDIT-2 H5 was a non-injective key encoding: the guard's fields and each
+	// field's members were joined on control bytes, so one member carrying a
+	// separator keyed the same as two members, and an empty member keyed the same as
+	// no member at all. Two distinct guards then merged, and the merged statement
+	// carried the union of their actions under whichever guard seeded the group — a
+	// widening, and TestUnionIsMonotone is precisely the property that should have
+	// caught it.
+	//
+	// It did not, and not because the assertion was wrong. A collision needs TWO
+	// members on some axis, and this list had no two-member entry, so the generator
+	// could not draw the shape. The property reported green over every run while
+	// being structurally incapable of reaching the defect class. That is the
+	// dangerous kind of green: nothing about the passing run said its inputs
+	// excluded the bug.
+	//
+	// So the vocabulary carries the shapes now, and the property is the pin. Three
+	// entries were added, each for a distinct reason:
+	//
+	//   - Two real members, which is what makes a collision expressible at all.
+	//   - One member joining those two with the old list separator. Against the
+	//     pre-fix encoding this and the entry above key identically, and
+	//     TestUnionIsMonotone fails with "B denied 12 requests that A ∪ B permits".
+	//   - The empty-string member, which needed no control byte: it joined to "",
+	//     which is what an absent list joined to. This was the one that neutralized a
+	//     root-user Deny in the probe — the merged Resource became [""], which
+	//     matches nothing, so the Deny was in the document and inert.
+	//   - nil, the ABSENT list, which is the other half of that pair. {""} on its own
+	//     collides with nothing: it needs the shape it is indistinguishable FROM to be
+	//     drawable too. Verified rather than assumed — against the pre-fix encoding in
+	//     a throwaway worktree, the two-member and separator entries fail
+	//     TestUnionIsMonotone in 71 draws, {""} alone passes, and {""} with nil fails
+	//     in 26 with "B denied 48 requests that A ∪ B permits".
+	//
+	// nil also used to panic narrowedAnExemption on in.Resource[0] (merge_test.go),
+	// which is why it looked like it had to be left out. That helper is fixed instead:
+	// a statement with no resource is not an invalid statement, it is the ordinary
+	// shape, and the renderer supplies "*" for it.
 	probeResources = [][]string{
 		{"*"},
 		{"arn:aws:s3:::institution-*"},
+		{"arn:aws:s3:::institution-data", "arn:aws:s3:::other-data"},
+		{"arn:aws:s3:::institution-data\x01arn:aws:s3:::other-data"},
+		{""},
+		nil,
 	}
 	probeRegions    = []string{"us-east-1", "us-west-2", "eu-west-1"}
 	probeConditions = []artifact.Condition{
@@ -476,6 +522,23 @@ func TestUnionIsMonotoneOnTheGlobalServiceExemptionList(t *testing.T) {
 // not exist permits nothing. So the property is checked only when the union packs,
 // and TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals keeps that from
 // quietly becoming the usual case.
+//
+// # The subject is the parsed document, and it was not always
+//
+// AUDIT-2 finding H1. This property read Policy.Statements — the struct list Pack
+// carries alongside each document for `verify`'s benefit — which is the packer's
+// INPUT to rendering, not its output. Every widening this comment claims to catch
+// happens strictly downstream of that field: renderStatement builds the JSON from
+// the struct, so a renderer that emitted a wider NotAction, a looser condition
+// operator, or an extra exemption ARN left Statements untouched and the property
+// compared two unchanged copies of it. Both jam-checks confirmed it — appending
+// "*" to the rendered NotAction, and appending a wildcard role ARN to the rendered
+// ArnNotLike, each passed this property and were caught only by a golden file.
+//
+// So the document is parsed back with the same reader `verify` uses, and the model
+// evaluates THAT. Which also closes the gap the other way: a golden file says
+// "these bytes changed", and only a behavioral comparison says "and the change
+// permits more".
 func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawRenderable(rt, "a")
@@ -487,7 +550,7 @@ func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
 			// A compile the packer refuses. Nothing is attached, so nothing widened.
 			return
 		}
-		denied := deniedSet(packedStatements(union))
+		denied := deniedSet(reparsedStatements(rt, union))
 
 		for _, side := range []struct {
 			name string
@@ -499,7 +562,7 @@ func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
 					"renderable inputs, so this is a generator bug and it makes the property vacuous",
 					side.name, perr)
 			}
-			want := deniedSet(packedStatements(p))
+			want := deniedSet(reparsedStatements(rt, p))
 			if missing := diffDenied(want, denied); len(missing) > 0 {
 				rt.Fatalf("the union's PACKED POLICY widened permissions: %s's packed policy denied %d "+
 					"request(s) the union's permits.\nfirst missing: %s\n%s\nunion:\n%s",
@@ -507,6 +570,111 @@ func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestTheRenderedPropertyReadsTheDocumentAndNotTheStatementField is the pin on
+// H1's fix.
+//
+// The defect it prevents recurring is subtle in exactly the way that matters: the
+// property still passed, still ran its full generator, still reported the right
+// number of checks. Nothing about a green run said that its subject was one field
+// upstream of the bytes. So this asserts the two lists are DIFFERENT objects
+// derived by different code paths, by finding a case where they disagree — the
+// automation-role placeholder, which Policy.Statements carries symbolically and
+// the rendered document carries as a materialized ARN.
+//
+// If a future refactor makes reparsedStatements a synonym for packedStatements,
+// this fails, and the failure names the reason rather than a diff.
+func TestTheRenderedPropertyReadsTheDocumentAndNotTheStatementField(t *testing.T) {
+	m := &Merged{Statements: []Statement{{
+		SCPStatement: artifact.SCPStatement{
+			Sid:              "probe",
+			Effect:           "Deny",
+			Action:           []string{"config:StopConfigurationRecorder"},
+			ExemptPrincipals: artifact.ExemptPrincipals{{Principal: artifact.AutomationRolePlaceholder, Reason: "probe"}},
+		},
+	}}}
+	p := mustPack(t, m, packOpts())
+
+	fromField := packedStatements(p)
+	if len(fromField) != 1 {
+		t.Fatalf("expected one statement in the field, got %d", len(fromField))
+	}
+	if got := fromField[0].ExemptPrincipals; len(got) != 1 || got[0].Principal != artifact.AutomationRolePlaceholder {
+		t.Fatalf("Policy.Statements no longer carries the symbolic placeholder (%v); this test's premise "+
+			"is gone, so find another field on which the struct and the document disagree", got)
+	}
+
+	fromDoc := reparsedStatements(t, p)
+	if len(fromDoc) != 1 {
+		t.Fatalf("expected one statement parsed back from the document, got %d", len(fromDoc))
+	}
+	arns := fromDoc[0].Condition["ArnNotLike"]["aws:PrincipalArn"]
+	if len(arns) != 1 || arns[0] != testAutomationRole {
+		t.Fatalf("the reparsed statement does not carry the MATERIALIZED role ARN (%v, want [%s]); "+
+			"reparsedStatements is reading something other than Policy.Document, so the rendered "+
+			"monotonicity property is back to checking the packer's input", arns, testAutomationRole)
+	}
+	if strings.Contains(strings.Join(arns, ","), artifact.AutomationRolePlaceholder) {
+		t.Error("the reparsed condition still holds the placeholder, so the two lists are the same data " +
+			"and the rendered property is not reading the document")
+	}
+}
+
+// reparsedStatements is Pack's output read back the way AWS would return it: the
+// rendered document, parsed, mapped onto the statement type the behavioral model
+// evaluates.
+//
+// Across ALL policies, not the first. The bin packer distributes statements over
+// several documents, every document is attached to the same target, and a
+// restriction that landed in the second one is as effective as one in the first.
+// Reading only Policies[0] would report a widening every time a multi-document pack
+// happened to split the allowlists off.
+//
+// Exemptions come back as a rendered ArnNotLike condition rather than as
+// ExemptPrincipals, and that is left alone rather than reconstructed: the model
+// evaluates the condition form correctly (behavior.go's ArnNotLike case), and
+// reconstructing the struct field would be this helper re-deriving the very thing
+// the property is checking. Condition is where an over-wide exemption shows up, so
+// it has to arrive as a condition.
+func reparsedStatements(t require, p *Packed) []Statement {
+	var out []Statement
+	for _, pol := range p.Policies {
+		var parsed policyDocument
+		if err := json.Unmarshal([]byte(pol.Document), &parsed); err != nil {
+			t.Fatalf("policy %s is not readable JSON (%v); Pack asserts it parses before returning, so "+
+				"this is a packer bug rather than a test problem:\n%s", pol.Name, err, pol.Document)
+		}
+		for _, st := range parsed.Statement {
+			cond := artifact.Condition{}
+			for op, keys := range st.Condition {
+				cond[op] = map[string][]string{}
+				for k, v := range keys {
+					cond[op][k] = v.strings()
+				}
+			}
+			if len(cond) == 0 {
+				cond = nil
+			}
+			out = append(out, Statement{
+				SCPStatement: artifact.SCPStatement{
+					Sid:       st.Sid,
+					Effect:    st.Effect,
+					Action:    st.Action.strings(),
+					Resource:  st.Resource.strings(),
+					Condition: cond,
+				},
+				NotAction: st.NotAction.strings(),
+			})
+		}
+	}
+	return out
+}
+
+// require is the intersection of *testing.T and *rapid.T that reparsedStatements
+// needs, so one helper serves the property and the pin above it.
+type require interface {
+	Fatalf(format string, args ...any)
 }
 
 // TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals.

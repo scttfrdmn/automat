@@ -365,12 +365,44 @@ func TestTheGeneratorActuallyProducesMerges(t *testing.T) {
 	// Each rapid case draws several pairs rather than one, because the number of
 	// property cases is a flag the operator can lower (-rapid.checks) and this
 	// test's meaning should not depend on it.
+	//
+	// pairsPerCase went from 24 to 112 at AUDIT-2, and the reason is the more useful
+	// half of this test. Widening probeResources from two single-element lists to six
+	// entries — the shapes H5's key collisions needed — necessarily DILUTES guard
+	// collisions, because a guard must now agree on one resource list out of six rather
+	// than one out of two. The intersection count fell from 60 to 21 against an
+	// unchanged floor of 25, and this test said so.
+	//
+	// That is the trade stated plainly: reaching a new defect class cost collision
+	// density on the axis that can widen a policy. Two ways out, and only one is
+	// honest. Lowering minPerPath would make the number match the suite; drawing more
+	// pairs restores the density the floor was set to demand. The floor is the claim,
+	// so the sample size moves — and it moves to roughly four times the count that
+	// clears the floor, not to the smallest number that clears it, because a margin of
+	// a few merges is a test that fails on an unlucky seed rather than on a defect.
 	const (
-		pairsPerCase = 24
+		pairsPerCase = 112
 		minPerPath   = 25
 	)
 
+	// multiMemberResourceFloor is the second thing this test now measures, and it
+	// exists because of how H5 escaped.
+	//
+	// TestUnionIsMonotone was green over every run while being structurally incapable
+	// of reaching a CRITICAL widening: a key collision needs two members on some axis,
+	// and every probeResources entry was a single-element list. The assertion was
+	// sound; the input vocabulary could not produce the shape. Nothing about a passing
+	// run said so, which is the dangerous failure — a starved generator is
+	// indistinguishable from a correct implementation.
+	//
+	// So the generator's reach over its own input space is asserted, not assumed. If a
+	// future edit trims probeResources back to single-element lists for tidiness, this
+	// fails and names the reason, rather than the properties quietly going vacuous on
+	// the axis that hid a critical finding.
+	const multiMemberResourceFloor = 50
+
 	var sawIntersection, sawGrouping, sawDedupe, total int
+	var sawMultiMemberResource, sawEmptyResourceMember int
 	rapid.Check(t, func(rt *rapid.T) {
 		for i := 0; i < pairsPerCase; i++ {
 			a := drawStatement(rt, fmt.Sprintf("a%d", i))
@@ -381,6 +413,20 @@ func TestTheGeneratorActuallyProducesMerges(t *testing.T) {
 			sa := Statement{SCPStatement: a, Origins: []string{"a:0"}}
 			sb := Statement{SCPStatement: b, Origins: []string{"b:0"}}
 			total++
+
+			// The input-space measurements, taken before the merge-path ones,
+			// because they are claims about what was DRAWN rather than about what
+			// the merger did with it.
+			for _, st := range []Statement{sa, sb} {
+				if len(st.Resource) > 1 {
+					sawMultiMemberResource++
+				}
+				for _, r := range st.Resource {
+					if r == "" {
+						sawEmptyResourceMember++
+					}
+				}
+			}
 
 			if statementKey(sa) == statementKey(sb) {
 				sawDedupe++
@@ -405,8 +451,10 @@ func TestTheGeneratorActuallyProducesMerges(t *testing.T) {
 		}
 	})
 
-	t.Logf("%d generated pairs: %d exemption intersections, %d groupings, %d dedupes",
-		total, sawIntersection, sawGrouping, sawDedupe)
+	t.Logf("%d generated pairs: %d exemption intersections, %d groupings, %d dedupes", total,
+		sawIntersection, sawGrouping, sawDedupe)
+	t.Logf("input space over %d drawn statements: %d carried a multi-member resource list, %d carried "+
+		"an empty resource member", total*2, sawMultiMemberResource, sawEmptyResourceMember)
 
 	for _, c := range []struct {
 		n    int
@@ -422,18 +470,44 @@ func TestTheGeneratorActuallyProducesMerges(t *testing.T) {
 				"in that file needs to collide more", c.n, total, c.what, minPerPath)
 		}
 	}
+
+	// The input-space floors. A key collision needs two members on some axis, so a
+	// vocabulary with no multi-member list cannot reach the class of defect H5 was —
+	// and the properties would keep passing while unable to.
+	if sawMultiMemberResource < multiMemberResourceFloor {
+		t.Errorf("only %d of %d drawn statements carried a multi-member resource list, under the floor "+
+			"of %d. A key-collision widening needs two members on some axis to be expressible at all "+
+			"(AUDIT-2 H5), so with a vocabulary this thin TestUnionIsMonotone passes without being able "+
+			"to reach that class of defect. Restore the multi-element entries in probeResources",
+			sawMultiMemberResource, total*2, multiMemberResourceFloor)
+	}
+	if sawEmptyResourceMember < multiMemberResourceFloor {
+		t.Errorf("only %d of %d drawn statements carried an empty resource member, under the floor of "+
+			"%d. That member is the one H5 collision needing no control byte anywhere — {\"\"} keyed "+
+			"identically to an absent resource — so it is the shape most likely to recur from ordinary "+
+			"catalog data", sawEmptyResourceMember, total*2, multiMemberResourceFloor)
+	}
 }
 
 // narrowedAnExemption reports whether the merge closed a hole that one input
 // granted — the intersection actually doing something.
+//
+// The resource is read defensively: a statement with no resource denies on "*" once
+// rendered (pack.go), and a statement whose only resource is "" denies nothing
+// anywhere. Indexing Resource[0] unconditionally panicked on the first, which went
+// unnoticed only because probeResources had no empty entry until AUDIT-2 added one.
 func narrowedAnExemption(a, b Statement, merged []Statement) bool {
 	for _, in := range []Statement{a, b} {
 		for _, action := range in.Action {
 			for _, e := range in.ExemptPrincipals {
+				resource := "*"
+				if len(in.Resource) > 0 {
+					resource = in.Resource[0]
+				}
 				req := Request{
 					Principal: e.Principal,
 					Action:    action,
-					Resource:  in.Resource[0],
+					Resource:  resource,
 					Region:    "us-east-1",
 					// The generated conditions gate on this key, and a request that
 					// does not satisfy the guard is denied by nothing, so the
