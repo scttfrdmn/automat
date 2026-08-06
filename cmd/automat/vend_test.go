@@ -841,6 +841,78 @@ func TestVendRefusesToResumeAnotherProfilesRequest(t *testing.T) {
 	}
 }
 
+// TestVendWillNotAdoptAnAccountItWasNotAskedToVend is the same harm as the test
+// above, reached through a different door — and the door nobody had to type an id
+// into.
+//
+// vend adopts on an email match rather than creating a second account, because one
+// address belongs to exactly one AWS account (DESIGN §3, fact 11) and rule 4 needs a
+// re-run to be safe. Uniqueness makes the address identify one account; it does not
+// make that account automat's. Any account in the search containers holding the
+// address the profile resolves to was adopted: the profile's SCPs attached to it, a
+// birth certificate written for it, and — sitting under the root, where a fresh
+// account lands — a MoveAccount into the destination OU, which moves it out from
+// under every policy attached where it was.
+//
+// Two cases, and the second is the point. A name mismatch refuses. An account that
+// coincides on BOTH the address and the name is still adopted, because that is a
+// corroboration and not a proof: the authoritative check is automat:vended-by, which
+// needs a ListTagsForResource grant the vendor-role bundle does not contain
+// (docs/open-questions.md Q19). A test that asserted only the refusal would let a
+// reader believe the stronger claim.
+func TestVendWillNotAdoptAnAccountItWasNotAskedToVend(t *testing.T) {
+	// The address account.email_pattern resolves --name Genomics to.
+	const vendEmail = "research-admin+Genomics@dept.example.edu"
+
+	t.Run("a name mismatch refuses, and nothing moves", func(t *testing.T) {
+		g, f := vendWorld(t)
+		// Under the root, which is where an account automat did not vend most
+		// plausibly sits and where the adoption also produces a move.
+		victim := f.State.SeedAccount("Payroll", vendEmail, f.State.RootID)
+		before := f.State.ParentOf(victim)
+
+		_, stderr, err := runCLI(t, g, vendArgs(vendProfileJSON(t, nil))...)
+		if err == nil {
+			t.Fatalf("vend adopted account %s, which it was not asked to vend; it is now under %s "+
+				"carrying this profile's policies", victim, f.State.ParentOf(victim))
+		}
+		// Both names, so the operator can tell their own typo from somebody else's
+		// account — the two have entirely different remedies.
+		for _, want := range []string{"Payroll", "Genomics", vendEmail} {
+			if !strings.Contains(stderr, want) && !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not mention %q:\n%v\n%s", want, err, stderr)
+			}
+		}
+		if got := f.State.ParentOf(victim); got != before {
+			t.Errorf("the account moved from %s to %s despite the refusal", before, got)
+		}
+		if got := f.Vend.CallCount("MoveAccount"); got != 0 {
+			t.Errorf("MoveAccount was called %d times on an account vend refused to adopt", got)
+		}
+		// And it did not fall through to a create. That path exists: AWS would answer
+		// EMAIL_ALREADY_EXISTS and the operator would be told the address is in use
+		// somewhere automat cannot see, while automat is looking straight at it.
+		if got := f.Vend.CallCount("CreateAccount"); got != 0 {
+			t.Errorf("CreateAccount was called %d times after the refusal, so the refusal is a "+
+				"skip: AWS answers EMAIL_ALREADY_EXISTS and reports the wrong cause", got)
+		}
+	})
+
+	t.Run("both keys coinciding is still adopted, which is the limit of this check", func(t *testing.T) {
+		g, f := vendWorld(t)
+		adopted := f.State.SeedAccount("Genomics", vendEmail, testVendOU)
+
+		if _, _, err := runCLI(t, g, vendArgs(vendProfileJSON(t, nil))...); err != nil {
+			t.Fatalf("vend refused an account matching on both email and name, which breaks rule 4: "+
+				"the second run of an interrupted vend is exactly this state. %v", err)
+		}
+		if got := f.State.AccountIDs(); len(got) != 1 || got[0] != adopted {
+			t.Errorf("accounts are %v, want just the adopted %s — a second account means the "+
+				"idempotent re-run created one", got, adopted)
+		}
+	})
+}
+
 // TestVendRefusesValuesItWouldHaveToRecord is CLAUDE.md rule 8 at the CLI layer.
 //
 // Four flags whose values automat writes into a record a person reads back and types

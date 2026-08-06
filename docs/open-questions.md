@@ -695,3 +695,63 @@ reference PDFs behind broken links.
 
 Until then the state is disclosed in the profile's own citation note, which is where a
 human reads it, and this question is the record that a machine still cannot.
+
+### Q19 — the vendor-role bundle cannot read `automat:vended-by`, so `vend` cannot prove an account is its own
+
+`vend` adopts an existing account when one already holds the root email the environment
+profile resolves to, rather than creating a second one. It has to: an address belongs to
+exactly one AWS account anywhere in AWS (DESIGN §3, fact 11), so a re-run of an
+interrupted vend finds the account it made, and CLAUDE.md rule 4 makes that re-run safe.
+
+Email uniqueness makes the address identify **one** account. It does not make that account
+automat's. AUDIT-2 found that any account in the search containers holding that address was
+adopted: the profile's service control policies attached to it, a birth certificate written
+for it, and — sitting under the organization root, which is both where a fresh account
+lands and where an account nobody has organized most plausibly sits — a `MoveAccount` into
+the destination OU. An account has exactly one parent, so that move takes it out from under
+every policy attached where it was. This is the same harm `--resume` was hardened against
+earlier in the same audit, reached without typing anything: the attacker supplies no id,
+only an email pattern that happens to collide.
+
+**`automat:vended-by` is the tag that would settle it, and it exists for this.** It is
+applied at `CreateAccount` through `aws:RequestTag` precisely so a vended account is
+distinguishable from every other account in the organization. automat cannot read it:
+
+- `awsapi.OrgVendAPI` has no `ListTagsForResource` (the reason is recorded in
+  `internal/org/doc.go` — an account tag *ensure* that cannot read would be a blind write
+  dressed as a comparison, so the interface omits the read as well as the write);
+- `DescribeAccount`, which the role *does* grant, does not return tags;
+- so the check needs `organizations:ListTagsForResource` on account resources in the
+  published `vendor-role.cfn.yaml` and `vendor-role.tf`, which they do not contain.
+
+**Why the audit did not just add it.** Widening the bundle changes what an institution's
+central IT approved, and the bundle's whole argument is that a reviewer can read it and
+enumerate the blast radius (`TestREADMEMakesTheBlastRadiusArgument`). A new read action is
+small but it is not automat's to grant itself, and every deployed bundle would need
+redeploying before the check could be relied on — a check that silently degrades to nothing
+on an older bundle is worse than a documented gap. Three shapes:
+
+1. **Add `organizations:ListTagsForResource` for account resources to the bundle**, and
+   refuse to adopt an account not carrying `automat:vended-by` = the vending account. The
+   authoritative answer. Costs a bundle version, a redeploy, and a decision about what to
+   do on the older bundles: refuse to adopt at all (safe, breaks rule 4 for anyone who has
+   not redeployed) or fall back to the corroboration below (safe by default, and the
+   fallback is then the thing that ships forever).
+2. **Adopt only accounts automat's own evidence manifests record it as having vended.**
+   Needs no new grant, and it is a weaker guarantee than it sounds: the manifest is local
+   state, an operator vending from a second workstation legitimately has none, and rule 4's
+   re-run would then create a second account.
+3. **Require an explicit `--adopt <account-id>` for any adoption at all.** Strongest and
+   loudest, and it makes the ordinary interrupted re-run interactive, which is the case
+   rule 4 exists to keep boring.
+
+**Settled by a maintainer decision**, because (1) alters the published bundle and (3)
+alters the CLI surface — both reserved by CLAUDE.md's "ask before".
+
+**What ships in the meantime.** `findAccountByEmail` requires the account NAME to match
+the name the vend was asked for, and refuses to adopt otherwise. It is strictly tighter
+than what it replaced and free — `ListAccountsForParent` already returns the name — and it
+is a corroboration, not a proof: an account coinciding on both the address and the name is
+still adopted. `TestVendWillNotAdoptAnAccountItWasNotAskedToVend` asserts both halves,
+including the still-adopted case, so the check cannot be read as the guarantee this
+question is about.

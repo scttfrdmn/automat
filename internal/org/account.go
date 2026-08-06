@@ -544,6 +544,34 @@ func (e *Ensurer) EnsurePlacement(ctx context.Context, accountID, destination st
 // treats the address as one account key, and an ensure operation that decided
 // Lab@example.edu and lab@example.edu were different accounts would create the
 // second one and then be told by AWS that they are the same.
+//
+// # The name must corroborate, or this refuses to adopt (AUDIT-2)
+//
+// Email uniqueness makes an address identify ONE account. It does not make that
+// account automat's. An email match alone adopted any account in the search
+// containers holding that address: automat attached the profile's SCPs to it,
+// wrote it a birth certificate, and — when it sat under the root rather than in the
+// destination — moved it into the OU, which moves it out from under every SCP that
+// bound it before. Same harm the resume path was hardened against, reached through
+// a different door: there the caller supplied a request id, here an email.
+//
+// So the account name must also match the name automat was asked to vend. That is
+// strictly tighter than what came before and costs nothing — ListAccountsForParent
+// already returns it. It is a corroboration and not a proof, and the difference is
+// stated plainly rather than left for a reader to assume: an account that genuinely
+// coincides on BOTH the address and the name is still adopted.
+//
+// The authoritative check is automat:vended-by, and automat cannot make it. The tag
+// is applied at CreateAccount for exactly this purpose, but OrgVendAPI has no
+// ListTagsForResource (see the note in doc.go) and DescribeAccount does not return
+// tags — so reading it needs a grant the published vendor-role bundle does not
+// contain. Widening that bundle is the maintainer's call, not an audit fix;
+// docs/open-questions.md Q19 records it.
+//
+// Note this does not contradict "by email, never by name" above. Email remains the
+// key that IDENTIFIES; the name is a second condition on adopting what it found.
+// Keying on name alone would be the bug that comment describes, because two
+// accounts may share a name.
 func (e *Ensurer) findAccountByEmail(ctx context.Context, spec AccountSpec) (id, parent string, err error) {
 	want := strings.ToLower(spec.Email)
 	for _, container := range dedupe(spec.SearchParents) {
@@ -565,6 +593,23 @@ func (e *Ensurer) findAccountByEmail(ctx context.Context, spec AccountSpec) (id,
 			}
 			for _, a := range out.Accounts {
 				if strings.ToLower(aws.ToString(a.Email)) == want {
+					if gotName := aws.ToString(a.Name); gotName != spec.Name {
+						// Refused, not skipped. A skip would fall through to
+						// CreateAccount, AWS would answer EMAIL_ALREADY_EXISTS, and
+						// the operator would be told the address is in use somewhere
+						// they cannot see — when automat is looking straight at it.
+						return "", "", fmt.Errorf("account %s under %s already has root email %s, but it is "+
+							"named %q and this vend is for %q, so automat will not adopt it.\n"+
+							"An address identifies exactly one AWS account (DESIGN §3, fact 11), which is "+
+							"why automat adopts on an email match rather than creating a second account. It "+
+							"does not make that account automat's to govern: adopting attaches this "+
+							"environment profile's service control policies to it, writes it a birth "+
+							"certificate, and moves it into the profile's destination OU — which moves it "+
+							"out from under every policy attached where it is now.\n"+
+							"If this account is yours to vend, re-run with --name %s. If it is not, use a "+
+							"different address; a plus-addressed variant of the same mailbox is enough",
+							aws.ToString(a.Id), container, spec.Email, gotName, spec.Name, gotName)
+					}
 					return aws.ToString(a.Id), container, nil
 				}
 			}
