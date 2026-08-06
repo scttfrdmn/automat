@@ -51,6 +51,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // SecretFileMode is the only mode a file holding a secret may have.
@@ -133,6 +134,63 @@ func ReadConfig(path string, limit int64) ([]byte, error) {
 // comparison with it, never against the path a second time.
 func OpenSecret(path string) (*os.File, fs.FileInfo, error) {
 	return openChecked(path, true)
+}
+
+// OpenChecked opens name for reading inside an ALREADY RESOLVED root, applying the
+// same descriptor discipline openChecked applies to a path.
+//
+// The difference from ReadConfig is which resolution happened and when. ReadConfig
+// takes a path and resolves its directory itself, which is right when the directory
+// is the caller's only handle on the location. This one is for a caller that resolved
+// the directory earlier — because it is going to read AND write through it, and the
+// two must reach the same place by construction rather than by both being handed the
+// same string. internal/evidence's Dir is that caller.
+//
+// A missing file is returned as fs.ErrNotExist unwrapped, so a caller can use
+// errors.Is: for an evidence chain, "no manifest yet" is the first vend, not an error.
+//
+// shown is the path in error messages: root-relative names are what the syscalls take.
+func OpenChecked(root *os.Root, name, shown string) (*os.File, fs.FileInfo, error) {
+	if di, derr := root.Stat("."); derr == nil {
+		if perm := di.Mode().Perm(); perm&0o022 != 0 && di.Mode()&fs.ModeSticky == 0 {
+			return nil, nil, fmt.Errorf("the directory holding %s is mode %#o, writable beyond its "+
+				"owner — anyone who can write it can replace the file, so its own mode is not a "+
+				"protection. Run: chmod 700 %s", shown, perm, filepath.Dir(shown))
+		}
+	}
+
+	li, err := root.Lstat(name)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("inspect %s: %w", shown, err)
+	}
+	if li.Mode()&fs.ModeSymlink != 0 {
+		return nil, nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not read it "+
+			"through one: whoever controls the link controls what is read. Replace it with the file "+
+			"itself, or point the reference at the target directly",
+			shown, LinkTarget(filepath.Dir(shown), name))
+	}
+	if !li.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("%s is not a regular file (mode %s) — automat reads from files, "+
+			"not from devices, sockets, or pipes", shown, li.Mode())
+	}
+
+	f, err := root.OpenFile(name, os.O_RDONLY|OpenNonBlock, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open %s: %w", shown, err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("inspect the open %s: %w", shown, err)
+	}
+	if err := checkOpen(shown, li, fi, false); err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+	return f, fi, nil
 }
 
 // openChecked is the shared body of OpenSecret and ReadConfig. secret selects the
@@ -254,6 +312,113 @@ func checkOpen(path string, li, fi fs.FileInfo, secret bool) error {
 	return nil
 }
 
+// CreateChecked opens name inside root for writing, applying on the write side the
+// same discipline openChecked applies on the read side, and returns the descriptor
+// every subsequent operation must use.
+//
+// shown is the path to name in error messages: root-relative names are what the
+// syscalls take, and a full path is what an operator can act on.
+//
+// The returned file is positioned at offset zero and NOT truncated. Truncation is
+// the caller's, because a caller that writes shorter content than the file already
+// holds must truncate and one that does not must not, and getting that wrong is a
+// silently corrupt file rather than a refusal. Callers close it, including alongside
+// an error: a non-nil file may be returned with a non-nil error, because the checks
+// that matter most are the ones made after the open.
+//
+// # Why this is not just root.OpenFile
+//
+// The read path in this package exists because a check on a name followed by an
+// action on the same name is two operations on two potentially different objects.
+// Writing has that problem and one more: a read through a substituted path leaks,
+// and a write through one DESTROYS. Three shapes each pass every mode check —
+//
+//   - a symlink whose target is inside the root, which os.Root follows (see the
+//     package comment; O_NOFOLLOW does not stop it) and through which O_CREATE
+//     silently creates or clobbers the target;
+//   - a hardlink, which is a regular file by every check Lstat can make, and writing
+//     through which truncates whatever else shares the inode;
+//   - a FIFO, on which an open for writing blocks until a reader appears — so
+//     automat hangs with no output instead of refusing.
+//
+// AUDIT-2 found all three reachable at the evidence manifest path, where the file
+// being written is the document an auditor is shown. They were unreachable at the
+// bundle and login paths only because those had each grown the checks inline. This
+// function is where they live now, which is the same reason the read side is here.
+func CreateChecked(root *os.Root, name, shown string, mode fs.FileMode) (*os.File, error) {
+	// O_EXCL first, so that "did it exist" and "create it" are one atomic operation
+	// rather than a test followed by a create. Success means there was nothing there
+	// to substitute, which is both the common case and the one with nothing to check.
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err == nil {
+		return f, chmodChecked(f, shown, mode)
+	}
+	if !errors.Is(err, fs.ErrExist) {
+		return nil, fmt.Errorf("create %s: %w", shown, err)
+	}
+
+	// It exists. Lstat through the root before opening, because opening is the thing
+	// that must not happen if this is a symlink.
+	li, err := root.Lstat(name)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s: %w", shown, err)
+	}
+	if li.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not write through "+
+			"one: whoever controls the link chooses where the content lands, and a write lands on "+
+			"the target rather than on the path you named. Remove it, or name the target directly",
+			shown, LinkTarget(filepath.Dir(shown), name))
+	}
+	if !li.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s exists and is not a regular file (mode %s) — automat writes to "+
+			"files, not to devices, sockets, or pipes; remove it or choose another path",
+			shown, li.Mode())
+	}
+
+	// No O_CREATE: it exists, and re-asking for creation here would reintroduce the
+	// clobber-through-a-link the Lstat above just refused. OpenNonBlock covers the
+	// FIFO the Lstat cannot — one swapped in after the check — which would otherwise
+	// block this open forever.
+	f, err = root.OpenFile(name, os.O_WRONLY|OpenNonBlock, mode)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", shown, err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return f, fmt.Errorf("inspect the open %s: %w", shown, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return f, fmt.Errorf("%s is not a regular file (mode %s) — automat writes to files, not to "+
+			"devices, sockets, or pipes", shown, fi.Mode())
+	}
+	// The identity tie. Without it the Lstat and the open are two independent
+	// resolutions, and whoever can write this directory decides which object the
+	// second one reaches: the Lstat passes on a regular file they then replace.
+	if !os.SameFile(li, fi) {
+		return f, fmt.Errorf("%s changed while automat was opening it, so the file it inspected is "+
+			"not the file it opened — something else is writing that path. Nothing was written; "+
+			"investigate before retrying", shown)
+	}
+	if n, ok := LinkCount(fi); ok && n > 1 {
+		return f, fmt.Errorf("%s has %d hard links — writing it would overwrite whatever else "+
+			"shares that file, which automat was never pointed at. Remove %s or choose another path",
+			shown, n, shown)
+	}
+	return f, chmodChecked(f, shown, mode)
+}
+
+// chmodChecked fixes the mode on the descriptor rather than trusting O_CREATE, which
+// is masked by the umask and ignored entirely for a file that already exists.
+//
+// Before any content is written, which is what makes a write to an inode automat's
+// user does not own fail closed: fchmod returns EPERM for a non-owner.
+func chmodChecked(f *os.File, shown string, mode fs.FileMode) error {
+	if err := f.Chmod(mode); err != nil {
+		return fmt.Errorf("set permissions on %s to %#o: %w", shown, mode.Perm(), err)
+	}
+	return nil
+}
+
 // EnsureDir resolves dir and returns a root scoped to it, creating it if needed
 // and refusing to operate through a symlink standing where the directory belongs.
 //
@@ -319,6 +484,110 @@ func EnsureDir(dir string, mode fs.FileMode) (*os.Root, error) {
 	}
 	return root, nil
 }
+
+// EnsureDirUnder resolves base by name and then creates rel beneath it ONE
+// COMPONENT AT A TIME through descriptors, refusing a symlink at any component of
+// rel.
+//
+// The split between the two arguments is the whole point, and it is a trust
+// boundary rather than a convenience. base is operator territory — a working
+// directory, or a path from a CLI flag — and is resolved by name, because automat
+// cannot verify a location it was told to use and because an operator naming a path
+// through a symlinked parent is naming a real place. rel is DOCUMENT territory: the
+// environment profile's baseline.evidence.local_dir, whose components automat is
+// obliged to distrust exactly as it distrusts every other field of a signed
+// document it did not write.
+//
+// # Why EnsureDir is not enough for this
+//
+// EnsureDir creates everything above its final component with os.MkdirAll, which
+// resolves by name, and checks only the last one. Its doc comment says so and a test
+// asserts it, because on darwin /tmp is itself a symlink and refusing every symlinked
+// parent would refuse every temp directory. That limit is correct for a flag-derived
+// path and wrong for a document-derived one: AUDIT-2 (H1) reproduced a profile
+// carrying `local_dir: "out/evidence"` against a working directory containing a
+// symlink named `out`, and the evidence manifest landed outside the working
+// directory while the birth certificate printed the path inside it. automat reported
+// one location and wrote to another, which for the document an auditor is shown is
+// the worst available outcome.
+//
+// Confinement alone does not close it either. os.Root refuses an ESCAPING symlink,
+// so the root that comes back is confined — to wherever the link pointed. The escape
+// happens while the root is being built, not while it is being used, which is why
+// this descends component by component instead of resolving the joined path once.
+func EnsureDirUnder(base, rel string, mode fs.FileMode) (*os.Root, error) {
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", base, err)
+	}
+
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return root, nil
+	}
+	if filepath.IsAbs(rel) {
+		_ = root.Close()
+		return nil, fmt.Errorf("%s must be a relative path, and %q is absolute: it is read from a "+
+			"document, and a document does not get to choose a location outside the directory automat "+
+			"was pointed at", relSubject(rel), rel)
+	}
+
+	shown := base
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		shown = filepath.Join(shown, part)
+		next, derr := descend(root, part, shown, mode)
+		_ = root.Close()
+		if derr != nil {
+			return nil, derr
+		}
+		root = next
+	}
+	return root, nil
+}
+
+// descend creates or verifies one component and returns a root scoped to it.
+//
+// The Mkdir through the parent's descriptor is what makes this safe to repeat: it
+// either wins, or reports that the name is taken, and the taken case is inspected
+// rather than assumed to be the directory that was wanted. There is no window
+// between a test and a create because there is no test.
+func descend(parent *os.Root, name, shown string, mode fs.FileMode) (*os.Root, error) {
+	err := parent.Mkdir(name, mode)
+	switch {
+	case err == nil:
+	case errors.Is(err, fs.ErrExist):
+		fi, lerr := parent.Lstat(name)
+		if lerr != nil {
+			return nil, fmt.Errorf("inspect the existing %s: %w", shown, lerr)
+		}
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not create or "+
+				"write through one on a path read from a document: whoever controls the link chooses "+
+				"where the files land, and automat would report the path you named while writing "+
+				"somewhere else. Remove it, or name the target directly",
+				shown, LinkTarget(filepath.Dir(shown), name))
+		}
+		if !fi.IsDir() {
+			return nil, fmt.Errorf("%s exists and is not a directory (mode %s)", shown, fi.Mode())
+		}
+	default:
+		return nil, fmt.Errorf("create %s: %w", shown, err)
+	}
+
+	root, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", shown, err)
+	}
+	return root, nil
+}
+
+// relSubject names what a rejected relative path was, for one error message. Kept
+// separate so the message reads as a statement about the field rather than about a
+// variable.
+func relSubject(string) string { return "a directory read from a document" }
 
 // LinkTarget renders the target of a symlink for an error message, already quoted.
 //

@@ -131,6 +131,7 @@ func (m *Manifest) Validate() error {
 		m.Records[i].validate(fmt.Sprintf("records[%d]", i), &p)
 	}
 	m.validateChain(&p)
+	m.validateHeaderAgainstRecords(&p)
 
 	if len(p.list) == 0 {
 		return nil
@@ -545,6 +546,122 @@ func (m *Manifest) validateChain(p *problems) {
 					"checked here")
 		}
 	}
+}
+
+// validateHeaderAgainstRecords binds the manifest header to the chain it heads.
+//
+// # Why this exists (AUDIT-2 H4)
+//
+// CanonicalRecordJSON hashes a Record. It does not hash Meta, and nothing else did
+// either — so the header was outside every record_sha256 and therefore outside every
+// signature. Three consequences, all reproduced:
+//
+//  1. A manifest could be RELABELLED to any account and any organization without
+//     disturbing a single hash. The records still named the original account in
+//     operator.account_id and target.account_id; the header said otherwise; the file
+//     verified. An auditor reading the header reads the wrong account.
+//  2. A SIGNED record transplanted from one manifest into another verified unchanged,
+//     because the bytes it was signed over never named the account.
+//  3. A freshly built, never-tampered manifest whose header and records disagreed was
+//     valid — so the defect was reachable by an ordinary bug, not only by an attacker.
+//
+// Covering Meta in the record hash was the other candidate fix and is the wrong one:
+// it would make every record's hash depend on the header, so correcting a typo in
+// meta.created_at would invalidate the whole chain and every signature on it. The
+// header is not evidence; it is a label ON evidence. The right property is not "the
+// label is signed" but "the label cannot disagree with what is signed" — which is
+// checkable from the records themselves, on every read, at no cost to the chain.
+//
+// # What is compared, and what deliberately is not
+//
+// target.account_id, against meta.account_id, on every record that has a target. The
+// target is what the operation acted ON, so it is the field that says which account
+// the record is evidence about, and meta.account_id claims the same thing for the
+// whole file.
+//
+// operator.account_id is NOT compared, and the reason is worth stating because the
+// comparison looks obviously right. The operator is the principal that performed the
+// operation — in every state automat runs in, the MANAGEMENT account, not the vended
+// one (cmd/automat/vend.go passes caller.AccountID). A check comparing it to
+// meta.account_id would fire on every correct manifest automat has ever written. That
+// it reads as the natural thing to compare is exactly why it is named here rather
+// than left out silently.
+//
+// Nothing is compared against meta.organization_id: no record field carries an
+// organization id, so there is nothing in the chain to bind it to. That is a real
+// residual — the org id in the header remains freely rewritable — and it is recorded
+// in the audit rather than papered over with a check that cannot be written.
+//
+// created_at is compared as a lower bound on records[0].timestamp, and this check is
+// NOT a genesis anchor. Saying precisely what it is worth matters more than the check
+// does, because a weak check described as a strong one is worse than no check:
+//
+//   - It does NOT catch head truncation. That was the hope and it was wrong. After a
+//     head truncation created_at ≤ the dropped record ≤ the surviving record, so the
+//     bound is satisfied by construction. Reproduced and confirmed during AUDIT-2.
+//   - What it does catch is created_at rewritten FORWARD — relabelling a manifest as
+//     newer than the operations in it, which is how a chain gets presented as evidence
+//     about a period it does not cover.
+//
+// Equality would catch head truncation, and it is not available: records[0].timestamp
+// and created_at come from the same run but not from one value, and the golden manifest
+// has them a second apart deliberately. Equality was tried; it rejects the golden
+// manifest, the schema-conformance fixture, and
+// TestClockStepsBackwardsAreNotTampering. An operation-set rule ("a chain opens with
+// account-create") is also unavailable, because a vend that resumes or adopts an
+// existing account legitimately opens its chain with scp-ensure.
+//
+// So head truncation remains open, and closing it needs a field v1 does not have — a
+// genesis hash or a first-record timestamp in Meta, covered by nothing and compared to
+// everything. That is a schema change, which is the maintainer's call under CLAUDE.md
+// rule 6. It is disclosed in doc.go and carried in the audit rather than papered over
+// here.
+//
+// The bound applies to records[0] only, because timestamps need not increase (see the
+// package comment and
+// TestTheSchemaAcceptsWhatGoAccepts/a_timestamp_that_steps_backwards): an NTP
+// correction between two vends is not tampering, so a later record may legitimately
+// predate an earlier one and therefore predate created_at.
+//
+// meta.id is NOT compared, even though vend sets it to the account id. Nothing in the
+// schema or this package requires that, an operator may legitimately name a manifest
+// something else, and a check that guesses at a convention is a check that fires on
+// correct documents.
+func (m *Manifest) validateHeaderAgainstRecords(p *problems) {
+	for i := range m.Records {
+		r := &m.Records[i]
+		path := fmt.Sprintf("records[%d]", i)
+
+		if got := targetAccount(r); m.Meta.AccountID != "" && got != "" && got != m.Meta.AccountID {
+			p.add(path+".target.account_id", fmt.Sprintf("names account %s but the manifest header says "+
+				"the manifest is about %s", safe(got), safe(m.Meta.AccountID)),
+				"a manifest's header and its records must name the same account: the header is outside "+
+					"every record hash and every signature, so a header that disagrees with the chain "+
+					"is either a relabelled manifest or a record filed under the wrong account, and "+
+					"both read to an auditor as evidence about an account they are not about")
+		}
+		if i == 0 && m.Meta.CreatedAt != "" && r.Timestamp != "" && r.Timestamp < m.Meta.CreatedAt {
+			p.add(path+".timestamp", fmt.Sprintf("is %s, before the manifest's created_at of %s",
+				safe(r.Timestamp), safe(m.Meta.CreatedAt)),
+				"the first record cannot predate the manifest that contains it: the manifest is created "+
+					"and its first record appended in the same run. created_at is outside every record "+
+					"hash, so this is what notices it being moved FORWARD — a manifest relabelled as "+
+					"newer than the operations it contains is a chain presented as evidence about a "+
+					"period it does not cover")
+		}
+	}
+}
+
+// targetAccount is the target's account id, or "" if there is no target.
+//
+// Not a method on Target, because the nil case is the whole point: most records have
+// no target and a nil dereference in a validator is a crash on the document it exists
+// to reject.
+func targetAccount(r *Record) string {
+	if r.Target == nil {
+		return ""
+	}
+	return r.Target.AccountID
 }
 
 func knownOperation(o Operation) bool {

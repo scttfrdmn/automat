@@ -212,11 +212,21 @@ func (m *Manifest) Write(path string) error {
 	}
 	defer func() { _ = root.Close() }()
 
+	return writePair(root, base, path, dir, data)
+}
+
+// writePair performs the temp-file-first write of one manifest through an already
+// resolved directory.
+//
+// Shared by Write and by Dir.Write so the ordering, the failure message, and the
+// cleanup exist once. dir is used only to render the temp file's path in messages;
+// every syscall goes through root.
+func writePair(root *os.Root, base, shown, dir string, data []byte) error {
 	tmp := ".automat-" + base + ".tmp"
 	if err := writeThrough(root, tmp, filepath.Join(dir, tmp), data); err != nil {
 		return err
 	}
-	if err := writeThrough(root, base, path, data); err != nil {
+	if err := writeThrough(root, base, shown, data); err != nil {
 		// The temp file is left in place deliberately: it holds the complete new
 		// chain, and the named file may now be short.
 		return fmt.Errorf("%w — the complete manifest was written to %s first and is still there; "+
@@ -234,17 +244,31 @@ func (m *Manifest) Write(path string) error {
 //
 // shown is the path to name in error messages: root-relative names are what the
 // syscalls take and full paths are what an operator can act on.
+//
+// # The open is safeio's, and it was not always (AUDIT-2 H2)
+//
+// This function used to open the file itself, with a bare
+// root.OpenFile(name, O_WRONLY|O_CREATE). os.Root confined the write, and
+// confinement is not the whole property: within the directory, a symlink, a
+// hardlink, or a FIFO planted at either name was written through, truncated
+// through, or hung on. All three were reproduced against a real manifest —
+// including a hardlink landing manifest bytes on a file entirely outside the root,
+// which no confinement can prevent because a hardlink is not a path.
+//
+// The manifest's *real* name looked defended, because Write's caller reads through
+// safeio.ReadConfig first and a planted non-manifest fails to parse. That is a JSON
+// parser standing in for a filesystem check, and the sibling temp name — derived,
+// predictable from the account id, and written FIRST — had no such accident
+// covering it. The checks belong to the writer, so the writer now asks for them.
 func writeThrough(root *os.Root, name, shown string, data []byte) error {
-	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE, manifestFileMode)
+	f, err := safeio.CreateChecked(root, name, shown, manifestFileMode)
+	if f != nil {
+		defer func() { _ = f.Close() }()
+	}
 	if err != nil {
-		return fmt.Errorf("create %s: %w", shown, err)
+		return err
 	}
-	defer func() { _ = f.Close() }()
 
-	// Before Truncate and before Write: see the mode note on Write.
-	if err := f.Chmod(manifestFileMode); err != nil {
-		return fmt.Errorf("set permissions on %s: %w", shown, err)
-	}
 	if err := f.Truncate(0); err != nil {
 		return fmt.Errorf("write %s: %w", shown, err)
 	}

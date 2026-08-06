@@ -39,6 +39,33 @@
 // two chains that disagree about their own length are noticeable. None of that is
 // in this package: what is here is the local copy and the invariants over it.
 //
+// Truncation from the HEAD is the same operation and the more useful one, and this
+// section used to name only the tail. Dropping records[0], renumbering, and
+// re-anchoring the new first record at 64 zeros removes the account-create record —
+// the one naming who created the account and under whose credentials — and what
+// remains reads as a vend that began at SCP attachment. Nothing in an UNSIGNED chain
+// detects it: sequence density, links, and terminality can all be recomputed, and
+// meta.created_at cannot help, because after the truncation it still precedes the
+// surviving first record. That was checked, hoping otherwise.
+//
+// Signatures do catch it, because a record's previous_sha256 is inside its
+// record_sha256, so re-anchoring invalidates the signature. But that clause is
+// conditional in a way worth stating rather than implying: a verifier is not told when
+// a signature is MISSING. VerifyChain skips an unsigned record (see chain.go), which is
+// deliberate — an operator who adopts a key partway through has a legitimately mixed
+// chain, and TestAMixedChainVerifiesTheSignedRecords holds that shape. So someone who
+// can rewrite the file can also delete the signatures they invalidated, and the result
+// verifies clean. Manifest.SignatureCoverage is how a reader asks the question the
+// verifier's silence does not answer; a caller that requires full coverage must check
+// it, because nothing infers it.
+//
+// So, plainly: in v1, head truncation of an unsigned chain is undetected from the local
+// copy alone, and of a signed chain is detected only by a reader who checks signature
+// coverage. Closing it properly needs a field this schema does not have — a genesis
+// anchor in the header, bound to records[0] — and that is a versioned-contract change
+// rather than something a validator can add. The external anchor above is the
+// compensating control for both directions until then.
+//
 // # The terminal record, and why the Go side has to enforce half of it
 //
 // A chain may end deliberately, with a custody-transfer record: the account is

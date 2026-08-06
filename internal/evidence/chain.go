@@ -6,6 +6,8 @@ package evidence
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // ErrClosed is returned by Append against a manifest whose chain has already been
@@ -178,6 +180,14 @@ func (m *Manifest) VerifyChain(verifier Verifier) error {
 			// the reader after the key rather than after the edit.
 			continue
 		}
+		// A record with no signature is skipped rather than flagged, and that is
+		// deliberate: an operator who adopts a signing key partway through has a
+		// legitimately mixed chain (TestAMixedChainVerifiesTheSignedRecords). The
+		// cost is that a DELETED signature is indistinguishable from one that was
+		// never written, so an adversary who rewrites the file can also strip the
+		// signatures they invalidated. That is why SignatureCoverage exists: the
+		// leniency stays here, where it is right, and a caller who needs the stronger
+		// property asks for it rather than inferring it from silence (AUDIT-2 H3).
 		if verifier == nil || r.Signature == nil {
 			continue
 		}
@@ -195,4 +205,84 @@ func (m *Manifest) VerifyChain(verifier Verifier) error {
 		Subject:  "evidence manifest " + safe(m.Meta.ID) + " chain",
 		Problems: p.list,
 	}
+}
+
+// SignatureCoverage reports how many records in the chain carry a signature, and
+// which do not.
+//
+// # Why a report rather than a rule (AUDIT-2 H3)
+//
+// VerifyChain skips an unsigned record, for a reason that is right and that is not
+// being revisited: a chain signed from record 3 onward is what an operator who adopted
+// a key partway through legitimately has, and refusing it would refuse a correct
+// document. But the consequence, reproduced during the audit, is that a signature can
+// be REMOVED without a word — so a prefix-truncated chain whose now-invalid signatures
+// were deleted verifies clean under the real verifier. Signing is offered in doc.go as
+// the mitigation for truncation, and that mitigation does not hold if it can be taken
+// off one record at a time in silence.
+//
+// The gap was never the leniency. It was that nothing let a reader ASK. A verifier
+// that reports "no signature problems" over a chain with no signatures at all is
+// telling the truth and answering a different question than the one being asked.
+//
+// So this counts. Signed is how many records carry a signature; Unsigned lists the
+// indices that do not, in order. A caller that requires full coverage compares Signed
+// against len(m.Records) and says which records are missing — that is a policy
+// decision about a particular chain, which belongs to the caller, not to the format.
+//
+// Costs nothing and reads nothing: no hashing, no verification, no key. Whether a
+// signature VERIFIES is VerifyChain's question; whether one is THERE is this one.
+func (m *Manifest) SignatureCoverage() SignatureCoverageReport {
+	rep := SignatureCoverageReport{Total: len(m.Records)}
+	for i := range m.Records {
+		if m.Records[i].Signature != nil {
+			rep.Signed++
+			continue
+		}
+		rep.Unsigned = append(rep.Unsigned, i)
+	}
+	return rep
+}
+
+// SignatureCoverageReport is what SignatureCoverage returns.
+type SignatureCoverageReport struct {
+	// Total is len(m.Records).
+	Total int
+	// Signed is how many carry a signature.
+	Signed int
+	// Unsigned holds the indices that do not, ascending. Nil when all are signed —
+	// distinct from empty only in the way Go makes them distinct, and callers should
+	// test Complete rather than this.
+	Unsigned []int
+}
+
+// Complete reports whether every record in the chain carries a signature.
+//
+// A chain with no records is not complete: an empty manifest is refused by Validate
+// anyway, and "vacuously fully signed" is the wrong answer to give a caller who asked
+// whether the evidence is signed.
+func (r SignatureCoverageReport) Complete() bool { return r.Total > 0 && r.Signed == r.Total }
+
+// Describe renders the report for an operator, naming the unsigned records.
+//
+// One line, and it names the indices rather than saying "some records": a reader told
+// that coverage is partial and not told where has to go count by hand, and the count
+// is the thing that was just done for them.
+func (r SignatureCoverageReport) Describe() string {
+	switch {
+	case r.Total == 0:
+		return "the chain has no records"
+	case r.Signed == 0:
+		return fmt.Sprintf("none of the %d records are signed", r.Total)
+	case r.Complete():
+		return fmt.Sprintf("all %d records are signed", r.Total)
+	}
+	parts := make([]string, len(r.Unsigned))
+	for i, ix := range r.Unsigned {
+		parts[i] = strconv.Itoa(ix)
+	}
+	return fmt.Sprintf("%d of %d records are signed; records %s carry no signature, so nothing "+
+		"about them is attested — and a signature that was removed does not read differently from "+
+		"one that was never written",
+		r.Signed, r.Total, strings.Join(parts, ", "))
 }
