@@ -588,8 +588,21 @@ func TestEnsureAccountValidation(t *testing.T) {
 			"outside automat's",
 		},
 		{
-			// A resume needs nothing else: the request id identifies the create.
-			"resume needs nothing else", AccountSpec{RequestID: "car-exam0001"}, "",
+			// This subtest used to be named "resume needs nothing else" and assert
+			// nil, which is AUDIT-2's critical finding written down as an
+			// expectation. The request id does identify the create at AWS — that
+			// part was never wrong — but it does not say whose create it is, and it
+			// is printed on the birth certificate and recorded in the manifest, so
+			// it is not a secret either. A resume must therefore still carry the
+			// email checkResumedAccount compares against.
+			"resume without the email", AccountSpec{RequestID: "car-exam0001"}, "fact 11",
+		},
+		{
+			// A resume needs the email and NOT the name or the search parents: the
+			// name is not a key (two accounts may share one), and a resume reads the
+			// account's parent rather than hunting for it.
+			"resume with the email alone",
+			AccountSpec{RequestID: "car-exam0001", Email: testEmail}, "",
 		},
 	}
 	for _, tt := range tests {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -1163,10 +1162,20 @@ func writeVendEvidence(in *vendInput, st *vendState) (string, error) {
 	if st == nil || st.AccountID == "" || len(st.Records) == 0 {
 		return "", nil
 	}
-	dir := in.Profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
-	path := filepath.Join(dir, st.AccountID+".json")
+	// The directory is resolved ONCE, and the read and the write both go through
+	// that descriptor. `local_dir` comes out of the environment profile, so its
+	// components are a document's choice rather than the operator's, and
+	// evidence.OpenDir is what keeps a symlink planted at one of them from sending
+	// the manifest somewhere other than the path this function returns for printing.
+	// AUDIT-2 H1: the two used to disagree, silently.
+	dir, err := evidence.OpenDir(".", in.Profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir))
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = dir.Close() }()
+	path := dir.Path(st.AccountID)
 
-	m, err := evidence.LoadOrNew(path, st.AccountID, st.AccountID, st.OrgID, in.Now, nil)
+	m, err := dir.LoadOrNew(st.AccountID, st.AccountID, st.OrgID, in.Now, nil)
 	if err != nil {
 		return "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"The account exists either way. automat refuses to continue a chain it cannot read, "+
@@ -1179,7 +1188,7 @@ func writeVendEvidence(in *vendInput, st *vendState) (string, error) {
 				st.Records[i].Operation, st.AccountID, aerr)
 		}
 	}
-	if err := m.Write(path); err != nil {
+	if err := dir.Write(m, st.AccountID); err != nil {
 		return "", err
 	}
 	return path, nil

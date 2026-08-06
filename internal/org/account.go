@@ -172,6 +172,35 @@ func (e *Ensurer) EnsureAccount(ctx context.Context, spec AccountSpec) (AccountR
 // In ModePlan this reports rather than waits: a plan that blocked for five
 // minutes on somebody else's in-flight create would not be a plan. VerbWait says
 // so explicitly instead of guessing at the outcome.
+//
+// # The request id is not a capability (AUDIT-2)
+//
+// This used to treat the id as sufficient on its own, with the comment "a resume
+// needs nothing else: the request id identifies the create at AWS, and the name and
+// email are only used for message text". Both halves of that were true and the
+// conclusion did not follow. A create-account request id is not a secret: automat
+// prints it on the birth certificate and records it in the evidence manifest,
+// precisely so an operator can type it back. Anything a person is meant to copy off
+// a report cannot also be the thing that authorizes an action.
+//
+// What the id unlocked was the whole rest of a vend against an account the caller
+// never named. `vend` passes the resumed account id to EnsurePlacement, and an
+// account has exactly one parent — so a second run, with a different environment
+// profile and a different target OU, could move somebody else's vended account out
+// from under every SCP bound to where it was and attach its own instead. The victim
+// account's own manifest then records the move as a success attributed to the
+// attacker's profile.
+//
+// So the account the request produced is checked against the identity the caller
+// claims, by the one key that settles it: the root email. DescribeCreateAccountStatus
+// does not return the email — only AccountName, and two accounts may share a name —
+// so the check is a DescribeAccount on the id the status reports, exactly the read-back
+// the vendor role is already granted for (internal/bundle/role.go). See
+// checkResumedAccount.
+//
+// The check runs where the account id first becomes something automat would act on,
+// in both modes. A request still IN_PROGRESS has no account id and nothing to check;
+// that is not a hole, because there is also nothing yet to move.
 func (e *Ensurer) resumeAccount(ctx context.Context, spec AccountSpec) (AccountResult, *Action, error) {
 	if e.planning() {
 		st, err := e.describeCreate(ctx, spec.RequestID)
@@ -181,6 +210,9 @@ func (e *Ensurer) resumeAccount(ctx context.Context, spec AccountSpec) (AccountR
 		switch st.State {
 		case orgtypes.CreateAccountStateSucceeded:
 			id := aws.ToString(st.AccountId)
+			if cerr := e.checkResumedAccount(ctx, id, spec); cerr != nil {
+				return AccountResult{RequestID: spec.RequestID}, nil, cerr
+			}
 			parent, perr := e.parentOf(ctx, id)
 			if perr != nil {
 				return AccountResult{ID: id, RequestID: spec.RequestID}, nil, perr
@@ -200,7 +232,7 @@ func (e *Ensurer) resumeAccount(ctx context.Context, spec AccountSpec) (AccountR
 		}
 	}
 
-	id, err := e.pollCreate(ctx, spec.RequestID, spec)
+	id, err := e.pollCreateChecked(ctx, spec.RequestID, spec)
 	if err != nil {
 		return AccountResult{RequestID: spec.RequestID}, nil, err
 	}
@@ -250,6 +282,88 @@ func (e *Ensurer) pollCreate(ctx context.Context, reqID string, spec AccountSpec
 		"flight at AWS and may yet succeed, so re-run with --resume %s — vending again would create a "+
 		"second account and consume another of the organization's account quota",
 		reqID, time.Duration(e.maxPolls())*e.pollInterval(), reqID)
+}
+
+// pollCreateChecked is pollCreate for a request the CALLER supplied, with the
+// identity check applied to the account before the id is returned to a caller that
+// will act on it.
+//
+// Split from pollCreate rather than folded into it, because the two callers differ in
+// exactly the way that matters. pollCreate's own create knows the request is its own:
+// it just made it, one statement earlier, from this spec. A resume knows only that
+// the operator typed an id, and an id typed off a report is not evidence about whose
+// account it names.
+func (e *Ensurer) pollCreateChecked(ctx context.Context, reqID string, spec AccountSpec) (string, error) {
+	id, err := e.pollCreate(ctx, reqID, spec)
+	if err != nil {
+		return "", err
+	}
+	if cerr := e.checkResumedAccount(ctx, id, spec); cerr != nil {
+		return "", cerr
+	}
+	return id, nil
+}
+
+// checkResumedAccount refuses a resumed create-account request whose account is not
+// the account the caller says it is resuming.
+//
+// # Why this reads the account and not the status
+//
+// CreateAccountStatus carries AccountName and AccountId, and not the root email. The
+// name is not a key — AWS permits two accounts with the same name, which is the reason
+// findAccountByEmail searches by email and says so. Comparing the name would therefore
+// be a check that a second account named "research-cui" defeats by existing.
+//
+// So this spends one DescribeAccount on the id the status reported and compares the
+// email, which is unique across all of AWS (DESIGN §3, fact 11). That call is not a new
+// capability: the vendor role already grants organizations:DescribeAccount for exactly
+// this, the read-back after create and move (internal/bundle/role.go).
+//
+// The comparison is case-insensitive on the whole address, matching
+// findAccountByEmail — for the reason given there, and because two functions that
+// disagree about whether Lab@example.edu is lab@example.edu would let one adopt what
+// the other refuses.
+//
+// An account whose email comes back empty is NOT treated as a match. It means AWS did
+// not tell us, and "we could not check" must not read the same as "it checked out".
+func (e *Ensurer) checkResumedAccount(ctx context.Context, accountID string, spec AccountSpec) error {
+	if accountID == "" {
+		// Nothing to check and nothing to act on. pollCreate refuses a SUCCEEDED
+		// status with no id separately, with its own message.
+		return nil
+	}
+	out, err := e.Vend.DescribeAccount(ctx, &organizations.DescribeAccountInput{
+		AccountId: aws.String(accountID),
+	})
+	switch {
+	case err == nil:
+	case isCode(err, "AccountNotFoundException"):
+		return fmt.Errorf("cannot resume create-account request %s: it reports account %s, but no account "+
+			"with that id exists in this organization. automat will not continue a vend against an account "+
+			"it cannot read", spec.RequestID, accountID)
+	default:
+		return e.denied(err, "organizations:DescribeAccount", accountID)
+	}
+	var got string
+	if out.Account != nil {
+		got = aws.ToString(out.Account.Email)
+	}
+	if strings.EqualFold(got, spec.Email) && got != "" {
+		return nil
+	}
+	if got == "" {
+		return fmt.Errorf("cannot resume create-account request %s: AWS returned account %s with no root "+
+			"email, so automat cannot confirm it is the account for %s. A request id is printed on a birth "+
+			"certificate and recorded in an evidence manifest, so it is not on its own evidence about which "+
+			"account it names — and an unverified resume would go on to move that account into this "+
+			"profile's target OU", spec.RequestID, accountID, spec.Email)
+	}
+	return fmt.Errorf("cannot resume create-account request %s: it created account %s, whose root email is "+
+		"%s, but this run names %s. A resume continues ONE account, and continuing it would move %s into "+
+		"this profile's target OU — out from under every service control policy attached where it is now, "+
+		"because an account has exactly one parent. If %s is the account you meant, re-run with its own "+
+		"email; if not, this request id belongs to a different vend",
+		spec.RequestID, accountID, got, spec.Email, accountID, accountID)
 }
 
 func (e *Ensurer) describeCreate(ctx context.Context, reqID string) (*orgtypes.CreateAccountStatus, error) {
@@ -495,8 +609,20 @@ func (e *Ensurer) parentOf(ctx context.Context, childID string) (string, error) 
 func (spec AccountSpec) validate() error {
 	switch {
 	case spec.RequestID != "":
-		// A resume needs nothing else: the request id identifies the create at
-		// AWS, and the name and email are only used for message text.
+		// A resume still needs the root email, because that is what the resumed
+		// request is CHECKED AGAINST (checkResumedAccount). A resume that supplied
+		// nothing would be a resume nothing could verify, which is the shape
+		// AUDIT-2 found: see the comment on resumeAccount. The name is not
+		// required — it is not a key — and SearchParents is not either, because a
+		// resume reads the account's parent rather than hunting for it, so this
+		// deliberately does not fall through to those cases.
+		if spec.Email == "" {
+			return fmt.Errorf("cannot resume create-account request %s without the root email: one "+
+				"address belongs to exactly one AWS account anywhere in AWS (DESIGN §3, fact 11), so "+
+				"it is what proves the resumed request created the account this run means. A request "+
+				"id cannot do that job — it is printed on a birth certificate and recorded in a "+
+				"manifest, so it is not a secret", spec.RequestID)
+		}
 		return nil
 	case spec.Name == "":
 		return fmt.Errorf("cannot ensure an account with no name")

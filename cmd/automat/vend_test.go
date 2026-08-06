@@ -654,6 +654,89 @@ func TestVendResumeContinuesRatherThanCreatingASecondAccount(t *testing.T) {
 	}
 }
 
+// TestVendRefusesToResumeAnotherProfilesRequest is AUDIT-2's critical finding.
+//
+// The finding, stated as the attack: a create-account request id is printed on the
+// birth certificate and recorded in the evidence manifest, precisely so an operator
+// can type it back. It is not a secret and it never was one. Yet `--resume` used to
+// treat it as sufficient on its own — AccountSpec.validate() short-circuited on
+// RequestID and nothing compared the resumed status against anything the caller
+// claimed. So a second operator, holding nothing but an id off a report, could resume
+// somebody else's vend under their OWN environment profile, and `vend` would go on to
+// call EnsurePlacement on that account. An account has exactly one parent, so the
+// victim's account moves out from under every service control policy attached where it
+// is now and into the attacker's target OU — and the victim's own manifest records the
+// move as a success.
+//
+// The binding is the root email, not the account name: two accounts may share a name,
+// which is the reason findAccountByEmail searches by email. So this asserts the
+// refusal names BOTH addresses, and — the part that matters more — that the account
+// did not move.
+//
+// TestVendResumeContinuesRatherThanCreatingASecondAccount above resumes with the SAME
+// profile and email, which is precisely why it never caught this.
+func TestVendRefusesToResumeAnotherProfilesRequest(t *testing.T) {
+	g, f := vendWorld(t)
+	victimProfile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(victimProfile)...); err != nil {
+		t.Fatalf("the victim's vend: %v", err)
+	}
+	victimID := f.State.AccountIDs()[0]
+	requestID := ""
+	for _, r := range loadVendManifest(t, victimID).Records {
+		if r.RequestID != "" {
+			requestID = r.RequestID
+		}
+	}
+	if requestID == "" {
+		t.Fatal("the manifest recorded no create-account request id, so there is nothing to attack with")
+	}
+	parentBefore := f.State.ParentOf(victimID)
+	if parentBefore == "" {
+		t.Fatalf("the victim's account %s has no parent, so a move could not be detected", victimID)
+	}
+
+	// A second OU, and a profile that targets it. This is the attacker's own
+	// legitimate profile in every respect except the request id they typed into it.
+	attackerOU := "ou-atck-attacker1"
+	f.State.SeedOUWithID(attackerOU, "Attacker", f.State.RootID)
+	f.Org.AddOU(attackerOU, "Attacker", f.Org.RootID)
+	attackerProfile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["environment_profile"].(map[string]any)["id"] = "attacker-profile"
+		doc["placement"].(map[string]any)["target_ou"] = attackerOU
+	})
+
+	_, stderr, err := runCLI(t, g, "vend",
+		"--environment-profile", attackerProfile,
+		"--resume", requestID,
+		"--email", "attacker+genomics@other.example.edu",
+	)
+	if err == nil {
+		t.Fatalf("vend --resume accepted another profile's request id; the account is now under %s",
+			f.State.ParentOf(victimID))
+	}
+	// Both addresses, so the operator can tell a typo from someone else's account.
+	// The victim's address carries the name's own case: account.email_pattern
+	// substitutes --name verbatim, and the comparison is what is case-insensitive,
+	// not the recorded value.
+	for _, want := range []string{
+		"research-admin+Genomics@dept.example.edu",
+		"attacker+genomics@other.example.edu",
+		"exactly one parent",
+	} {
+		if !strings.Contains(stderr, want) && !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q:\n%v\n%s", want, err, stderr)
+		}
+	}
+	if got := f.State.ParentOf(victimID); got != parentBefore {
+		t.Errorf("the victim's account moved from %s to %s despite the refusal", parentBefore, got)
+	}
+	if got := f.State.AccountIDs(); len(got) != 1 {
+		t.Errorf("the refused resume produced %d accounts, want 1: %v", len(got), got)
+	}
+}
+
 // TestVendRefusesValuesItWouldHaveToRecord is CLAUDE.md rule 8 at the CLI layer.
 //
 // Four flags whose values automat writes into a record a person reads back and types
