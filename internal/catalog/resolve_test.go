@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -208,6 +209,72 @@ func TestResolveObligationsReportsTheHashAsUnknown(t *testing.T) {
 			"definition nobody ratified, and every environment profile in the world would carry "+
 			"the wrong value while looking checked. See Q15 in docs/open-questions.md",
 			facts.ContentSHA256)
+	}
+}
+
+// TestResolveObligationsReportsWhichCitationsAreUnretrieved is AUDIT-2 F1.
+//
+// The gate on rendering an unvendored profile used to be a map literal declared
+// inside internal/artifact's TestNoUnresolvedHashInARenderableProfile, which no
+// renderer could consult and which — being empty — could not fail. Meanwhile `vend`
+// printed these profiles' ids and hashes on the birth certificate.
+//
+// So the fact is resolved here, from the same bytes this function already reads, and
+// the two shipped profiles that carry a placeholder are named rather than counted:
+// a test asserting "some profile has unresolved sources" would keep passing if the
+// resolver started reporting the wrong one.
+func TestResolveObligationsReportsWhichCitationsAreUnretrieved(t *testing.T) {
+	set, err := ResolveObligations([]string{"cmmc-l1", "dfars-7012", "nih-cadr-dua"}, Options{})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// cmmc-l1's citations are vendored; the other two are recorded from published
+	// identifiers. If this table needs updating because a profile was vendored, the
+	// birth certificate stops marking it, which is the intended consequence.
+	want := map[string][]string{
+		"cmmc-l1":      nil,
+		"dfars-7012":   {"pending"},
+		"nih-cadr-dua": {"pending"},
+	}
+	for id, wantUnresolved := range want {
+		facts, ok := set.Obligation(id)
+		if !ok {
+			t.Fatalf("obligation profile %s did not resolve", id)
+		}
+		if !reflect.DeepEqual(facts.UnresolvedSources, wantUnresolved) {
+			t.Errorf("%s: UnresolvedSources = %v, want %v", id, facts.UnresolvedSources, wantUnresolved)
+		}
+		if got := facts.ProvenanceIsComplete(); got != (len(wantUnresolved) == 0) {
+			t.Errorf("%s: ProvenanceIsComplete() = %v with UnresolvedSources %v",
+				id, got, facts.UnresolvedSources)
+		}
+	}
+}
+
+// The two definitions of "unresolved" must be one, and the coupling is asserted
+// rather than commented.
+//
+// internal/artifact's obligation_profile_test.go reads the sources out of raw JSON
+// and calls its own isZeroHash; this package has zeroHash. Two spellings of one
+// sentinel is exactly the drift AUDIT-2 found in the packer's operator list, so the
+// constant is checked against the bytes the shipped profiles actually carry: if a
+// profile's placeholder were written any other way — uppercase hex, a short string,
+// 63 zeros — the resolver would report complete provenance for a profile that has
+// none, and the birth certificate would go back to citing it unmarked.
+func TestTheZeroHashSentinelMatchesWhatTheProfilesCarry(t *testing.T) {
+	if len(zeroHash) != 64 {
+		t.Fatalf("zeroHash is %d characters, and the schema patterns sha256 as exactly 64", len(zeroHash))
+	}
+	set, err := ResolveObligations([]string{"dfars-7012"}, Options{})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	facts, _ := set.Obligation("dfars-7012")
+	if facts.ProvenanceIsComplete() {
+		t.Error("dfars-7012 reports complete provenance. Its sources[] carries an all-zero hash, so " +
+			"either the profile was vendored (update the table above) or zeroHash no longer matches " +
+			"the sentinel the profiles are written with — and the second failure is silent everywhere " +
+			"except here")
 	}
 }
 

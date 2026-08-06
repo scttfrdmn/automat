@@ -283,6 +283,12 @@ type vendInput struct {
 	// been intersected in. Warnings names members the profile asked for that the
 	// control sets do not permit.
 	Narrowed *compilesets.Narrowed
+	// Obligations are the resolved obligation profiles the profile references.
+	//
+	// Kept past CheckObligations rather than discarded after it, because the birth
+	// certificate cites these profiles by id and hash and must be able to say which
+	// of them have not had their own citations retrieved (AUDIT-2 F1).
+	Obligations envprofile.ObligationSet
 
 	Name      string
 	Email     string
@@ -379,7 +385,10 @@ func loadVendInput(f vendFlags, orgCtx config.Context) (*vendInput, error) {
 		return nil, err
 	}
 
-	in := &vendInput{Profile: p, ContentHash: hash, Sets: sets, Narrowed: narrowed}
+	in := &vendInput{
+		Profile: p, ContentHash: hash, Sets: sets, Narrowed: narrowed,
+		Obligations: obligations,
+	}
 	if err := in.resolveIdentity(f, orgCtx); err != nil {
 		return nil, err
 	}
@@ -1318,7 +1327,26 @@ func renderBirthCertificate(w io.Writer, in *vendInput,
 		if i > 0 {
 			label = ""
 		}
-		line(label, o.ID+" sha256:"+o.ContentSHA256)
+		// The unretrieved-citation marking, and it is IN the rendered line rather
+		// than in a footnote (AUDIT-2 F1). docs/policy-caveat.md's whole argument is
+		// that the rendered output is what gets forwarded and attached to an
+		// agreement, without whatever page explained the caveat — so a birth
+		// certificate that cites dfars-7012 by hash while that profile's own sources
+		// are sixty-four zeros has to say so where the citation is.
+		//
+		// The hash printed is the ENVIRONMENT PROFILE's claim about the obligation
+		// profile, which is a different question and also unverified (Q15: the
+		// schema does not define what an obligation profile's content hash covers).
+		// Both are stated, because a reader shown one hash has no way to tell how
+		// many unchecked claims stand behind it.
+		note := ""
+		if facts, ok := in.Obligations[o.ID]; ok && !facts.ProvenanceIsComplete() {
+			note = " — CITATIONS NOT RETRIEVED: this profile records " +
+				strings.Join(facts.UnresolvedSources, ", ") +
+				" from published identifiers, not from retrieved copies. Verify against the " +
+				"primary source before relying on any date or clause number it states"
+		}
+		line(label, o.ID+" sha256:"+o.ContentSHA256+note)
 	}
 	line("detective baseline", "NOT APPLIED — DESIGN §7 step 5 is not in this build; the "+
 		"manifest carries a parked baseline-apply record")

@@ -39,10 +39,16 @@ longer says what it is.
   substitutes for the other: DRAFT says *this document is not finished*, the caveat says
   *this document is not a legal conclusion*. A finished document can still not be a legal
   conclusion, which is exactly the case that matters.
+- **Every classification profile.** `schema/classification-profile-v1.schema.json` makes
+  the field required for the same reason: a classification profile is a reading of an
+  institution's own published policy, which moves at least as fast as federal policy and
+  is not versioned by anybody. Held by `requiredCaveatSubstance` in
+  `internal/classprofile/catalog_test.go`.
 
 "In substance" rather than verbatim: renderers wrap text differently and a worksheet cell
 is not a prose paragraph. What is asserted is the substance, as a phrase list — see
-`requiredCaveatSubstance` in `internal/artifact/policy_caveat_test.go`. Each phrase in
+`requiredCaveatSubstance` in `internal/artifact/obligation_profile_test.go`, restated in
+`internal/classprofile/catalog_test.go` for the profiles that package owns. Each phrase in
 that list is there because dropping it changes what the paragraph claims:
 
 | Phrase | What is lost without it |
@@ -53,6 +59,21 @@ that list is there because dropping it changes what the paragraph claims:
 | `sponsored programs` / `counsel` | No named human owns the decision, so the tool implicitly does |
 | `records the operator's declaration` | Ambiguity looks resolved rather than deferred |
 | `verify against the primary source` | A citation's staleness becomes the reader's surprise |
+
+## What the caveat does NOT cover, and what does
+
+The caveat says a citation may be stale. It does not say a citation was never checked
+against bytes, and those are different claims — the first is a warning about time
+passing, the second is about a claim nobody has verified at all.
+
+An obligation profile records its provenance in `sources[]`, and an all-zero `sha256`
+there means "recorded from the published identifier, not from a retrieved copy." That
+fact reaches the rendered output: `envprofile.ObligationFacts.UnresolvedSources` carries
+it from the resolver to whatever renders, and `vend` marks the citation on the birth
+certificate. AUDIT-2 found the discipline previously held by a map literal inside a test
+function, which no renderer could consult and which could not fail — so two profiles were
+being cited by hash on a document an operator files, with nothing saying their own
+citations were unretrieved.
 
 ## Standing obligation
 

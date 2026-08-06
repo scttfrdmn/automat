@@ -654,6 +654,48 @@ func TestVendResumeContinuesRatherThanCreatingASecondAccount(t *testing.T) {
 	}
 }
 
+// TestTheBirthCertificateMarksAnUnretrievedCitation is AUDIT-2 F1.
+//
+// The birth certificate cites each obligation profile by id and content hash. Two of
+// the three shipped profiles record their own citations from published identifiers
+// rather than from retrieved copies — dfars-7012 is one, and it is the one the vend
+// fixture references — so a certificate citing it by hash presents a traced claim
+// where none was traced.
+//
+// The gate that was supposed to prevent this was a map literal inside a test function
+// in another package, which no renderer could read and which, being empty, could not
+// fail. This asserts the marking is in the RENDERED LINE, because
+// docs/policy-caveat.md's argument is that the rendered output is what gets forwarded
+// and attached to an agreement without the page that explained the caveat.
+func TestTheBirthCertificateMarksAnUnretrievedCitation(t *testing.T) {
+	g, _ := vendWorld(t)
+	out, _, err := runCLI(t, g, vendArgs(vendProfileJSON(t, nil))...)
+	if err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+
+	// The obligations line, isolated, so a marking that landed somewhere else in the
+	// document does not satisfy this.
+	var line string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "dfars-7012") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("the birth certificate does not cite dfars-7012 at all:\n%s", out)
+	}
+	for _, want := range []string{
+		"CITATIONS NOT RETRIEVED",
+		"primary source",
+	} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the obligations line does not contain %q, so it presents an untraced citation "+
+				"as a traced one:\n%s", want, line)
+		}
+	}
+}
+
 // TestVendRefusesToResumeAnotherProfilesRequest is AUDIT-2's critical finding.
 //
 // The finding, stated as the attack: a create-account request id is printed on the

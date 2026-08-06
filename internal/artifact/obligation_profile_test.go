@@ -73,6 +73,7 @@ type profileDoc struct {
 	Sources      []struct {
 		ID     string `json:"id"`
 		SHA256 string `json:"sha256"`
+		Note   string `json:"note"`
 	} `json:"sources"`
 }
 
@@ -373,11 +374,27 @@ func TestAnOperatorDeterminedRevisionShipsNoDefault(t *testing.T) {
 // So the placeholder is allowed but must be declared. renderableProfiles is the
 // list of profiles `assess` may render; a profile on it may hold no unresolved
 // hash. Adding a profile to that list without vendoring its sources fails here.
+// # AUDIT-2 F1: the gate was a map literal inside this function
+//
+// `renderable` was declared here, empty, with a comment saying Phase 4 would
+// populate it. Nothing outside this function could read it — so the discipline was
+// an assertion about a list that existed only while the test ran, and the assertion
+// was vacuous by construction: with the map empty, the first branch could never
+// fire.
+//
+// Meanwhile `vend` rendered these profiles. It printed
+// `dfars-7012 sha256:<claimed>` on the birth certificate — the document an operator
+// files — for a profile whose own sources are sixty-four zeros. Both unvendored
+// profiles were reachable that way, and the standing obligation in
+// docs/policy-caveat.md is precisely that every claim automat RENDERS traces to a
+// hashed source.
+//
+// So the fact moved to where a renderer can consult it:
+// `envprofile.ObligationFacts.UnresolvedSources`, filled by the resolver that
+// already reads each profile's bytes. What is left here is the half that belongs to
+// the catalog — that a placeholder is DECLARED rather than accidental — plus the
+// coupling assertion below, which is what makes the two definitions one.
 func TestNoUnresolvedHashInARenderableProfile(t *testing.T) {
-	// Empty today, and correctly so: no profile has its citations vendored, and
-	// `assess` does not exist. Phase 4 populates this as it vendors.
-	renderable := map[string]bool{}
-
 	for name, p := range loadProfiles(t) {
 		t.Run(name, func(t *testing.T) {
 			var unresolved []string
@@ -389,16 +406,27 @@ func TestNoUnresolvedHashInARenderableProfile(t *testing.T) {
 			if wt := p.Scoring.WeightTable; wt != nil && isZeroHash(wt.SHA256) {
 				unresolved = append(unresolved, "scoring.weight_table["+wt.ID+"]")
 			}
-
-			if renderable[p.Profile.ID] && len(unresolved) > 0 {
-				t.Errorf("profile %q is listed as renderable but has unresolved hashes at %v; "+
-					"a report that cites a source by an all-zero hash cites bytes nobody can "+
-					"produce", p.Profile.ID, unresolved)
+			if len(unresolved) == 0 {
+				return
 			}
-			if !renderable[p.Profile.ID] && len(unresolved) == 0 {
-				t.Logf("profile %q now has every hash resolved and could be added to "+
-					"renderableProfiles", p.Profile.ID)
+			// A placeholder must be explained where a maintainer reading the profile
+			// will see it. This is the check that keeps a deliberate "not yet" from
+			// decaying into an oversight nobody notices — which is what the
+			// unreachable map literal was supposed to do and could not.
+			var explained bool
+			for _, s := range p.Sources {
+				if isZeroHash(s.SHA256) && strings.Contains(s.Note, "not renderable") ||
+					isZeroHash(s.SHA256) && strings.Contains(s.Note, "nothing here has been checked") {
+					explained = true
+				}
 			}
+			if !explained {
+				t.Errorf("profile %q carries unresolved hashes at %v and no source note says the "+
+					"profile is therefore not renderable; an unexplained all-zero hash is "+
+					"indistinguishable from a forgotten one", p.Profile.ID, unresolved)
+			}
+			t.Logf("profile %q has unresolved provenance at %v, which vend now marks on the "+
+				"birth certificate", p.Profile.ID, unresolved)
 		})
 	}
 }

@@ -242,7 +242,19 @@ type obligationDoc struct {
 	ControlCatalogs []struct {
 		RevisionPolicy string `json:"revision_policy"`
 	} `json:"control_catalogs"`
+	Sources []struct {
+		ID     string `json:"id"`
+		SHA256 string `json:"sha256"`
+	} `json:"sources"`
 }
+
+// zeroHash is the all-zero sha256 a profile carries for a citation recorded from its
+// published identifier rather than from retrieved bytes.
+//
+// The schema patterns the field as 64 lowercase hex, so this is a well-formed hash
+// that no bytes produce — which is the point: a profile cannot omit provenance, only
+// declare that it has none yet.
+const zeroHash = "0000000000000000000000000000000000000000000000000000000000000000"
 
 // revisionPolicyOperatorDetermined is the value that makes a revision the operator's
 // to declare. Mirrors the schema's enum; the other value is `pinned`.
@@ -272,6 +284,16 @@ func obligationFacts(id string, data []byte) (envprofile.ObligationFacts, error)
 		}
 	}
 	facts := envprofile.ObligationFacts{ID: id}
+	// Which citations are recorded from an identifier rather than from bytes. Read
+	// here because this function already holds the document, and carried on the facts
+	// because the gate has to be reachable by a renderer — see ObligationFacts's own
+	// comment for what it was reachable by before (AUDIT-2 F1).
+	for _, s := range doc.Sources {
+		if s.SHA256 == zeroHash {
+			facts.UnresolvedSources = append(facts.UnresolvedSources, s.ID)
+		}
+	}
+	facts.UnresolvedSources = sortedUnique(facts.UnresolvedSources)
 	for _, c := range doc.ControlCatalogs {
 		if c.RevisionPolicy == revisionPolicyOperatorDetermined {
 			// Any, not all: the obligation is unsatisfiable while one catalog's

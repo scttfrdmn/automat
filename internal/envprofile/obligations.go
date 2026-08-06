@@ -31,7 +31,37 @@ type ObligationFacts struct {
 	// obligation. A profile invoking two catalogs where only one is
 	// operator-determined still needs the determination made.
 	RequiresRevisionDetermination bool
+	// UnresolvedSources names the profile's `sources[]` entries whose sha256 is all
+	// zeros — a deliberate placeholder for a citation recorded from its published
+	// identifier rather than from retrieved bytes. Sorted, empty when the profile's
+	// provenance is complete.
+	//
+	// # Why this is a fact about a profile and not a test fixture (AUDIT-2 F1)
+	//
+	// docs/policy-caveat.md's standing obligation is that every claim automat RENDERS
+	// into a human-facing document traces to a hashed source, and the discipline was
+	// held by TestNoUnresolvedHashInARenderableProfile — over a `renderable` map
+	// literal declared inside the test function. No renderer could consult it. So the
+	// gate was an assertion about a list that existed only while the test ran, and
+	// meanwhile `vend` printed `dfars-7012 sha256:<claimed>` on the birth certificate
+	// for a profile whose own provenance is sixty-four zeros. Both unvendored profiles
+	// were reachable that way.
+	//
+	// The fact therefore travels with the profile, from the resolver that already read
+	// its bytes to whatever renders it. A renderer that prints a citation from a
+	// profile with unresolved sources can then say so in the rendered output, which is
+	// the only place the caveat is any use — the page explaining it is not what gets
+	// forwarded and attached to an agreement.
+	UnresolvedSources []string
 }
+
+// ProvenanceIsComplete reports whether every source this profile cites has been
+// retrieved and hashed.
+//
+// Named for what a caller wants to know rather than for the field, because the
+// question at a rendering site is "may I present this as traced to a source" and the
+// answer is not "is a list empty".
+func (f ObligationFacts) ProvenanceIsComplete() bool { return len(f.UnresolvedSources) == 0 }
 
 // ObligationResolver returns the facts about one obligation profile by id.
 //
