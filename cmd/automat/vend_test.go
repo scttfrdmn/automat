@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/scttfrdmn/automat/internal/awsfake"
 	"github.com/scttfrdmn/automat/internal/evidence"
 )
@@ -147,6 +149,29 @@ func vendWorld(t *testing.T) (*globals, *fakeWorld) {
 	return g, f
 }
 
+// vendMemberWorld is vendWorld's MEMBER-state sibling: the caller is testMember,
+// not testManagement, so vendOrgClient must classify MEMBER and route account
+// and OU operations through the brokered vendor role (DESIGN §5) rather than
+// through g.orgVendClient. The vendor role is pre-seeded as assumable with
+// testExternalID; a test wanting the unassumable or unconfigured case starts
+// from fakeSet directly instead.
+func vendMemberWorld(t *testing.T) (*globals, *fakeWorld) {
+	t.Helper()
+	g, f := fakeSet(t, testOrg, testManagement, testMember, simulatedVendActions...)
+	f.State.SeedOUWithID(testVendOU, "Research CUI", f.State.RootID)
+	f.Org.AddOU(testVendOU, "Research CUI", f.Org.RootID)
+	f.STS.Assumable[testVendorRole] = testExternalID
+	t.Setenv("AUTOMAT_TEST_EXTERNAL_ID", testExternalID)
+	writeConfig(t, g, `
+[context.c]
+org = "`+testOrg+`"
+vendor_role_arn = "`+testVendorRole+`"
+external_id_ref = "env:AUTOMAT_TEST_EXTERNAL_ID"
+`)
+	chdirTemp(t)
+	return g, f
+}
+
 // chdirTemp moves the process into a temp directory for the test's duration.
 //
 // t.Chdir rather than os.Chdir: it restores the old directory and, more usefully,
@@ -234,6 +259,147 @@ func TestVendRunTwiceChangesNothingTheSecondTime(t *testing.T) {
 	if again := loadVendManifest(t, accountID); len(again.Records) != first {
 		t.Errorf("a no-op vend appended %d records to the manifest; it must append none",
 			len(again.Records)-first)
+	}
+}
+
+// TestVendFromMemberBrokersAccountAndOUOperations is Phase 3 task 2: DESIGN §5's
+// mixed-credential vend, actually exercised rather than only wired.
+//
+// The caller is testMember, not testManagement, so vendOrgClient must classify
+// MEMBER and route account/OU creation through the assumed vendor role while
+// policy operations still run as the caller's own identity — the two-credential
+// split that is the entire security argument the onboarding bundle makes.
+// awsfake.OrgVend does not record which constructor reached it, so the proof
+// that brokering actually happened is indirect: STS.AssumeRole was called with
+// the configured ExternalId, and the vend still succeeds and creates an account
+// under the org this caller is a member of, which a caller with no native
+// CreateAccount permission could not do any other way in the real API.
+func TestVendFromMemberBrokersAccountAndOUOperations(t *testing.T) {
+	g, f := vendMemberWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	out, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err != nil {
+		t.Fatalf("vend from MEMBER: %v", err)
+	}
+	if n := f.STS.CallCount("AssumeRole"); n != 1 {
+		// One client is built and shared across the plan and apply passes, so
+		// one assumption covers the whole vend. Asserted so a future change
+		// that rebuilds the client per pass updates this rather than silently
+		// doubling the count.
+		t.Errorf("AssumeRole called %d times, want 1 (one client shared by plan and apply)", n)
+	}
+	if got := aws.ToString(f.STS.LastAssumeRole.ExternalId); got != testExternalID {
+		t.Errorf("sent ExternalId %q, want %q", got, testExternalID)
+	}
+	accounts := f.State.AccountIDs()
+	if len(accounts) != 1 {
+		t.Fatalf("vend from MEMBER produced %d accounts, want 1: %v", len(accounts), accounts)
+	}
+	if got := f.State.ParentOf(accounts[0]); got != testVendOU {
+		t.Fatalf("account %s is under %s, want %s", accounts[0], got, testVendOU)
+	}
+	if !strings.Contains(out, "Birth certificate:") {
+		t.Fatalf("MEMBER vend printed no birth certificate:\n%s", out)
+	}
+}
+
+// TestVendFromMemberWithUnassumableRoleNamesTheGrant is the ROADMAP Phase 3
+// accept criterion's first failure mode: the vendor role exists in config but
+// cannot be assumed (not trusted, or the wrong ExternalId — AWS will not say
+// which), and the operator sees the exact missing grant rather than a bare
+// AccessDenied.
+func TestVendFromMemberWithUnassumableRoleNamesTheGrant(t *testing.T) {
+	g, f := vendMemberWorld(t)
+	delete(f.STS.Assumable, testVendorRole) // configured, but the role does not trust this caller
+	profile := vendProfileJSON(t, nil)
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("vend succeeded against an unassumable vendor role")
+	}
+	for _, want := range []string{"sts:AssumeRole", testVendorRole, "trust", "ExternalId", "setup --request"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q: %v", want, err)
+		}
+	}
+	if got := f.State.AccountIDs(); len(got) != 0 {
+		t.Errorf("an unassumable role still produced %d accounts: %v", len(got), got)
+	}
+}
+
+// TestVendFromMemberDeniedCreateAccountNamesTheVendorRole exercises
+// org.Ensurer's Brokered remediation branch for the first time: a denial on an
+// account/OU operation must point at the vendor role, not at the delegation
+// policy — the two-credential split's whole point is that these two grants
+// live in different files owned by different reviewers.
+func TestVendFromMemberDeniedCreateAccountNamesTheVendorRole(t *testing.T) {
+	g, f := vendMemberWorld(t)
+	f.State.Errs["CreateAccount"] = awsfake.AccessDenied("organizations:CreateAccount")
+	profile := vendProfileJSON(t, nil)
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("vend succeeded despite a denied CreateAccount")
+	}
+	for _, want := range []string{"vendor-role.cfn.yaml", "setup --request", "cannot be delegated"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "delegation-policy.json") {
+		t.Errorf("a vendor-role denial's remediation names the delegation policy instead: %v", err)
+	}
+}
+
+// TestVendFromMemberDeniedCreatePolicyNamesTheDelegationPolicy is the sibling
+// case: a denial on a policy operation, which runs on the caller's OWN
+// delegated identity even in MEMBER state, must point at the delegation
+// policy rather than the vendor role.
+func TestVendFromMemberDeniedCreatePolicyNamesTheDelegationPolicy(t *testing.T) {
+	g, f := vendMemberWorld(t)
+	f.State.Errs["CreatePolicy"] = awsfake.AccessDenied("organizations:CreatePolicy")
+	profile := vendProfileJSON(t, nil)
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("vend succeeded despite a denied CreatePolicy")
+	}
+	for _, want := range []string{"delegation-policy.json", "setup --request"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "vendor-role.cfn.yaml") {
+		t.Errorf("a delegation-policy denial's remediation names the vendor role instead: %v", err)
+	}
+}
+
+// TestVendFromMemberWithNoVendorRoleConfiguredPointsAtSetupRequest is the
+// ROADMAP Phase 3 accept criterion's second failure mode: a member account with
+// no vendor_role_arn configured at all. A member account has no native path to
+// even attempt CreateAccount (DESIGN §3, facts 1-2), so this must be refused
+// before any AWS call that would just come back AccessDenied for a reason the
+// operator cannot fix from this side.
+func TestVendFromMemberWithNoVendorRoleConfiguredPointsAtSetupRequest(t *testing.T) {
+	g, f := fakeSet(t, testOrg, testManagement, testMember, simulatedVendActions...)
+	f.State.SeedOUWithID(testVendOU, "Research CUI", f.State.RootID)
+	f.Org.AddOU(testVendOU, "Research CUI", f.Org.RootID)
+	chdirTemp(t)
+	profile := vendProfileJSON(t, nil)
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("vend succeeded from MEMBER with no vendor role configured")
+	}
+	if !strings.Contains(err.Error(), "setup --request") {
+		t.Errorf("error does not point at the onboarding bundle: %v", err)
+	}
+	if n := f.STS.CallCount("AssumeRole"); n != 0 {
+		t.Errorf("AssumeRole called %d times with no role configured; there is nothing to assume", n)
+	}
+	if got := f.State.AccountIDs(); len(got) != 0 {
+		t.Errorf("no vendor role configured still produced %d accounts: %v", len(got), got)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
 	"github.com/scttfrdmn/automat/internal/awsfake"
+	"github.com/scttfrdmn/automat/internal/broker"
 )
 
 const (
@@ -131,6 +132,21 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 			return f.Init, nil
 		},
 		newOrgVend: func(context.Context, string, string) (awsapi.OrgVendAPI, error) {
+			return f.Vend, nil
+		},
+		// The brokered constructor still calls broker.Assume against the fake
+		// STS — that is the logic a MEMBER-state test needs to see actually
+		// run, ExternalId resolution and the AssumeRole call included — but
+		// discards the resulting aws.Config and returns the SAME fake OrgVend
+		// the native constructor does, rather than building a real SDK client
+		// from fake credentials. awsfake.OrgVend does not distinguish which
+		// credential reached it, so a MEMBER-state test asserting on f.Vend's
+		// call counts sees the same calls a MANAGEMENT-state test would; what
+		// differs by state is only whether Assume runs at all.
+		newBrokeredOrgVend: func(ctx context.Context, region, _, roleARN, ref string) (awsapi.OrgVendAPI, error) {
+			if _, err := broker.Assume(ctx, stsFake, roleARN, ref, region); err != nil {
+				return nil, err
+			}
 			return f.Vend, nil
 		},
 		newOrgPolicy: func(context.Context, string, string) (awsapi.OrgPolicyAPI, error) {

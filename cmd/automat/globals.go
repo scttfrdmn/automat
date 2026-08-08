@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/broker"
 	"github.com/scttfrdmn/automat/internal/config"
 )
 
@@ -57,6 +58,10 @@ type globals struct {
 	newSTS       func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
 	newIAM       func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
 	newQuota     func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
+	// newBrokeredOrgVend overrides brokeredOrgVendClient in tests, the same way
+	// every other constructor field does — a test substitutes internal/awsfake
+	// here too, never a live AssumeRole.
+	newBrokeredOrgVend func(ctx context.Context, region, profile, roleARN, externalIDRef string) (awsapi.OrgVendAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -163,12 +168,14 @@ func (g *globals) orgInitClient(ctx context.Context, region, profile string) (aw
 	return organizations.NewFromConfig(cfg), nil
 }
 
-// orgVendClient is the account-and-OU client.
+// orgVendClient is the account-and-OU client for MANAGEMENT and STANDALONE,
+// where it is the caller's own credentials.
 //
-// In MANAGEMENT and STANDALONE this is the caller's own credentials, which is what
-// this returns. In MEMBER it must be the brokered vendor role instead (DESIGN §5),
-// and that is internal/broker's job in Phase 3 — the seam is here so the change is
-// a different constructor rather than a different call site.
+// `automat init` always calls this one: STANDALONE and MANAGEMENT are the only
+// states init runs in, so it never needs the brokered constructor below.
+// brokeredOrgVendClient is the MEMBER-state counterpart (DESIGN §5); `vend` picks
+// between the two once it has classified the org, which is a different
+// constructor at the call site rather than a branch inside either one.
 func (g *globals) orgVendClient(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error) {
 	if g.newOrgVend != nil {
 		return g.newOrgVend(ctx, region, profile)
@@ -180,15 +187,38 @@ func (g *globals) orgVendClient(ctx context.Context, region, profile string) (aw
 	return organizations.NewFromConfig(cfg), nil
 }
 
-// orgPolicyClient is the service control policy client.
+// brokeredOrgVendClient is the account-and-OU client for the MEMBER state:
+// account creation and OU creation cannot be delegated to a member account at
+// all (DESIGN §3, facts 1–2), so this borrows an identity in the management
+// account through the assumed vendor role instead (DESIGN §5).
 //
-// A different constructor from orgVendClient even though both return an
-// Organizations client today, because in the MEMBER state they will not: policy
-// operations run as the caller's own delegated identity while account and OU
-// operations travel through the assumed vendor role (DESIGN §5). Sharing one
-// constructor would make that difference invisible at the moment Phase 3 has to
-// introduce it, and the difference is the whole security argument the onboarding
-// bundle makes.
+// Never called for policy operations — those run as the caller's own delegated
+// identity in every state, which is why there is no brokered counterpart to
+// orgPolicyClient.
+func (g *globals) brokeredOrgVendClient(ctx context.Context, region, profile, roleARN,
+	externalIDRef string) (awsapi.OrgVendAPI, error) {
+	if g.newBrokeredOrgVend != nil {
+		return g.newBrokeredOrgVend(ctx, region, profile, roleARN, externalIDRef)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, externalIDRef, region)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
+}
+
+// orgPolicyClient is the service control policy client, in every state.
+//
+// A different constructor from orgVendClient even though both return a plain
+// Organizations client here, because in the MEMBER state orgVendClient's brokered
+// sibling does not: policy operations run as the caller's own delegated identity
+// while account and OU operations travel through the assumed vendor role
+// (DESIGN §5, brokeredOrgVendClient above). There is no brokered orgPolicyClient
+// because there is nothing for one to do — the policy half never brokers.
 func (g *globals) orgPolicyClient(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error) {
 	if g.newOrgPolicy != nil {
 		return g.newOrgPolicy(ctx, region, profile)

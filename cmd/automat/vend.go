@@ -152,10 +152,6 @@ func newVendCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			vendAPI, err := g.orgVendClient(ctx, region, profile)
-			if err != nil {
-				return err
-			}
 			// The policy half runs on its own client because in the MEMBER state it
 			// runs on its own credential (DESIGN §5). No init client is built here,
 			// and that absence is the point: `vend` holds no capability to create an
@@ -178,6 +174,11 @@ func newVendCmd(g *globals) *cobra.Command {
 				ARN:       aws.ToString(ident.Arn),
 			}
 
+			vendAPI, credential, err := vendOrgClient(ctx, g, readAPI, caller, region, profile, orgCtx)
+			if err != nil {
+				return err
+			}
+
 			out := cmd.OutOrStdout()
 			// One clock read for the whole command. Every timestamp in the manifest
 			// comes from it, so the records of one vend agree with each other rather
@@ -185,7 +186,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			now := time.Now().UTC().Format(time.RFC3339)
 			in.Now = now
 
-			plan := newVendEnsurer(g, vendAPI, policyAPI, org.ModePlan, caller.ARN)
+			plan := newVendEnsurer(g, vendAPI, policyAPI, org.ModePlan, caller.ARN, credential)
 			planned, err := runVendSteps(ctx, plan, readAPI, caller, in, now)
 			if err != nil {
 				return err
@@ -203,7 +204,7 @@ func newVendCmd(g *globals) *cobra.Command {
 				return nil
 			}
 
-			apply := newVendEnsurer(g, vendAPI, policyAPI, org.ModeApply, caller.ARN)
+			apply := newVendEnsurer(g, vendAPI, policyAPI, org.ModeApply, caller.ARN, credential)
 			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now)
 
 			// The manifest is written whether or not the vend succeeded, and before
@@ -500,21 +501,23 @@ func resolveVendEmail(flag, name string, p *envprofile.Profile, orgCtx config.Co
 //
 // No Init client, ever: `vend` cannot create an organization or enable a policy
 // type, and the way that is enforced is that it never holds the interface (see
-// internal/awsapi/api.go). Credential is Native because in MANAGEMENT and
-// STANDALONE the caller's own identity does this work; the MEMBER path assumes the
-// vendor role and is internal/broker's job in Phase 3, at which point this is
-// where org.Brokered arrives.
+// internal/awsapi/api.go). Credential is passed in rather than fixed at Native:
+// in MANAGEMENT and STANDALONE the caller's own identity does this work
+// (org.Native), and in MEMBER it is the assumed vendor role (org.Brokered) —
+// vendOrgClient below decides which, and this function only renders the choice
+// into the Ensurer's remediation wording.
+//
 // The sleep hook is threaded from globals rather than left at the package default
 // because `vend` is the first command that waits: CreateAccount is asynchronous, so
 // a test of it either injects a no-op wait or spends the real interval per poll per
 // case. Nil in production, which is the default five-second interval.
 func newVendEnsurer(g *globals, vendAPI awsapi.OrgVendAPI, policyAPI awsapi.OrgPolicyAPI,
-	mode org.Mode, principal string) *org.Ensurer {
+	mode org.Mode, principal string, credential org.Credential) *org.Ensurer {
 	return &org.Ensurer{
 		Vend:       vendAPI,
 		Policy:     policyAPI,
 		Mode:       mode,
-		Credential: org.Native,
+		Credential: credential,
 		Principal:  principal,
 		Sleep:      g.sleep,
 	}
@@ -606,6 +609,64 @@ func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
 	recordStepFiveIsMissing(e, in)
 	st.recordBaselineIsMissing(e, in, caller, now)
 	return st, nil
+}
+
+// vendOrgClient decides whether the account-and-OU client is native or
+// brokered, and builds it.
+//
+// The decision is the caller's account id against the organization's management
+// account id, the same comparison preflight.classify makes for the same reason
+// (DESIGN §4): CreateAccount and CreateOrganizationalUnit cannot be delegated to
+// a member account at all (DESIGN §3, facts 1–2), so a MEMBER caller has no
+// native path to even attempt. STANDALONE (no organization) and MANAGEMENT both
+// return org.Native — STANDALONE has no vendor role to assume in the first place,
+// and describeVendOrg's own "not in an organization" refusal is what a
+// STANDALONE vend actually hits a few calls later.
+//
+// A read-only DescribeOrganization here, distinct from the one describeVendOrg
+// makes moments later inside runVendSteps — this one exists to choose a client,
+// that one to populate st.OrgID/st.RootID for the plan and the evidence record.
+// Both are cheap reads and merging them would make this function's job ("which
+// client") depend on vendState's shape, which is worse than one extra read.
+func vendOrgClient(ctx context.Context, g *globals, read awsapi.OrgAPI, caller *callerIdentity,
+	region, profile string, orgCtx config.Context) (awsapi.OrgVendAPI, org.Credential, error) {
+	out, err := read.DescribeOrganization(ctx, &organizations.DescribeOrganizationInput{})
+	switch {
+	case err == nil:
+		// fall through
+	case awsapi.IsNotInOrganization(err):
+		// STANDALONE. describeVendOrg refuses this state moments later with a
+		// pointer at `automat init`; returning Native here just lets that
+		// refusal be the one the operator sees, rather than a broker-related
+		// error about a role that was never relevant.
+		vendAPI, cerr := g.orgVendClient(ctx, region, profile)
+		return vendAPI, org.Native, cerr
+	default:
+		return nil, org.Native, awsapi.Denied(err, "organizations:DescribeOrganization", "", caller.ARN,
+			"grant organizations:DescribeOrganization to "+caller.ARN+"; automat cannot tell "+
+				"whether this account can vend natively or must broker through a vendor role "+
+				"without it")
+	}
+	if out.Organization == nil {
+		return nil, org.Native, fmt.Errorf("describing the organization: AWS returned no organization " +
+			"and no error")
+	}
+	managementAccountID := aws.ToString(out.Organization.MasterAccountId)
+	if caller.AccountID == managementAccountID {
+		vendAPI, cerr := g.orgVendClient(ctx, region, profile)
+		return vendAPI, org.Native, cerr
+	}
+
+	// MEMBER: account and OU operations travel through the assumed vendor role.
+	if orgCtx.VendorRoleARN == "" {
+		return nil, org.Brokered, fmt.Errorf("account %s is a member of an organization managed by "+
+			"%s, and no vendor_role_arn is configured. A member account cannot create or move "+
+			"accounts natively (DESIGN §3, facts 1-2); run `automat setup --request` to generate "+
+			"the onboarding bundle and send it to whoever operates %s",
+			caller.AccountID, managementAccountID, managementAccountID)
+	}
+	vendAPI, cerr := g.brokeredOrgVendClient(ctx, region, profile, orgCtx.VendorRoleARN, orgCtx.ExternalIDRef)
+	return vendAPI, org.Brokered, cerr
 }
 
 // describeVendOrg reads the organization automat is vending into.
