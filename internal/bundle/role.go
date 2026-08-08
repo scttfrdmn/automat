@@ -50,7 +50,8 @@ var vendorRoleActions = []struct {
 // mutableTagKeys is every tag key the vendor role may write after an account
 // exists, and it is a closed list because of what is NOT on it.
 //
-// DESIGN §217 defines five tags on a vended account. Two of them --
+// DESIGN §14 (Conventions -- the adoption contract) defines five tags on a vended
+// account. Two of them --
 // automat:vended-by and automat:ou -- are read by conditions in this bundle:
 // MoveAccount requires an account to carry vended-by, and the delegation policy's
 // owner tag works the same way. A tag a condition reads must not be writable by
