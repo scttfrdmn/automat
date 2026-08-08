@@ -618,7 +618,7 @@ them — `TestTheRenderedPropertyReadsTheDocumentAndNotTheStatementField` and
 `TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals` — exist specifically to stop the
 properties from passing vacuously, which is the failure mode AUDIT-1 was worried about.
 
-What the audit found *below* the widening question was F5: a merge key collision that drops a
+What the audit found *below* the widening question was H5: a merge key collision that drops a
 guard rather than widening a set, which no monotonicity property is shaped to catch. See
 "Where this audit is weaker than it looks" for what remains unestablished.
 
@@ -644,6 +644,9 @@ as a pass** — AUDIT-1's own words, and still true. Left as-is per rule 1's pro
 finding out in CI; flagged again because a second confirmation is not a resolution.
 
 ### 6. Chain terminality and intersect-not-concatenate. Half discharged, half produced M4
+
+> **Corrected — see "Corrections to this record."** Chain terminality IS enforced; the
+> paragraph below was wrong when written.
 
 Intersect-not-concatenate produced M4 (implemented one type too narrow, so a conflict could
 go unreported). Chain terminality — that a `custody-transfer` record is the *last* record —
@@ -702,8 +705,9 @@ tag keys does not check tag values.** No mocking framework was introduced.
 
 ## Citation re-verification
 
-Discharged for the first time (AUDIT-1 carried item 9). Produced F7 (three citation errors,
-plus the cross-check that catches the next one) and F8 (four provenance defects).
+Discharged for the first time (AUDIT-1 carried item 9). Produced F2–F4 (`f24a01f`, three
+citation errors plus the cross-check that catches the next one) and F6–F8 (`c86c822`, four
+provenance defects in the classification profiles).
 
 **The method finding, recorded because it changes how the next pass should be run:** two
 independent transcriptions agreeing is not correctness. Two copies of the same wrong date
@@ -735,7 +739,7 @@ evidence.
 - **The packer's widening question is established by property tests over generated inputs, not
   proved.** The properties hold on everything `rapid` produced, and two anti-vacuity tests stop
   them passing on refusals. That is meaningfully stronger than an example test and meaningfully
-  weaker than "no merge can widen". F5 is the existence proof that a defect can live below the
+  weaker than "no merge can widen". H5 is the existence proof that a defect can live below the
   shape a property is written in: a key collision drops a guard without widening any set, and no
   monotonicity property is shaped to see it.
 - **Every claim about live AWS behavior remains untested by construction.** H6's whole content is
@@ -783,7 +787,7 @@ time.
 4. **The `docsProductAllowlist` from `b947498` — never ratified.** Flagged as such: it guards
    `docs/` against rule 3 (no product/vendor references but AWS) and has been in force since Phase
    1 without appearing in an audit's ratification list. It belongs in one.
-5. **The `action` / `resource` validator tightening from `81ab59c`** (F5's fix).
+5. **The `action` / `resource` validator tightening from `81ab59c`** (H5's second half).
 6. **`artifact.RejectDuplicateKeys` on all three load paths (`b2ca812`, H8's fix).** A strictly
    tightening load-path change: no document that was valid remains invalid, and every document it
    now refuses was one automat previously read differently from how it reads. Listed because it
@@ -824,7 +828,10 @@ response and left, and a fix that would edit a record adds to it instead.
 5. **`docs/audit-ritual.md`'s "the whole profile set"** now reads more broadly than it can be
    satisfied, since the set grew two document types after the sentence was written.
 6. **`/Users/scttfrdmn/src/CLAUDE.md`** is a stale copy of the project file, outside the repo, and
-   is the maintainer's to fix. Untouched.
+   is the maintainer's to fix. Untouched. **Corrected — see "Corrections to this record":** no
+   file exists at that path.
+7. **`internal/baseline/` does not exist**, though CLAUDE.md:52 names it in the layout block —
+   the same gap D3 names from `cmd/automat/vend.go`'s side, seen here from the package tree.
 
 ---
 
@@ -833,16 +840,19 @@ response and left, and a fix that would edit a record adds to it instead.
 Recorded here rather than left in a review message, because a carry-forward that lives only in
 conversation is one the next audit will not find.
 
-1. **Chain terminality is still enforced nowhere** (AUDIT-1 carried item 6, half undischarged). A
-   manifest with records appended *after* a `custody-transfer` is a document the published schema
-   accepts. `verify` is where the chain validator lands, and `verify` does not exist yet. AUDIT-3
-   owes this, and `TestTheSchemaCannotSayCustodyTransferIsLast` must not be read as coverage.
+1. **Confirm chain-terminality enforcement survives into `verify`** (AUDIT-1 carried item 6;
+   corrected below — it is enforced in Go, not "enforced nowhere" as this item originally read).
+   `internal/evidence/validate.go`'s `validateChain` refuses a manifest with records appended
+   *after* a `custody-transfer`, on every load and write path. What AUDIT-3 owes is narrower than
+   this item first stated: confirm the same enforcement is reachable from `verify` once `verify`
+   exists, and that `TestTheSchemaCannotSayCustodyTransferIsLast` continues to be read as
+   documenting a schema limit rather than as coverage of the obligation itself.
 2. **`automat compile` and D2/D3 need maintainer decisions, not another audit noting them.** Three
    audits in a row have observed the `compile` gap.
 3. **`make smoke` still runs zero tests and exits 0.** Confirmed deliberate twice now. A third
    confirmation is not a resolution; either a test carries the tag or the target should say what it
    is.
-4. **The property-coverage lesson from F5.** A monotonicity property cannot see a defect that drops
+4. **The property-coverage lesson from H5.** A monotonicity property cannot see a defect that drops
    a guard without widening a set. AUDIT-3 should ask, for each property test in
    `internal/compilesets`, what shape of defect it is *blind* to — not whether it passes.
 5. **Eight overclaiming test names.** Names that assert more than the body establishes, found while
@@ -852,3 +862,58 @@ conversation is one the next audit will not find.
    adoption path rests on corroboration because the authoritative check is ungranted.
 7. **28 citation items await human verification**, item 7 (DoD class deviation 2024-O0013) first,
    because it is the sole basis for pinning r2 in three shipped documents.
+
+---
+
+## Corrections to this record
+
+This audit is a dated record of what was found on 2026-08-05/06. The standing rule for a
+committed record is that a wrong statement is corrected by *addition*, not by silent edit — a
+changelog, or an audit, records what was said at the time. What follows are five statements in
+the sections above that were wrong when written, found while starting the remediation work this
+audit's own findings required, verified against the tree rather than taken on the audit's own
+authority. Each is marked at its original location with a pointer here.
+
+**One exception.** Five occurrences of `F5` that meant `H5` (in "AUDIT-1's nine carried-forward
+items, resolved" item 2 and "Where this audit is weaker than it looks", plus the two
+ratification/carry-forward items citing `81ab59c`) were corrected **in place**, not by marker.
+This document's own opening section states why unifying the two numbering schemes "would
+silently redirect every one of those references" — `F5` is cited with a different meaning in
+`docs/open-questions.md:673` and twice in `catalogs/classification/uc-protection-levels.json`,
+so leaving a wrong `F5` in place performs exactly the redirection the numbering note forbids.
+One of the five occurrences is a ratification request (item 5 in "For the human to review —
+ratification requests") read at the moment of ratification, where an addendum footnote three
+sections away would not be seen. The corrected text now reads `H5` in each of the five places;
+this paragraph is the record that the correction happened and why.
+
+1. **Chain terminality is enforced, not "enforced nowhere."** AUDIT-1's carried item 6 and this
+   audit's own carry-forward item 1 both said the obligation was undischarged. It is enforced at
+   `internal/evidence/validate.go:540-547`, inside `validateChain`, reached from `Validate()` on
+   every read and write path (`store.go:200`, `store_dir.go:170`, `chain.go:107`, `chain.go:161`);
+   `Append` refuses independently at `chain.go:57-63`; `TestTheGoValidatorEnforcesCustody‑
+   TransferTerminality` (`internal/evidence/custody_test.go:39`) passes. It landed in `e823c04`
+   — **inside the range this audit covers** (`541c3ec..b2ca812`). More: `schema/CHANGELOG.md:413-
+   419` already carries a `> **Superseded in part**` marker stating "the terminality gap named in
+   the paragraph above is enforced in Go." This audit carried forward an obligation that a
+   document already in the repository recorded as discharged — an audit that repeats a stale
+   claim from a prior audit without checking the code, when a second document in the same repo
+   already contradicts it, has read the docs less carefully than the code, and got the code wrong
+   too. Carry-forward item 1 above is not struck: `verify` does not exist yet, so what remains for
+   AUDIT-3 is confirming the enforcement is reachable from `verify` once it exists, not enforcing
+   it for the first time.
+2. **Five `F5` mislabels, corrected in place** — see the exception above.
+3. **"Produced F7 … and F8"** in "Citation re-verification" misattributed both parentheticals.
+   `f24a01f` ("fix(catalogs): three citation errors, and the cross-check for the next one") is
+   F2–F4; `c86c822` ("fix(catalogs): four provenance defects in the classification profiles") is
+   F6–F8. Corrected in place to name the right findings against the right commits.
+4. **Stale item 6 claimed a file exists that does not.** "`/Users/scttfrdmn/src/CLAUDE.md` is a
+   stale copy of the project file… Untouched" asserts a present file. No file exists at that path,
+   nor at `/Users/scttfrdmn/CLAUDE.md`. Marked at its location; the finding that a stale copy
+   existed cannot be verified and should not be relied on by AUDIT-3.
+5. **The 28-item citation-verification list is referenced three times and does not exist in the
+   repository.** "The full list is in the citation pass's output" (twice) and "a 28-item citation-
+   verification list… in the sections at the end" all point at a list that lived only in a
+   subagent transcript and was never committed. It could not be reproduced faithfully after the
+   fact — see `docs/citation-verification.md`, added separately, which re-derives a queue from the
+   shipped catalogs by a stated method and says plainly that it is a re-derivation, not a recovery,
+   and that its item numbers do not correspond to whatever the original 28 were.
