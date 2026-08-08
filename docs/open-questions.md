@@ -798,3 +798,33 @@ can point `internal/catalog.Options.FS` at an attacker-controlled tree — every
 the embedded FS. If **vendored-only is load-bearing** rather than incidental, it should be
 written down as a control with a test, not left as a property of the current call sites. A
 field whose safety depends on who happens to call it is one refactor from not being safe.
+
+### Q21 — `manifest.genesis_sha256` does not defend against a rewrite that edits the header too
+
+Added at H3's resolution (see `schema/CHANGELOG.md`, "Pre-publication change to
+evidence-manifest/v1: `manifest.genesis_sha256`"). The field catches head truncation when
+the header is left unedited — the ordinary case, since dropping `records[0]` and
+recomputing the anchor to match takes one extra step an editor motivated to remove
+evidence has every reason to take once they know the field exists.
+
+**Why this is not fixed rather than disclosed.** Closing it needs the header itself to be
+checkable — a manifest-level attestation over canonicalized `Meta`, comparable to a
+second copy, or a signature that covers the header the way `record_sha256` covers a
+record. Every shape considered collides with the same constraint H4 already ran into:
+covering `Meta` inside a hash that also gates the chain's validity would make correcting
+a typo in `created_at` an event that invalidates evidence, which is a worse failure mode
+than the one being closed. And it collides with a decision already made: automat ships no
+trust anchor and cosigning is optional, so a scheme that only works when every manifest
+carries a header signature is a scheme most manifests will not have.
+
+**What already narrows this.** DESIGN §11's external anchor — the vended account's own S3
+copy, a management-side mirror — remains the compensating control: two copies of the
+header that disagree are noticeable to whoever holds both, even though neither one is
+internally invalid on its own. `TestPrefixTruncationIsRefused`'s fourth part
+(`internal/evidence/header_binding_test.go`) demonstrates the residual directly rather
+than describing it, so the claim stays checkable rather than asserted.
+
+**Not blocking anything today.** No shipped command relies on `genesis_sha256` alone to
+detect tampering; `vend`'s birth certificate and the external mirror are the load-bearing
+pieces DESIGN §11 already names. Recorded so the next audit does not re-discover the
+residual and re-file it as though the anchor were meant to close the whole finding.

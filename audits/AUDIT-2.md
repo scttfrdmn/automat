@@ -59,10 +59,17 @@ AUDIT-1's nine carried-forward items resolved, three findings re-graded on inspe
 agent finding recorded as **WRONG**, six stale-documentation items flagged and left, and one
 new open question (Q20).
 
+> **Updated after this record.** `H3` and `F5` are now resolved with code, on later
+> maintainer decisions — see their sections for the fix. `L2`, `L4`, and `N1` remain as
+> they were: `L2` accepted as deliberate, `L4` open pending a live org (Q20), `N1` flagged
+> and left. The counts above stand as written; they describe the state at close of this
+> audit, not the state now.
+
 **Fix commits.** C1 → `b8b1c67`. H1, H2, H4 and M1 → `15e9ab3`. H5 → `81ab59c`.
 H6, L1, L3 → `bb5b73e`. H7 → `f5e9b71`. H8 → `b2ca812`. M2, M3 → `4ef2442`. M4 → `a0fa025`.
 M5 → `e74be37`. F1 and F14 → `c386f74`. F2, F3, F4 → `f24a01f`. F6, F7, F8 → `c86c822`.
-H3, F5, L2, L4, N1 carry no fix commit by design — see each.
+L2, L4, N1 carry no fix commit by design — see each. `H3` and `F5`, resolved later, are
+fixed by commits after this record — see their sections.
 
 **For the human: 3 open findings, 6 ratification requests, 1 new open question, 6 stale-doc
 items, and a 28-item citation-verification list that automat cannot check for itself — in
@@ -222,7 +229,14 @@ Two fields deliberately not compared, recorded because their absence looks like 
 natural-looking check would fire on every *correct* manifest) and `meta.organization_id` (no
 record field carries one — **a real residual, and named as one**). Fixed in `15e9ab3`.
 
-### H3 — Head truncation of an unsigned chain is undetectable from the local copy. OPEN, disclosed
+### H3 — Head truncation of an unsigned chain is undetectable from the local copy. RESOLVED — see below
+
+> **Resolved after this record.** The maintainer approved `manifest.genesis_sha256`, a
+> required header field anchoring `records[0].record_sha256`. It closes the case below
+> where the header travels unedited; a rewrite that edits the header alongside the
+> truncation remains open, tracked as Q21. See `schema/CHANGELOG.md`'s evidence-manifest
+> entry for the field and the fix commit. This section stands as written, describing the
+> finding at the time it was found.
 
 Removing records from the *front* of an unsigned manifest leaves a chain that verifies.
 `created_at` does not catch it — after the truncation the bound is satisfied by construction,

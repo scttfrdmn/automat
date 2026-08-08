@@ -15,7 +15,7 @@
 
     "manifest": {
       "type": "object",
-      "required": ["id", "created_at"],
+      "required": ["id", "created_at", "genesis_sha256"],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -24,7 +24,11 @@
         },
         "account_id": { "$ref": "#/$defs/account_id" },
         "organization_id": { "type": "string", "pattern": "^o-[a-z0-9]{10,32}$" },
-        "created_at": { "$ref": "#/$defs/timestamp" }
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "genesis_sha256": {
+          "description": "records[0].record_sha256, copied into the header at the moment the first record is appended and never changed after. REQUIRED, not optional: an optional anchor is one that can simply be deleted, which is cheaper than the truncation it exists to catch — the same failure mode as an unsigned record (see records[].signature), where stripping the signature that would have caught tampering is cheaper than not tampering. Removing the front of a chain — records[0..k] — leaves a chain that still verifies, because previous_sha256 for the new first record can only be checked against ZeroHash, which the truncated record legitimately carries once it is treated as the new records[0]. genesis_sha256 catches this because record_sha256 already covers previous_sha256: re-anchoring a surviving record to ZeroHash changes its hash, so it can no longer match the anchor a second copy of the header holds. This does NOT close truncation against a full rewrite of the manifest, header included — the header sits outside every record_sha256 by design (see H4 in audits/AUDIT-2.md), because covering it would let a typo in created_at invalidate the whole chain. What this catches is a rewrite that keeps the ORIGINAL header while truncating records — detectable by anyone holding a second copy of that header, e.g. the management-side mirror DESIGN 11 describes.",
+          "$ref": "#/$defs/sha256"
+        }
       }
     },
 

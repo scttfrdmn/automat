@@ -166,6 +166,11 @@ func (mt *Meta) validate(p *problems) {
 		p.add("manifest.created_at", fmt.Sprintf("%s is not a second-precision UTC timestamp", safe(mt.CreatedAt)),
 			"use the 2026-08-05T00:00:00Z form; sub-second and offset forms would break deterministic hashing")
 	}
+	if !reSHA256.MatchString(mt.GenesisSHA) {
+		p.add("manifest.genesis_sha256", fmt.Sprintf("%s is not a sha256 hex digest", safe(mt.GenesisSHA)),
+			"this is records[0].record_sha256, set once when the first record is appended and never "+
+				"changed after — Append sets it; do not set it by hand")
+	}
 }
 
 // validate checks one record against the schema's constraints, including the
@@ -596,26 +601,32 @@ func (m *Manifest) validateChain(p *problems) {
 // NOT a genesis anchor. Saying precisely what it is worth matters more than the check
 // does, because a weak check described as a strong one is worse than no check:
 //
-//   - It does NOT catch head truncation. That was the hope and it was wrong. After a
-//     head truncation created_at ≤ the dropped record ≤ the surviving record, so the
-//     bound is satisfied by construction. Reproduced and confirmed during AUDIT-2.
+//   - It does NOT catch head truncation on its own. After a head truncation
+//     created_at ≤ the dropped record ≤ the surviving record, so the bound is
+//     satisfied by construction. Reproduced and confirmed during AUDIT-2.
 //   - What it does catch is created_at rewritten FORWARD — relabelling a manifest as
 //     newer than the operations in it, which is how a chain gets presented as evidence
 //     about a period it does not cover.
 //
-// Equality would catch head truncation, and it is not available: records[0].timestamp
-// and created_at come from the same run but not from one value, and the golden manifest
-// has them a second apart deliberately. Equality was tried; it rejects the golden
-// manifest, the schema-conformance fixture, and
-// TestClockStepsBackwardsAreNotTampering. An operation-set rule ("a chain opens with
-// account-create") is also unavailable, because a vend that resumes or adopts an
-// existing account legitimately opens its chain with scp-ensure.
+// meta.genesis_sha256 IS a genesis anchor, added at AUDIT-2 H3's resolution, and it is
+// what catches head truncation: it is records[0].record_sha256, set once by Append and
+// compared here against whatever currently sits at records[0]. Dropping the front of a
+// chain — records[0..k] — forces the new records[0] to carry PreviousSHA = ZeroHash to
+// pass validateChain, which recomputes its record_sha256 to something other than what
+// the header still anchors to. The check below is that comparison.
 //
-// So head truncation remains open, and closing it needs a field v1 does not have — a
-// genesis hash or a first-record timestamp in Meta, covered by nothing and compared to
-// everything. That is a schema change, which is the maintainer's call under CLAUDE.md
-// rule 6. It is disclosed in doc.go and carried in the audit rather than papered over
-// here.
+// This does NOT close truncation against a rewrite of the WHOLE file, header included.
+// meta.genesis_sha256 sits outside every record_sha256 for the same reason created_at
+// and account_id do — see the "Three consequences" above — so a rewriter who edits the
+// header alongside the records changes the anchor along with what it anchors, and the
+// document is internally consistent again. What genesis_sha256 converts head truncation
+// into is DETECTABLE BY ANY HOLDER OF A SECOND COPY OF THE HEADER — an operator's local
+// copy against the management-side mirror DESIGN 11 describes, or a birth certificate
+// that recorded the value at vend time — rather than undetectable from the local copy
+// alone. That is a real, bounded gain, and it is described that way rather than as
+// "truncation closed": Q21 in docs/open-questions.md is the residual, a full-file
+// rewrite, which needs a manifest-level attestation over canonicalized Meta and
+// automat ships no trust anchor by design.
 //
 // The bound applies to records[0] only, because timestamps need not increase (see the
 // package comment and
@@ -628,6 +639,16 @@ func (m *Manifest) validateChain(p *problems) {
 // something else, and a check that guesses at a convention is a check that fires on
 // correct documents.
 func (m *Manifest) validateHeaderAgainstRecords(p *problems) {
+	if len(m.Records) > 0 && m.Meta.GenesisSHA != "" && m.Records[0].RecordSHA != "" &&
+		m.Meta.GenesisSHA != m.Records[0].RecordSHA {
+		p.add("manifest.genesis_sha256", fmt.Sprintf("is %s but records[0].record_sha256 is %s",
+			safe(m.Meta.GenesisSHA), safe(m.Records[0].RecordSHA)),
+			"the genesis anchor no longer matches the chain's first record. Either records were "+
+				"removed from the front of this chain and the survivor's link was re-anchored to "+
+				"ZeroHash — which recomputes its hash — or the header was edited by hand. Restore "+
+				"the dropped records, or start a new manifest rather than editing this one's header")
+	}
+
 	for i := range m.Records {
 		r := &m.Records[i]
 		path := fmt.Sprintf("records[%d]", i)

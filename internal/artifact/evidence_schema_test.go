@@ -36,7 +36,7 @@ func validateManifest(t *testing.T, sch *jsonschema.Schema, doc string) error {
 func manifest(records ...string) string {
 	return `{
   "schema_version": "1.0.0",
-  "manifest": { "id": "111122223333", "account_id": "111122223333", "created_at": "2026-08-05T00:00:00Z" },
+  "manifest": { "id": "111122223333", "account_id": "111122223333", "created_at": "2026-08-05T00:00:00Z", "genesis_sha256": "` + hashA + `" },
   "records": [` + strings.Join(records, ",") + `]
 }`
 }

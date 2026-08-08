@@ -94,14 +94,22 @@ func TestSignedRecordTransplantIsRefused(t *testing.T) {
 	}
 }
 
-// H4c — prefix truncation. NOT FIXED, and this test records the exact residual so the
-// audit's claim is checkable rather than asserted. Three parts:
+// H4c — prefix truncation. FIXED for the case where the header survives unedited,
+// via manifest.genesis_sha256 (AUDIT-2 H3's resolution); NOT fixed against a rewrite
+// that edits the header alongside the records. Four parts:
 //
-//  1. An unsigned truncated chain still loads. That is the open finding.
-//  2. created_at does NOT catch it — the hoped-for anchor — because after the
-//     truncation created_at still precedes the surviving first record.
-//  3. A SIGNED truncated chain is caught, and stripping the signatures defeats that,
-//     and SignatureCoverage is what a reader uses to notice.
+//  1. An unsigned truncated chain, header UNCHANGED, is now refused: the genesis
+//     anchor no longer matches the re-anchored records[0].
+//  2. created_at does NOT catch it on its own — the hoped-for anchor before
+//     genesis_sha256 existed — because after the truncation created_at still
+//     precedes the surviving first record. Kept as a fact about that field, not as
+//     the mechanism that closes this.
+//  3. A SIGNED truncated chain is caught by the links alone, and stripping the
+//     signatures defeats THAT, which is what SignatureCoverage is for noticing.
+//  4. The residual: an unsigned chain whose header is rewritten ALONGSIDE the
+//     truncation — genesis_sha256 recomputed to match the new records[0] — still
+//     loads. The header sits outside every record hash by design (H4), so an editor
+//     who touches both is internally consistent again. This is the gap Q21 names.
 func TestPrefixTruncationIsRefused(t *testing.T) {
 	m := storeManifest(t, nil)
 	mustAppend(t, m, vendRec(OpBaselineApply, "2026-08-05T02:00:00Z"), nil)
@@ -113,7 +121,9 @@ func TestPrefixTruncationIsRefused(t *testing.T) {
 	relink(t, m)
 
 	// The chain-level checks pass on their own — sequence density, links, and
-	// terminality are all intact after the re-anchor. That is the finding.
+	// terminality are all intact after the re-anchor. Head truncation was never a
+	// chain-level defect; it is a header-level one, which is why closing it needed a
+	// header field rather than a chain-level check.
 	var chainOnly problems
 	m.validateChain(&chainOnly)
 	if len(chainOnly.list) != 0 {
@@ -127,27 +137,56 @@ func TestPrefixTruncationIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if _, derr := Decode(raw, nil); derr != nil {
-		t.Fatalf("this test documents an OPEN finding; if the truncated chain is now refused (%v), "+
-			"the audit entry and doc.go must be updated to say so", derr)
+	if _, derr := Decode(raw, nil); derr == nil {
+		t.Fatal("a prefix-truncated chain with its ORIGINAL header was accepted; genesis_sha256 " +
+			"should no longer match the re-anchored records[0]")
+	} else if !strings.Contains(derr.Error(), "genesis_sha256") {
+		t.Fatalf("truncation was refused, but not by the genesis anchor — check what actually caught "+
+			"it: %v", derr)
+	} else {
+		t.Logf("FIXED: header-unchanged truncation refused: %v", derr)
 	}
-	t.Logf("OPEN (as disclosed): a prefix-truncated unsigned chain loads. created_at is %s and the "+
-		"surviving records[0] is %s, so the created_at bound is satisfied by construction — it does "+
-		"NOT catch head truncation", m.Meta.CreatedAt, m.Records[0].Timestamp)
 
-	// Signed, the same truncation IS caught.
+	t.Logf("still true, and not what closes this: created_at is %s and the surviving records[0] is "+
+		"%s, so the created_at bound alone is satisfied by construction", m.Meta.CreatedAt, m.Records[0].Timestamp)
+
+	// The residual: rewrite the header's anchor to match the truncated chain, the
+	// same motion an attacker who edits both would make. This is the gap that
+	// remains — covering Meta in the record hash is the wrong fix (see H4's doc
+	// comment), so the header stays outside the chain and a rewriter who touches
+	// both together is internally consistent.
+	rewritten := *m
+	rewritten.Meta.GenesisSHA = m.Records[0].RecordSHA
+	rraw, err := rewritten.MarshalIndented()
+	if err != nil {
+		t.Fatalf("marshal rewritten: %v", err)
+	}
+	if _, derr := Decode(rraw, nil); derr != nil {
+		t.Fatalf("this test documents the RESIDUAL open finding (Q21); if a header rewritten "+
+			"alongside the truncation is now refused (%v), doc.go and audits/AUDIT-2.md must be "+
+			"updated to say so", derr)
+	}
+	t.Log("OPEN (residual, Q21): a prefix-truncated chain whose header was rewritten to match still " +
+		"loads — the anchor only catches a truncation the header does not also cover for")
+
+	// Signed, the same truncation IS caught — and to isolate the SIGNATURE-specific
+	// mechanism from the genesis-anchor mechanism above, the header's anchor is
+	// rewritten to match here too, the same way the residual case above does. What
+	// this part shows is that the link-and-signature check catches the truncation
+	// independently of the anchor.
 	signer := testSigner(t)
 	signed := storeManifest(t, signer)
 	mustAppend(t, signed, vendRec(OpBaselineApply, "2026-08-05T02:00:00Z"), signer)
 	signed.Records = signed.Records[1:]
 	relink(t, signed)
+	signed.Meta.GenesisSHA = signed.Records[0].RecordSHA
 	sraw, err := signed.MarshalIndented()
 	if err != nil {
 		t.Fatalf("marshal signed: %v", err)
 	}
 	if _, derr := Decode(sraw, signer.Verifier()); derr == nil {
-		t.Error("a SIGNED prefix-truncated chain was accepted; re-anchoring must invalidate the " +
-			"signatures, because previous_sha256 is inside record_sha256")
+		t.Error("a SIGNED prefix-truncated chain, header rewritten to match, was accepted; " +
+			"re-anchoring must invalidate the signatures, because previous_sha256 is inside record_sha256")
 	} else {
 		t.Logf("signed truncation refused: %v", derr)
 	}

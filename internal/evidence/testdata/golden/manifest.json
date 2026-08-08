@@ -4,7 +4,8 @@
     "id": "444455556666",
     "account_id": "444455556666",
     "organization_id": "o-abc1234567",
-    "created_at": "2026-08-05T00:00:00Z"
+    "created_at": "2026-08-05T00:00:00Z",
+    "genesis_sha256": "a36104635750bf3050360168f648583f0811e42e74e0775bf45144ee66abda74"
   },
   "records": [
     {

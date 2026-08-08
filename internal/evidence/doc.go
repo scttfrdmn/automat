@@ -43,28 +43,45 @@
 // section used to name only the tail. Dropping records[0], renumbering, and
 // re-anchoring the new first record at 64 zeros removes the account-create record —
 // the one naming who created the account and under whose credentials — and what
-// remains reads as a vend that began at SCP attachment. Nothing in an UNSIGNED chain
-// detects it: sequence density, links, and terminality can all be recomputed, and
-// meta.created_at cannot help, because after the truncation it still precedes the
-// surviving first record. That was checked, hoping otherwise.
+// remains reads as a vend that began at SCP attachment. Sequence density, links, and
+// terminality can all be recomputed after such a drop, and meta.created_at cannot help
+// on its own, because after the truncation it still precedes the surviving first
+// record. That was checked, hoping otherwise, and it is why closing this needed a
+// header field rather than a chain-level check.
 //
-// Signatures do catch it, because a record's previous_sha256 is inside its
-// record_sha256, so re-anchoring invalidates the signature. But that clause is
-// conditional in a way worth stating rather than implying: a verifier is not told when
-// a signature is MISSING. VerifyChain skips an unsigned record (see chain.go), which is
-// deliberate — an operator who adopts a key partway through has a legitimately mixed
-// chain, and TestAMixedChainVerifiesTheSignedRecords holds that shape. So someone who
-// can rewrite the file can also delete the signatures they invalidated, and the result
-// verifies clean. Manifest.SignatureCoverage is how a reader asks the question the
-// verifier's silence does not answer; a caller that requires full coverage must check
-// it, because nothing infers it.
+// meta.genesis_sha256 (AUDIT-2 H3) is that field: records[0].record_sha256, copied into
+// the header once by Append and compared against the current records[0] on every load.
+// A head-truncated chain with its ORIGINAL header no longer matches, because
+// re-anchoring the survivor to 64 zeros recomputes its hash. This catches truncation
+// whenever the header travels unedited — the ordinary case, since an editor who wants
+// to drop the account-create record is usually trying to remove evidence, not rewrite
+// the whole document consistently.
 //
-// So, plainly: in v1, head truncation of an unsigned chain is undetected from the local
-// copy alone, and of a signed chain is detected only by a reader who checks signature
-// coverage. Closing it properly needs a field this schema does not have — a genesis
-// anchor in the header, bound to records[0] — and that is a versioned-contract change
-// rather than something a validator can add. The external anchor above is the
-// compensating control for both directions until then.
+// It does not catch a rewrite that touches the header too: genesis_sha256 sits outside
+// every record_sha256 for the same reason meta.created_at and meta.account_id do (see
+// validateHeaderAgainstRecords) — covering it would let a typo in created_at invalidate
+// the whole chain. Someone who recomputes the anchor alongside the truncation produces
+// a document that is internally consistent again. What remains detectable there is
+// exactly what remained detectable before this field existed: a reader holding a SECOND
+// copy of the header — the external anchor below — notices the two disagree, even
+// though neither is internally invalid on its own.
+//
+// Signatures narrow the residual further: a record's previous_sha256 is inside its
+// record_sha256, so re-anchoring invalidates the signature regardless of what the
+// header says. But that clause is conditional in a way worth stating rather than
+// implying: a verifier is not told when a signature is MISSING. VerifyChain skips an
+// unsigned record (see chain.go), which is deliberate — an operator who adopts a key
+// partway through has a legitimately mixed chain, and TestAMixedChainVerifiesTheSigned‑
+// Records holds that shape. So someone who can rewrite the file can also delete the
+// signatures they invalidated, and the result verifies clean. Manifest.SignatureCoverage
+// is how a reader asks the question the verifier's silence does not answer; a caller
+// that requires full coverage must check it, because nothing infers it.
+//
+// So, plainly: in v1, head truncation of an unsigned chain whose header is left alone is
+// detected by genesis_sha256; truncation accompanied by a rewritten header is detected
+// only by a holder of a second copy of the header, same as before this field existed;
+// and a signed chain narrows the residual further, down to a reader who checks signature
+// coverage. The external anchor above is the compensating control for what remains.
 //
 // # The terminal record, and why the Go side has to enforce half of it
 //

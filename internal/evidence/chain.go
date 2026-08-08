@@ -24,6 +24,11 @@ var ErrClosed = errors.New("the chain has been closed by a custody-transfer reco
 // createdAt is passed in rather than read from the clock: every timestamp in this
 // package is a caller's parameter so that a test asserts on a fixed value and a
 // golden file is stable. The command layer is the only place that reads a clock.
+//
+// Meta.GenesisSHA is left empty here and set by the first Append, not here: it is
+// records[0].RecordSHA, and there is no records[0] yet. A manifest with zero records
+// is not a valid document on its own — the schema requires at least one — so the gap
+// between "constructed" and "has a genesis hash" is never externally visible.
 func NewManifest(id, accountID, organizationID, createdAt string) *Manifest {
 	return &Manifest{
 		SchemaVersion: SchemaVersion,
@@ -102,13 +107,24 @@ func (m *Manifest) Append(rec Record, signer Signer) (*Record, error) {
 	// Validate the candidate in the chain it would join, then commit. The
 	// append-then-check order would leave an invalid record behind whose only
 	// repair is rewriting the tail.
-	candidate := &Manifest{SchemaVersion: m.SchemaVersion, Meta: m.Meta,
+	//
+	// GenesisSHA is set here, on the candidate's Meta, when this is the first
+	// record — never recomputed on a later append. Append owns it for the same
+	// reason it owns Sequence and the links: a caller that could set its own
+	// genesis anchor could produce a chain that validates and lies about where it
+	// began (AUDIT-2 H3).
+	candidateMeta := m.Meta
+	if rec.Sequence == 0 {
+		candidateMeta.GenesisSHA = h
+	}
+	candidate := &Manifest{SchemaVersion: m.SchemaVersion, Meta: candidateMeta,
 		Records: append(append([]Record{}, m.Records...), rec)}
 	if verr := candidate.Validate(); verr != nil {
 		return nil, fmt.Errorf("refusing to append record %d to manifest %s: %w",
 			rec.Sequence, safe(m.Meta.ID), verr)
 	}
 
+	m.Meta = candidateMeta
 	m.Records = append(m.Records, rec)
 	return &m.Records[len(m.Records)-1], nil
 }

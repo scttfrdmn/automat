@@ -1285,3 +1285,64 @@ Classification Standard, the only document actually hashed.
 `internal/classprofile/schema_conformance_test.go` gained accept cases for a bare
 `not-retrieved` citation and reject cases for one carrying either forbidden field, so
 both validators agree on the new value the same way they agree on the other three.
+
+## Pre-publication change to evidence-manifest/v1: `manifest.genesis_sha256`
+
+No version bump — `evidence-manifest/v1` has not been published, so this lands as
+part of the still-unreleased 1.0.0 rather than as a migration. After publication
+this would be a **major** bump: it is a new REQUIRED field on `manifest`, and
+`additionalProperties: false` there means every document valid before it existed
+still validates against the old shape but not against this one — a consumer
+written against the old shape would correctly consider the addition breaking.
+
+**Listed for the record under rule 6 anyway** for the same reason as
+classification-profile's `not-retrieved` above: this is new structure, not a pure
+tightening. Decided by the maintainer following AUDIT-2's H3 finding.
+
+**The gap.** AUDIT-2 found that removing records from the FRONT of a manifest —
+dropping `records[0..k]` and re-anchoring the new first record to `ZeroHash` —
+leaves a chain that passes every chain-level check: sequence density, links, and
+terminality can all be recomputed after the drop. `meta.created_at` was tried as
+an anchor and rejected: after the truncation it still precedes the surviving
+first record, so the bound is satisfied by construction. Nothing in the schema
+bound the header to which record actually started the chain.
+
+**The fix.** `manifest.genesis_sha256` is `records[0].record_sha256`, set once by
+`Append` when the first record lands and compared against the current
+`records[0]` on every load (`validateHeaderAgainstRecords`). A head-truncated
+chain whose header is left unedited no longer matches: re-anchoring the
+survivor recomputes its hash, since `previous_sha256` is inside `record_sha256`.
+
+**Required, not optional.** An optional anchor is a field an attacker can simply
+omit, which is cheaper than the truncation it exists to catch — the same failure
+mode the package already documents for signatures (an unsigned record's absence
+is not flagged by `VerifyChain`, which is why `SignatureCoverage` exists to let a
+reader ask). Required is available now for the same reason the field itself is:
+nothing has emitted a 1.0.0 manifest yet.
+
+**What this does NOT close, stated as plainly as the rest of the package's
+disclosures.** `genesis_sha256` sits OUTSIDE every `record_sha256`, for the same
+reason `meta.created_at` and `meta.account_id` do: covering the header in the
+record hash would let a typo in `created_at` invalidate the whole chain, which
+`internal/evidence/validate.go`'s H4 comment already rejected as the wrong fix
+for a different finding. So a rewriter who edits the header ALONGSIDE the
+truncation — recomputing `genesis_sha256` to match the new `records[0]` — produces
+a document that is internally consistent again. What remains is exactly what
+remained before this field existed: detectable only by a reader holding a SECOND
+copy of the header, e.g. the management-side mirror DESIGN §11 describes. This
+converts head truncation from *undetectable from the local copy alone* to
+*detectable by any holder of a second copy of the header* — real and bounded,
+not closed. The residual is `docs/open-questions.md` Q21.
+
+**Consequence for the golden manifest.** `internal/evidence/testdata/golden/
+manifest.json` gained the field on regeneration (`AUTOMAT_UPDATE_GOLDEN=1`); no
+`record_sha256` changed, which is the empirical proof that `Meta` sits outside
+every record hash — the same check M5 made with a content hash elsewhere.
+
+`TestPrefixTruncationIsRefused` (`internal/evidence/header_binding_test.go`) now
+has four parts instead of three: header-unchanged truncation refused (new),
+`created_at` still not sufficient on its own (kept, now explicitly *not* the
+mechanism), the residual — header rewritten alongside the truncation still loads
+(the open part that remains) — and the signed case, isolated from the anchor by
+rewriting it too, so the link-and-signature mechanism is shown to work
+independently of `genesis_sha256`.

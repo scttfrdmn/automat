@@ -99,6 +99,12 @@ type Meta struct {
 	AccountID      string `json:"account_id,omitempty"`
 	OrganizationID string `json:"organization_id,omitempty"`
 	CreatedAt      string `json:"created_at"`
+	// GenesisSHA is records[0].RecordSHA, set once by Append when the first record
+	// lands and never changed after. No omitempty: absent-and-required must round-trip
+	// as an error, not as a silently accepted zero value, on a field whose entire job
+	// is to be checked against — see the schema's genesis_sha256 for what it catches
+	// and, as importantly, what it does not (AUDIT-2 H3).
+	GenesisSHA string `json:"genesis_sha256"`
 }
 
 // Record is one appended operation.
