@@ -615,3 +615,70 @@ func TestOneInstrumentIsCitedOneWayAcrossTheProfileSet(t *testing.T) {
 func isZeroHash(h string) bool {
 	return h == strings.Repeat("0", 64)
 }
+
+// TestObligationProfileHashScopeCommentNamesEveryFieldExactlyOnce pins Q15's
+// resolution (docs/open-questions.md): the content-hash scope is stated in the
+// schema's top-level `$comment` rather than enforced by a Go canonicalizer, because
+// ROADMAP Phase 4 stage 0 keeps this document type data-and-schema-only until
+// `assess` is written. A comment nobody checks against the schema it describes is
+// exactly F1's failure shape — a claim that looks like coverage and is not — so
+// this walks both the comment's field lists and the schema's actual top-level
+// properties and asserts they name the same set.
+//
+// It cannot check that a future canonicalizer implements this scope; only that the
+// scope stated today matches the schema's own field list today. The comment says as
+// much: "there is no Go type yet to enforce it… when it is written, it must hash
+// precisely the fields named here."
+func TestObligationProfileHashScopeCommentNamesEveryFieldExactlyOnce(t *testing.T) {
+	path := filepath.Join(schemaDir, "obligation-profile-v1.schema.json")
+	data, err := os.ReadFile(path) //nolint:gosec // fixed in-repo path
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var raw struct {
+		Comment    string                     `json:"$comment"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if raw.Comment == "" {
+		t.Fatal("obligation-profile-v1.schema.json has no top-level $comment; Q15's hash-scope " +
+			"note was removed or never landed")
+	}
+
+	allFields := make([]string, 0, len(raw.Properties))
+	for name := range raw.Properties {
+		allFields = append(allFields, name)
+	}
+	sort.Strings(allFields)
+
+	excluded := map[string]bool{"schema_version": true, "signatures": true}
+	var wantCovered []string
+	for _, f := range allFields {
+		if !excluded[f] {
+			wantCovered = append(wantCovered, f)
+		}
+	}
+
+	var missing, extra []string
+	for _, f := range wantCovered {
+		if !strings.Contains(raw.Comment, f) {
+			missing = append(missing, f)
+		}
+	}
+	for f := range excluded {
+		if !strings.Contains(raw.Comment, f) {
+			extra = append(extra, f)
+		}
+	}
+
+	if len(missing) > 0 {
+		t.Errorf("the $comment does not mention covered field(s) %v; the schema gained a top-level "+
+			"property the hash-scope note was never updated for", missing)
+	}
+	if len(extra) > 0 {
+		t.Errorf("the $comment does not mention excluded field(s) %v by name; it must say which "+
+			"fields are excluded and why, not merely which are covered", extra)
+	}
+}

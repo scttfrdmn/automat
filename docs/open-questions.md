@@ -497,7 +497,26 @@ the packer.
 becomes visible: a vend that attaches "control SCPs + baseline-protection" and silently attaches
 no region or service SCP is a vend that does three quarters of what §7 says it does.
 
-### Q15 — `obligation-profile/v1` does not say what its content hash covers
+### Q15 — `obligation-profile/v1` does not say what its content hash covers. DECIDED (scope only)
+
+**Resolved by the maintainer: option 2, the canonicalized whole document minus
+`schema_version` and `signatures`** — see `schema/CHANGELOG.md`'s obligation-profile/v1
+entry for the field list and the reasoning, matching `classification-profile/v1`'s
+precedent for the same choice. Stated as a schema `$comment` rather than implemented,
+because ROADMAP's Phase 4 stage 0 keeps this document type "data and schema only, no Go
+types" until `assess` is written — the comment defines the contract a future
+canonicalizer must satisfy, and `TestObligationProfileHashScopeCommentNamesEveryField‑
+ExactlyOnce` pins it against the schema's own field list so the two cannot silently
+drift apart before the code exists to compare against.
+
+**What is still open, and what this decision does not change.** `internal/catalog.‑
+ObligationFacts.ContentSHA256` remains empty, and `envprofile.CheckObligations`
+continues to report the comparison as unknown — this decides *what* the hash will
+cover, not when it starts being computed. That is Phase 4's work, when `assess` needs
+the same hash and a canonicalizer is written at last.
+
+The reasoning below is kept as the record of what the three candidate answers were and
+why option 2 was chosen over the other two.
 
 **Blocks nothing today; blocks the check it was written for.** An environment profile's
 obligation reference carries a required `content_sha256`, and

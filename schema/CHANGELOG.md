@@ -1346,3 +1346,46 @@ mechanism), the residual — header rewritten alongside the truncation still loa
 (the open part that remains) — and the signed case, isolated from the anchor by
 rewriting it too, so the link-and-signature mechanism is shown to work
 independently of `genesis_sha256`.
+
+## Pre-publication change to obligation-profile/v1: the content-hash scope, stated in a `$comment`
+
+No version bump — `obligation-profile/v1` has not been published, and this adds a
+`$comment` rather than a constraint, so it changes nothing about which documents
+validate. Listed anyway under rule 6, since it answers a question the schema
+previously left open and any answer to it is a decision worth a maintainer's
+ratification, not only a code change.
+
+**The gap.** `signatures[].content_sha256` was described as "the document content
+hash" without saying which bytes. The other two document types with a content hash
+define the payload explicitly — `control-artifact/v1` in its canonicalizer,
+`environment-profile/v1` likewise, `classification-profile/v1`'s `HashCoveredFields`
+— but nothing said so here.
+
+**The fix — a comment, not a canonicalizer.** ROADMAP's Phase 4 stage 0 keeps
+`obligation-profile/v1` "data and schema only, no Go types, no `assess`" until that
+phase is written, and a canonicalizer is a Go type. So the scope is stated as a
+`$comment` on the schema: everything except `schema_version` and `signatures` is
+covered — `profile`, `citations`, `control_catalogs`, `assessment`,
+`determinations`, `poam`, `scoring`, `submission`, `applicability`, `status`,
+`review_by`, `policy_caveat`, `sources`. This defines the contract; nothing
+enforces it yet. `internal/catalog.ObligationFacts.ContentSHA256` stays empty and
+`envprofile.CheckObligations` continues to report the comparison as unknown, per
+Q15's own note, until a canonicalizer implementing exactly this scope is written.
+
+**Why the coverage is wide, following `classification-profile/v1`'s precedent for
+the same choice.** An obligation profile, like a classification profile and unlike
+an environment profile, builds nothing — its entire content is a set of claims
+about a published instrument, and there is no field here whose alteration leaves
+the claims intact. `status` and `review_by` are covered rather than excluded as
+administrative, because a profile re-marked `superseded` or given a new
+`review_by` is a different claim about the state of the world. `profile.id` and
+`profile.title` are covered too, unlike `classification-profile/v1`'s excluded
+identity block — an obligation profile is not forked-and-retitled the way a
+derived institutional profile is, so there is no fork-without-reattestation case
+to protect.
+
+`TestObligationProfileHashScopeCommentNamesEveryFieldExactlyOnce`
+(`internal/artifact/obligation_profile_test.go`) pins the comment against the
+schema's own top-level property list, so a future field addition that forgets to
+update the comment fails loudly rather than leaving a scope note that quietly
+stops matching what it describes.
