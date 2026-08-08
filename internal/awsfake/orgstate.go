@@ -409,6 +409,18 @@ func (s *OrgState) PolicyIDByName(name string) string {
 	return ""
 }
 
+// PolicyNames returns every policy's name, sorted.
+func (s *OrgState) PolicyNames() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.policies))
+	for _, p := range s.policies {
+		out = append(out, p.Name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // AttachedTo returns the policy ids attached to a target, sorted.
 func (s *OrgState) AttachedTo(targetID string) []string {
 	s.mu.Lock()

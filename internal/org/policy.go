@@ -20,8 +20,10 @@ import (
 type PolicySpec struct {
 	// Name is the policy name, and it is the only handle automat has on its own
 	// policy across runs. DESIGN §14 fixes the convention:
-	// automat-<artifact-id>-<class>. Organizations enforces name uniqueness,
-	// which is what makes a name usable as a key at all.
+	// automat-<environment-profile-id>-<n>, an ordinal over the packed policy set
+	// rather than one name per artifact or class — a packed policy has no single
+	// artifact id or class to name (Q16, docs/open-questions.md). Organizations
+	// enforces name uniqueness, which is what makes a name usable as a key at all.
 	Name string
 	// Document is the rendered policy, normally from internal/compilesets.Pack.
 	Document string

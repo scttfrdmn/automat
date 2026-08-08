@@ -543,9 +543,18 @@ answering it adds "the hash covers X" language to
 "ask first" applies. Worth answering before Phase 4's `assess`, which will want to
 quote the same hash.
 
-### Q16 — DESIGN §14's SCP naming convention is not what the packer emits
+### Q16 — DESIGN §14's SCP naming convention is not what the packer emits. DECIDED
 
-DESIGN §14: "SCP names: `automat-<artifact-id>-<class>` (e.g.
+**Resolved by the maintainer: reading 1 — §14 amended to match what ships.** DESIGN §14 now
+states the ordinal naming (`automat-<environment-profile-id>-<n>`) as the convention, with
+the reasoning kept alongside it. Artifact-hash tagging (reading 3) remains genuinely absent
+— `internal/org` has no artifact-hash tagging on any SCP today — and stays a real gap rather
+than a decided one; it is not blocked on this decision and can be added independently
+whenever `internal/org` gains tagging for the account-tag work `docs/cli-surface.md` D3
+already names. The reasoning below is kept as the record of why the other two readings were
+not chosen.
+
+DESIGN §14 previously read: "SCP names: `automat-<artifact-id>-<class>` (e.g.
 `automat-cmmc-l1-baseline-protection`), each SCP tagged with the artifact hash."
 `internal/org/policy.go`'s `PolicySpec.Name` doc repeats it. `compilesets.Pack` emits
 `fmt.Sprintf("%s-%d", opts.NamePrefix, i+1)`, and the golden files are

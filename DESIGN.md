@@ -333,7 +333,18 @@ Config: `~/.config/automat/config.toml` + per-org context (vendor role ARN, Exte
 These are automat's own, documented publicly in `docs/conventions.md`; external systems may adopt them, automat depends on nothing external:
 
 - Tags on vended accounts: `automat:vended-by`, `automat:ou`, `automat:artifact-id`, `automat:artifact-sha256`, `automat:version`. Enable as cost-allocation tags where possible (chargeback matters as much as compliance to this audience).
-- SCP names: `automat-<artifact-id>-<class>` (e.g. `automat-cmmc-l1-baseline-protection`), each SCP tagged with the artifact hash.
+- SCP names: `automat-<environment-profile-id>-<n>` (e.g. `automat-research-cui-1`), an ordinal
+  over the packed policy set rather than one name per artifact or class. A vend unions
+  multiple control sets into a shared pool of statements (§9) and packs them by size against
+  a five-SCP-per-target quota, so a single attached policy has no one artifact id and no one
+  class to name — the environment profile id is the one id a packed policy always has exactly
+  one of, and Organizations enforces name uniqueness in a way an ordinal satisfies and a
+  per-artifact name would not (two vends against one OU under different profiles would collide
+  on a name naming neither). `verify` (§12) finds and distinguishes packed policies by their
+  tags, not by parsing the name.
+
+- SCPs are NOT tagged with the artifact hash today; that remains open (Q16 in
+  `docs/open-questions.md`, `internal/org` has no artifact-hash tagging on any SCP yet).
 - Manifest locations: `s3://automat-evidence-<acct>/manifests/…` and management-side mirror.
 - OU marker tag on automat-managed OUs.
 

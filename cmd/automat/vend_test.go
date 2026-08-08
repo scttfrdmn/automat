@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,6 +234,36 @@ func TestVendRunTwiceChangesNothingTheSecondTime(t *testing.T) {
 	if again := loadVendManifest(t, accountID); len(again.Records) != first {
 		t.Errorf("a no-op vend appended %d records to the manifest; it must append none",
 			len(again.Records)-first)
+	}
+}
+
+// TestVendNamesPackedPoliciesByProfileIdAndOrdinal is DESIGN §14's SCP naming
+// convention, pinned so the packer or the call site cannot drift from it silently
+// (Q16, docs/open-questions.md).
+//
+// A packed policy has no single artifact id and no single class — a vend unions
+// multiple control sets into a shared statement pool before packing — so the name
+// is automat-<environment-profile-id>-<n> rather than one naming an artifact or a
+// class. The environment profile id is the one id a packed policy always has
+// exactly one of.
+func TestVendNamesPackedPoliciesByProfileIdAndOrdinal(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+
+	names := f.State.PolicyNames()
+	if len(names) == 0 {
+		t.Fatal("vend attached no policies")
+	}
+	for i, name := range names {
+		want := fmt.Sprintf("automat-research-cui-%d", i+1)
+		if name != want {
+			t.Errorf("policy %d is named %q, want %q — automat-<environment-profile-id>-<n>",
+				i, name, want)
+		}
 	}
 }
 
