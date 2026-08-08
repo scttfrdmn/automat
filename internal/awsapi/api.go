@@ -137,6 +137,29 @@ type OrgInitAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.EnablePolicyTypeOutput, error)
 }
 
+// OrgSetupAPI is `automat setup` from the MANAGEMENT state, applying the
+// delegation policy DESIGN §5's "policy half" describes.
+//
+// PutResourcePolicy is on TestNoWriteInterfaceCanDestroy's list of actions kept
+// unreachable until the interface exposing them says why it is safe — this is
+// that interface, and the reason is the same shape as OrgPolicyAPI.UpdatePolicy's:
+// the write is gated on reading back what is already there first. Organizations
+// holds exactly ONE resource policy per organization, not a list keyed by id the
+// way service control policies are — PutResourcePolicy REPLACES it wholesale, and
+// there is no per-statement update and no owner tag on the document itself to
+// check before overwriting. So org.EnsureDelegationPolicy (internal/org) reads
+// DescribeResourcePolicy first and only calls PutResourcePolicy when the result
+// is absent or already matches automat's own rendering of the request — never
+// when a document with different content already exists. DeleteResourcePolicy is
+// NOT here: nothing in Phase 3 removes a delegation, and adding it needs its own
+// gate the way DeletePolicy will when `reclaim` is written.
+type OrgSetupAPI interface {
+	DescribeResourcePolicy(ctx context.Context, in *organizations.DescribeResourcePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.DescribeResourcePolicyOutput, error)
+	PutResourcePolicy(ctx context.Context, in *organizations.PutResourcePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.PutResourcePolicyOutput, error)
+}
+
 // # What is deliberately absent from all three
 //
 // DetachPolicy, DeletePolicy, DeleteOrganizationalUnit, CloseAccount,
@@ -165,6 +188,35 @@ type OrgInitAPI interface {
 type IAMAPI interface {
 	SimulatePrincipalPolicy(ctx context.Context, in *iam.SimulatePrincipalPolicyInput,
 		optFns ...func(*iam.Options)) (*iam.SimulatePrincipalPolicyOutput, error)
+}
+
+// IAMRoleAPI is `automat setup` creating and ensuring the vendor role DESIGN §5
+// describes.
+//
+// Read-modify-write, the same shape as OrgSetupAPI: GetRole decides whether
+// CreateRole or UpdateAssumeRolePolicy runs, so a re-run corrects a role's trust
+// policy in place rather than either failing on "already exists" or blindly
+// recreating it. PutRolePolicy is Organizations' CreatePolicy/UpdatePolicy
+// distinction collapsed into one call — IAM's inline-policy API is already
+// create-or-replace, so there is no separate update method to choose between.
+// TagRole applies the automat:managed-by convention after CreateRole, since
+// CreateRoleInput's own Tags field only takes effect on the account's FIRST
+// creation and a later run must be able to correct a tag that was removed by
+// hand. No DeleteRole, no DetachRolePolicy: nothing in Phase 3 removes a vendor
+// role, matching OrgSetupAPI's absence of DeleteResourcePolicy.
+type IAMRoleAPI interface {
+	GetRole(ctx context.Context, in *iam.GetRoleInput,
+		optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(ctx context.Context, in *iam.CreateRoleInput,
+		optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	UpdateAssumeRolePolicy(ctx context.Context, in *iam.UpdateAssumeRolePolicyInput,
+		optFns ...func(*iam.Options)) (*iam.UpdateAssumeRolePolicyOutput, error)
+	GetRolePolicy(ctx context.Context, in *iam.GetRolePolicyInput,
+		optFns ...func(*iam.Options)) (*iam.GetRolePolicyOutput, error)
+	PutRolePolicy(ctx context.Context, in *iam.PutRolePolicyInput,
+		optFns ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
+	TagRole(ctx context.Context, in *iam.TagRoleInput,
+		optFns ...func(*iam.Options)) (*iam.TagRoleOutput, error)
 }
 
 // QuotaAPI is Service Quotas lookup.
@@ -202,7 +254,9 @@ var (
 	_ OrgVendAPI   = (*organizations.Client)(nil)
 	_ OrgPolicyAPI = (*organizations.Client)(nil)
 	_ OrgInitAPI   = (*organizations.Client)(nil)
+	_ OrgSetupAPI  = (*organizations.Client)(nil)
 	_ IAMAPI       = (*iam.Client)(nil)
+	_ IAMRoleAPI   = (*iam.Client)(nil)
 	_ QuotaAPI     = (*servicequotas.Client)(nil)
 	_ SSOOIDCAPI   = (*ssooidc.Client)(nil)
 )

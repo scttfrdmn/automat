@@ -65,6 +65,15 @@ type OrgState struct {
 	// emails is the org-wide unique email set (DESIGN §3 fact 11).
 	emails map[string]string
 
+	// ResourcePolicy is the org's single delegation policy document, or "" if
+	// none exists. Organizations holds exactly one per organization —
+	// PutResourcePolicy replaces this field wholesale, the same way the real API
+	// replaces the real document; there is no per-statement update the way
+	// policies map above has. Shared with OrgSetup's write path and readable
+	// through Org's ResourcePolicy field for a test that wants to seed one
+	// without going through PutResourcePolicy first.
+	ResourcePolicy string
+
 	nextAccount, nextOU, nextPolicy, nextRequest int
 
 	// RequiredCreateTags are tag keys CreateAccount must carry or be refused.

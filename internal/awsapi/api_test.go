@@ -47,7 +47,9 @@ func allInterfaces(t *testing.T) map[string]reflect.Type {
 		"OrgVendAPI":   reflect.TypeOf((*OrgVendAPI)(nil)).Elem(),
 		"OrgPolicyAPI": reflect.TypeOf((*OrgPolicyAPI)(nil)).Elem(),
 		"OrgInitAPI":   reflect.TypeOf((*OrgInitAPI)(nil)).Elem(),
+		"OrgSetupAPI":  reflect.TypeOf((*OrgSetupAPI)(nil)).Elem(),
 		"IAMAPI":       reflect.TypeOf((*IAMAPI)(nil)).Elem(),
+		"IAMRoleAPI":   reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
 		"QuotaAPI":     reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
 		"SSOOIDCAPI":   reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
 	}
@@ -78,6 +80,11 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 	// with the control detached. What makes that acceptable is the tag condition in
 	// internal/bundle's scpModifyActions: UpdatePolicy is reachable only against
 	// policies automat created.
+	//
+	// PutResourcePolicy is likewise NOT on this list as of Phase 3 task 3, for the
+	// analogous reason stated on OrgSetupAPI's own doc comment: it is gated on
+	// reading the existing resource policy first and refusing to overwrite content
+	// that is not already automat's own rendering of the request.
 	destructive := map[string]string{
 		"DetachPolicy":                     "removes a control from a live account; the account stops being what its evidence manifest says it is",
 		"DeletePolicy":                     "destroys the control itself, not just its attachment",
@@ -88,8 +95,7 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 		"DeleteOrganization":               "deletes the org automat was pointed at",
 		"DeregisterDelegatedAdministrator": "revokes the delegation the whole MEMBER path depends on",
 		"DisablePolicyType":                "turns SCPs off org-wide; every attached control silently stops applying (DESIGN §3 fact 8)",
-		"PutResourcePolicy":                "rewrites the delegation policy — the instrument that bounds automat itself",
-		"DeleteResourcePolicy":             "removes it",
+		"DeleteResourcePolicy":             "removes the org's whole delegation policy, not just automat's part of it",
 		"UntagResource":                    "removes a tag, and two of automat's tags are read by conditions in the delegation policy",
 	}
 
