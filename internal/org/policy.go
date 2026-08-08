@@ -217,9 +217,10 @@ func (e *Ensurer) malformed(err error, spec PolicySpec, id string) error {
 	}
 	return fmt.Errorf("AWS rejected the document for service control policy %q while %s as malformed: %w. "+
 		"The document comes from the compiled artifact, so the fault is there rather than in the "+
-		"organization — a duplicate Sid within one document is the usual cause. Validate the artifact "+
-		"with `automat compile` and re-run the vend with --resume: if the account was already created, "+
-		"it exists and is parked, and running `vend` again from the top would create a second one",
+		"organization — a duplicate Sid within one document is the usual cause. Recompile the "+
+		"catalog with `go run ./gen/catalog -check` and re-run the vend with --resume: if the "+
+		"account was already created, it exists and is parked, and running `vend` again from the "+
+		"top would create a second one",
 		spec.Name, where, err)
 }
 

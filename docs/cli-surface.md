@@ -23,7 +23,7 @@ adds `init` and `vend`.
 | `automat setup` (MANAGEMENT) | Not yet — Phase 3 | Refuses with the phase named |
 | `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
 | `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
-| `automat compile` | Not yet — see below | `gen/catalog` today |
+| `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |
 | `automat verify` | Not yet — Phase 4 | ROADMAP Phase 4 |
 | `automat list` | Not yet — Phase 4 | ROADMAP Phase 4 |
 | `automat reclaim` | Not yet — Phase 5 | ROADMAP Phase 5, `LATER` in §13 |
@@ -128,12 +128,14 @@ the test now asserting the phase *number* rather than the word "Phase" so the ne
 drift fails loudly. CLAUDE.md's rule — when design and code disagree, flag it rather
 than reinterpret — puts ROADMAP as the sequencing authority, so the code was wrong.
 
-### D2 — `automat init` runs in MANAGEMENT as well as STANDALONE. ACCEPTED, deliberate
+### D2 — `automat init` runs in MANAGEMENT as well as STANDALONE. RESOLVED — §13 amended
 
-§13 writes the command as **"STANDALONE only: CreateOrganization(ALL) + research OU"**.
-As built, `init` permits STANDALONE **and** MANAGEMENT, and refuses MEMBER. Recorded as
-its own line item rather than a footnote, per the audit ritual: it is a shipped command
-whose implemented behavior differs from §13's sentence.
+§13 wrote the command as **"STANDALONE only: CreateOrganization(ALL) + research OU"**.
+As built, `init` permits STANDALONE **and** MANAGEMENT, and refuses MEMBER. **Resolved by
+amending §13's line** rather than by re-ratifying the deviation — DESIGN.md now names both
+states `init` permits and states the MEMBER refusal, so §13 and the shipped command agree.
+This section stays as the reasoning behind that line, since DESIGN.md states the decision
+but not why.
 
 Two reasons, and the second is a security argument rather than an ergonomic one.
 
@@ -169,11 +171,7 @@ to and silently do not enforce. Of the two partial states, the second is the one
 finished. `TestInitReportsWhatItDidBeforeFailing` drives exactly that half-failure and
 asserts the partial-progress report names the step that did succeed.
 
-**For AUDIT-2:** either §13's `init` line is amended to name the two states it permits, or
-this deviation is re-ratified as it stands. Do not resolve it by narrowing the command —
-that would reintroduce a mutating command with no safe second run.
-
-### D3 — `automat vend` performs DESIGN §7 steps 1–4 and 6, not step 5. DISCLOSED, not accepted
+### D3 — `automat vend` performs DESIGN §7 steps 1–4 and 6, not step 5. RESOLVED — §13 amended, step 5 deferred
 
 §13 writes the command as vending an account with its baseline applied. As built, `vend`
 does step 1 (resolve the environment profile to a compiled control set), step 2 (create
@@ -227,27 +225,34 @@ Two smaller shortfalls of the same kind, both reported the same way rather than 
   `Tags`. Two document fields that validate and then have no effect, which is worth an
   audit line of its own.
 
-**For AUDIT-2:** this is not a deviation to re-ratify. Either step 5 ships and D3 is
-struck, or §13's `vend` line is amended to describe what the command does. What must not
-happen is D3 quietly becoming the definition of vending.
+**Resolved by amending §13's line**, not by shipping step 5 or by re-ratifying: DESIGN.md's
+`vend` line now names steps 1–4 and 6 explicitly and states that step 5 is not yet
+implemented, pointing here for the shortfall's disclosure. The instruction this resolution
+honors is the one AUDIT-2 wrote — step 5 not shipping must not quietly become the
+*definition* of vending, so the amendment says "not yet implemented," not "vend does not
+include this." Everything above about how the shortfall is disclosed and the two smaller
+ones alongside it is unchanged by the resolution.
 
-### Not a deviation: `automat compile` lives in `gen/catalog`
+### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 
-§13 lists `automat compile`, and ROADMAP Phase 0's accept criterion writes it as
+§13 listed `automat compile`, and ROADMAP Phase 0's accept criterion wrote it as
 `automat compile --sets cmmc-l1 --out a.json`. What exists is `gen/catalog`, a separate
 maintainer-time binary with `-out`, `-sources`, and `-check`.
 
-Called out because it looks like a deviation and is not, yet: Phase 0 is about the
-compiled artifact being a versioned contract, and the compiler that produces the
-vendored catalogs is maintainer tooling by design — `gen/catalog/doc.go` states that
-it is "the only thing that ever reads an upstream catalog format", running at
-maintainer time while automat itself reads only the compiled output. Whether `compile`
-also needs to be an operator-facing subcommand is a real question (an operator
-composing their own control set from vendored catalogs would want it, and §9's union
-semantics are the reason to expect that), but it is not answerable in Phase 1 and
-nothing in Phase 1 needs it.
+**Resolved by amending §13 and ROADMAP** rather than by shipping a subcommand: DESIGN.md's
+§13 now states plainly that there is no `automat compile` subcommand and that union/compile
+is maintainer tooling, run against curated sources and vendored into `catalogs/` for the CLI
+to read. This section stays as the reasoning behind that line.
 
-**Carried to AUDIT-2 as an open item:** either `automat compile` ships as a subcommand
-over `internal/compilesets`, or §13's list is amended to say the compiler is
-maintainer tooling. Leaving a command in the design's CLI list with no plan to build
-it is how a design document stops being the source of truth.
+The compiler that produces the vendored catalogs is maintainer tooling by design —
+`gen/catalog/doc.go` states that it is "the only thing that ever reads an upstream catalog
+format", running at maintainer time while automat itself reads only the compiled output.
+Phase 0 is about the compiled artifact being a versioned contract, not about exposing the
+compiler to an operator. Whether an operator-facing `compile` is ever wanted (composing a
+control set from vendored catalogs, using §9's union semantics directly) is a real question
+this resolution does not foreclose — it says nothing ships one *today*, not that nothing
+ever will. Shipping one later is a CLI surface change and needs its own ask.
+
+ROADMAP.md's Phase 0 accept criterion, which named `automat compile --sets cmmc-l1 --out
+a.json`, is amended to name `gen/catalog`'s actual invocation instead, so the accept
+criterion states what running it produces rather than a command that does not exist.

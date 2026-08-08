@@ -303,15 +303,28 @@ Exit codes suitable for cron/CI.
 ```
 automat login        # SSO device flow (ssooidc) or standard credential chain; credential-profile-aware
 automat preflight    # three-state classification + permission report
-automat init         # STANDALONE only: CreateOrganization(ALL) + research OU
+automat init         # STANDALONE or MANAGEMENT: CreateOrganization(ALL) + research OU, or adopt an
+                      # organization already created outside automat (enable SCPs, ensure the OU).
+                      # Refuses MEMBER, which has neither authority and is pointed at `setup --request`.
 automat setup        # MANAGEMENT: apply delegation + create vendor role for a member acct
 automat setup --request   # MEMBER: emit onboarding bundle (§6)
-automat compile      # union/compile control sets → artifact (§9)
-automat vend         # §7
+automat vend         # §7 steps 1-4 and 6 (compile control set, create account, move, attach SCPs,
+                      # write evidence + birth certificate). Step 5, the in-child baseline (Config
+                      # recorder, conformance pack, opt-in regions, automation role), is NOT YET
+                      # IMPLEMENTED — see docs/cli-surface.md D3. A vended account's preventive
+                      # controls are real; nothing in it is being watched yet, and `vend` says so in
+                      # its plan, its evidence manifest, and its birth certificate rather than staying
+                      # silent about the gap.
 automat verify       # §12
 automat list         # vended accounts (by tags), parked accounts, OUs
 automat reclaim      # LATER (Phase 5): close/park accounts; respect closure rate limits
 ```
+
+There is no `automat compile` subcommand. Union/compile control sets → artifact (§9) is
+maintainer tooling, `gen/catalog`, run against curated sources in `gen/sources` and vendored
+into `catalogs/` for the CLI to read — never run against attacker-supplied input, and never
+exposed as an end-user command. An operator does not compile a control set; they choose one by
+id in an environment profile.
 
 Config: `~/.config/automat/config.toml` + per-org context (vendor role ARN, ExternalId ref, OU id, email pattern). Never store secrets; lean on the AWS credential chain and OS keychain if anything must persist.
 
