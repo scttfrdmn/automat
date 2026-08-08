@@ -855,9 +855,12 @@ conversation is one the next audit will not find.
 4. **The property-coverage lesson from H5.** A monotonicity property cannot see a defect that drops
    a guard without widening a set. AUDIT-3 should ask, for each property test in
    `internal/compilesets`, what shape of defect it is *blind* to — not whether it passes.
-5. **Eight overclaiming test names.** Names that assert more than the body establishes, found while
-   reading for F1's failure mode. H7's test has the corrected shape to imitate: the subtest that
-   documents the *limit* of the check is as load-bearing as the one that documents the check.
+5. **Overclaiming test names.** Names that assert more than the body establishes, found while
+   reading for F1's failure mode. **Corrected — see "Corrections to this record," item 6:** the
+   original count of eight was never itemized, and a re-derivation found two, not eight — report
+   what a re-check actually finds rather than treating the original count as a target. H7's test
+   has the corrected shape to imitate: the subtest that documents the *limit* of the check is as
+   load-bearing as the one that documents the check.
 6. **Q19 and Q20 are live security questions, not curiosities.** Q19 in particular: `vend`'s
    adoption path rests on corroboration because the authoritative check is ungranted.
 7. **28 citation items await human verification**, item 7 (DoD class deviation 2024-O0013) first,
@@ -917,3 +920,32 @@ this paragraph is the record that the correction happened and why.
    fact — see `docs/citation-verification.md`, added separately, which re-derives a queue from the
    shipped catalogs by a stated method and says plainly that it is a re-derivation, not a recovery,
    and that its item numbers do not correspond to whatever the original 28 were.
+6. **"Eight overclaiming test names" (carry-forward item 5) is unnamed — here is a re-derived
+   list, not a recovery of the original eight.** The same failure mode as item 5 above: a count
+   without the list behind it cannot be checked and cannot be acted on. Re-derived by grepping
+   every `^func Test` name touched in `541c3ec..b2ca812` for the words that make a universal claim
+   — `Every`, `Never`, `Always`, `Only`, `Cannot`, `All`, `Any` — and reading each candidate's body
+   against its name. Most held up; roughly forty were checked and only two did not, which is
+   reported honestly rather than stretched to eight:
+   - `TestVendorRoleCannotTagOutsideAutomatsNamespace` (`internal/bundle/escalation_test.go:315`)
+     checks only that the string `aws:TagKeys` appears anywhere in the rendered document — never
+     that the condition's key list is actually scoped to `automat:*`. A rendered policy carrying
+     `aws:TagKeys` set to `["anything"]` would pass. Its sibling three tests away,
+     `TestDelegateCannotTagItsWayIntoCentralITsPolicies`, checks the real thing
+     (`ForAllValues:StringLike` plus a prefix match) — which is the shape this one should imitate.
+   - `TestNoProductReferences` (`internal/artifact/schema_conformance_test.go:623`) is named as if
+     it enforces DESIGN §15 in general. It checks a hardcoded four-word list ("control tower",
+     "controltower", "audit manager", "landing zone accelerator") over two directories — a
+     hand-picked enumeration standing in for a general property, which is exactly F1's failure
+     shape (a map literal presented as coverage). `docsProductAllowlist`, forty lines below in the
+     same file, is the more thorough version — it walks `docs/` too, with an explicit allowlist
+     rather than a blocklist — and is the shape to imitate.
+   - Two candidates that looked suspicious and were confirmed fine on inspection, recorded because
+     a wrong-but-plausible finding dismissed without a reason is what this audit's own precedent
+     forbids: `TestEveryPaginatedListNeedsDraining` names exactly the five paginated fake methods
+     that exist (verified against `internal/awsfake/orgvend.go` and `orgpolicy.go`; `ListParents`
+     returns one item and is not paginated) — "every" is correct, not aspirational. Carry-forward
+     item 5's own cited example, `TestNoShippedProfileClaimsAutomatDecides`, does genuinely iterate
+     every shipped classification profile.
+   - Not renamed here, per carry-forward item 5's own instruction that the reading is AUDIT-3's to
+     do — this gives AUDIT-3 two confirmed starting points instead of a bare count of eight.
