@@ -49,17 +49,29 @@ cmd/automat/            # cobra main
 internal/
   preflight/            # three-state machine (DESIGN §4)
   org/                  # Organizations ops via OrgAPI (create/move/OU/SCP ensure)
-  broker/               # vendor-role assumption, ExternalId handling
-  baseline/             # in-child work: config recorder, conformance pack, regions, roles
-  artifact/             # schema types, load/validate/canonicalize/hash
+  broker/               # NOT YET BUILT (Phase 3): vendor-role assumption, ExternalId handling
+  baseline/             # NOT YET BUILT (Phase 3): in-child work — config recorder, conformance pack, regions, roles
+  artifact/             # control-artifact schema types, load/validate/canonicalize/hash
+  envprofile/           # environment-profile document type (vend's per-vend input, DESIGN §7a)
+  classprofile/         # classification-profile document type (institutional data levels)
   compilesets/          # union semantics + SCP packer
   evidence/             # hash-chained manifests, signer interface (local key now, KMS later)
   bundle/               # onboarding bundle generation (CFN/TF/README templates)
+  catalog/              # resolves an environment profile's ids to the documents they name
+  config/               # on-disk configuration
+  login/                # AWS SSO device authorization grant
+  safeio/               # confined file reads/writes (no symlink/hardlink/FIFO substitution)
+  version/              # build identity
   awsfake/              # hand-rolled fakes for all service interfaces
 schema/                 # JSON Schemas + CHANGELOG (versioned contracts)
-catalogs/               # vendored compiled artifacts (cmmc-l1, 800-171r2, 800-171r3)
+catalogs/               # vendored compiled artifacts: cmmc-l1, baseline-protection, plus
+                        # obligations/ (dfars-7012, nih-cadr-dua) and classification/
+                        # (uc-protection-levels, stanford-risk-classifications).
+                        # 800-171r2/r3 remain Phase 0 scope, not yet compiled.
 gen/                    # maintainer tooling: OSCAL + conformance-pack → catalog compiler
-docs/                   # conventions.md, security-review.md (the 60-line pitch), beyond.md
+docs/                   # conventions.md is Phase 5 scope, not yet written; see
+                        # docs/cli-surface.md, docs/audit-ritual.md, docs/open-questions.md,
+                        # and the rest of docs/ for what exists today.
 ```
 
 ## Working style
