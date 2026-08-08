@@ -47,10 +47,18 @@ clean:
 
 # Live AWS testing. Never run from CI. Requires an explicit profile and is
 # read-only unless pointed at an explicitly named sandbox org (CLAUDE.md rule 1).
-smoke: ## Manual live smoke test (requires AUTOMAT_SMOKE_PROFILE)
+#
+# No file in this tree carries a `smoke` build tag yet (AUDIT-2 carry-forward
+# item 3), so this currently runs zero tests and exits 0. That is not a pass --
+# it means the manual checklist in docs/smoke.md has not been automated at all.
+# TestMakefileSmokeClaimIsStillTrue fails the day a smoke-tagged test is added
+# and this comment is not updated to match.
+smoke: ## Manual live smoke test (requires AUTOMAT_SMOKE_PROFILE); see docs/smoke.md -- no automated test carries the smoke tag yet
 ifndef AUTOMAT_SMOKE_PROFILE
 	$(error AUTOMAT_SMOKE_PROFILE must be set explicitly; see docs/smoke.md)
 endif
+	@echo "No test in this tree carries the smoke build tag yet -- this will run zero tests."
+	@echo "The manual checklist is docs/smoke.md; it has not been automated."
 	go test -tags=smoke -count=1 ./internal/... -run 'Smoke'
 
 help: ## List targets
