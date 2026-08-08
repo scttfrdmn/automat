@@ -116,9 +116,11 @@ Recorded now so it is not lost, and gated deliberately: this is a new document t
 **`docs/institutional-profiles.md`:** the generalized model, the six-institution sample as evidence, the HEISC/HECVAT context, and the cosigning trust model. Written so it could be taken to the HEISC 800-171 group or RRCoP — but **automat proposes a format, never a governance body**, and must never become a registry or standards owner.
 
 ## Phase 3 — Brokered vend (the university path)
-- `broker/`: vendor-role assumption with ExternalId; vend flow in MEMBER state mixing brokered (create/move/OU) and delegated (policy) credentials.
-- `setup` (MANAGEMENT side): apply delegation policy + create vendor role for a named member account.
-- Nested OU creation within depth limits.
+- `broker/` — **task 1 done.** `broker.Assume` assumes the vendor role via `awsapi.STSAPI`, resolving the ExternalId through `config.ResolveExternalID` (never a bare value), and returns an `aws.Config` that builds a working `awsapi.OrgVendAPI` client. Session lifetime is single-assumption-per-vend by design; re-assumption is deferred to whichever later task's wiring shows a real need for it (see the package doc). Failures produce rule-7 remediation matching `preflight.checkVendorRole`'s wording for the same failure. Pulled `github.com/aws/aws-sdk-go-v2/credentials` from indirect to direct in `go.mod` — no new version, already pre-approved (CLAUDE.md).
+- **Task 2, not started:** wire `broker` into `vend`'s MEMBER-state flow — `globals.go`'s `orgVendClient` gains the MEMBER branch its own comment already promises, `vend.go` sets `org.Brokered`, and the create-lands-under-root-then-move race gets the same park/resume handling the native path already has.
+- **Task 3, not started:** `setup` (MANAGEMENT side) — apply delegation policy + create vendor role for a named member account. Needs new `awsapi` interfaces (`IAMAPI` is read-only today; `OrgAPI`'s resource-policy support is read-only today) and a design decision (render-then-apply the existing CFN/TF templates, or call AWS directly) before code starts.
+- **Task 4, not started:** emulator integration for `broker`, per the subsection below — needs task 1 (done) but is otherwise independent of tasks 2–3.
+- Nested OU creation within depth limits — the native-path logic (`internal/org/ou.go`'s `MaxOUDepth`/`depthOf`) already exists; doing the same creates through a brokered credential is task 2's work, not new logic.
 - **Accept:** fake-backed MEMBER vend; failure modes (unassumable role, missing delegation) produce actionable remediation text naming the exact missing grant.
 
 ### Emulator integration for `broker` — decided, scheduled here

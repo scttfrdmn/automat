@@ -49,7 +49,8 @@ cmd/automat/            # cobra main
 internal/
   preflight/            # three-state machine (DESIGN §4)
   org/                  # Organizations ops via OrgAPI (create/move/OU/SCP ensure)
-  broker/               # NOT YET BUILT (Phase 3): vendor-role assumption, ExternalId handling
+  broker/               # vendor-role assumption, ExternalId handling (Phase 3, task 1 of 4;
+                        # not yet wired into vend's MEMBER-state flow — see ROADMAP.md)
   baseline/             # NOT YET BUILT (Phase 3): in-child work — config recorder, conformance pack, regions, roles
   artifact/             # control-artifact schema types, load/validate/canonicalize/hash
   envprofile/           # environment-profile document type (vend's per-vend input, DESIGN §7a)
