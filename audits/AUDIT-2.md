@@ -812,6 +812,12 @@ time.
    now refuses was one automat previously read differently from how it reads. Listed because it
    changes what three `Decode` functions accept, and that is a contract.
 
+> **All six ratified by the maintainer, 2026-08-08.** No changes requested to any of the six as
+> shipped. Item 1 was reviewed on the same basis it was flagged — it restructures rather than
+> tightens, and was asked about before it landed — and ratified as-is rather than unwound; the
+> code was already running and unwinding a live content-hash definition would have cost more than
+> it bought. Nothing here reopens any of the six for a future audit to re-review.
+
 ---
 
 ## For the human to review — open questions and stale items

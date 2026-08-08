@@ -66,16 +66,17 @@ audit records a decision rather than rediscovering the change.
   `schema/CHANGELOG.md`. AUDIT-2 still owes the sweep over the other three
   schemas and over what the CLI and error paths print, since a field becomes a
   round-trip field the moment a remediation message tells someone to type it.
-- **UNRATIFIED — `control-artifact/v1`'s content hash now covers a payload object**
-  rather than a bare `controls[]` array. Landed with E1/E3 because the alternative
-  was an unhashed security-relevant field (`region_deny_exempt_services`, whose
-  corruption both bricks an account and silently widens a Deny), but it
-  **restructures rather than strictly tightens** — so rule 6 makes it the
-  maintainer's call, not an audit-driven change that may land and be ratified later.
-  Committed in `6700bc0` with the reasoning in `schema/CHANGELOG.md`. Every artifact
-  hash moved, including `cmmc-l1`'s, which gained no field. Flagged here because a
-  changelog entry is a record, not an approval.
-- **UNRATIFIED — `environment-profile/v1`: five fields tightened** —
+- **RATIFIED at AUDIT-2, 2026-08-08 — `control-artifact/v1`'s content hash now covers
+  a payload object** rather than a bare `controls[]` array. Landed with E1/E3 because
+  the alternative was an unhashed security-relevant field
+  (`region_deny_exempt_services`, whose corruption both bricks an account and
+  silently widens a Deny), but it **restructures rather than strictly tightens** —
+  reviewed on that basis and ratified as-is rather than unwound, since the code was
+  already running and unwinding a live content-hash definition would have cost more
+  than it bought. Committed in `6700bc0` with the reasoning in `schema/CHANGELOG.md`.
+  Every artifact hash moved, including `cmmc-l1`'s, which gained no field.
+- **RATIFIED at AUDIT-2, 2026-08-08 — `environment-profile/v1`: five fields
+  tightened** —
   `environment_profile.title`/`.description` to `$defs/prose`/`long_prose`,
   `placement.ou_path[]` to `$defs/ou_name`, `account.email_pattern` to an explicit
   charset with `maxLength: 254` (the old `^[^@\s]+@[^@\s]+$` admitted control bytes
