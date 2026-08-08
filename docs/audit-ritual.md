@@ -55,8 +55,16 @@ not a documentation nit. A profile is a reading of policy that an institution ac
 policy moves: notices are superseded, phase-in dates arrive, a class deviation pinning a
 revision expires. The failure mode is silent and confident, since a superseded citation
 renders exactly as well as a current one. Also confirm the policy caveat still appears
-where `docs/policy-caveat.md` requires it, and that the understatement asymmetry still holds
-across the whole profile set rather than per profile.
+where `docs/policy-caveat.md` requires it, and that the understatement asymmetry — the
+`determinations.understatement_value` guarantee `TestTheUnderstatementAsymmetryHoldsUnder‑
+EveryProfile` enforces — still holds across every **obligation** profile rather than per
+profile. The classification profiles are a separate document type with no understatement
+value to check: what they owe instead is that automat never decides a level
+(`TestNoShippedProfileClaimsAutomatDecides`) and that a source's silence is not filled in
+(`TestWhereTheShippedSourceIsSilentTheShippedProfileIsSilent`) — confirm both hold across
+every shipped classification profile, for the same reason: a guarantee checked against one
+document and assumed for the rest is a guarantee that erodes the first time a second document
+disagrees with it.
 
 **gosec + dependency review**, with every finding triaged in writing.
 
