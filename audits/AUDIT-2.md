@@ -495,6 +495,11 @@ contracts require a C3PAO-assessed Level 2 rather than a self-assessment. Fixed 
 
 ### F5 — UC's BFB-IS-3 citation has no shape to say "never retrieved". NOT FIXED — needs the maintainer (Q18)
 
+> **Resolved after this record.** The maintainer decided Q18's option 1 — a fourth
+> `date_basis` value — and it is implemented; see `schema/CHANGELOG.md`'s classification-‑
+> profile/v1 entry and Q18. This section stands as written, describing the finding at the
+> time it was found.
+
 `citation.date_basis` has three values and **all three describe a document that was
 retrieved**. There is no value for *never retrieved*, and the UC profile has such a citation:
 `BFB-IS-3` is the parent policy the Classification Standard says drives it, retrieval was

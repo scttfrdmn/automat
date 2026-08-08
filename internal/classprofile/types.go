@@ -500,10 +500,20 @@ const (
 	// page would be automat's fabrication sitting in the field a reader checks for
 	// staleness.
 	DateRetrievedOnly DateBasis = "retrieved-only"
+	// DateNotRetrieved is for a document automat has not read at all: named because a
+	// reader needs to know it exists and governs, with retrieval attempted and failed,
+	// or never attempted. Forbids both EffectiveDate and SourceID, unlike
+	// DateRetrievedOnly, which forbids only the former — there are no retrieved bytes
+	// for a SourceID to point at. Exists because the alternative was recording an
+	// unread document as DateRetrievedOnly and pointing SourceID at a DIFFERENT
+	// document the validator's old required-SourceID rule forced a name for (AUDIT-2
+	// F5): the field a re-verifier reads asserted the wrong thing about which document
+	// was read.
+	DateNotRetrieved DateBasis = "not-retrieved"
 )
 
 // AllDateBases is the closed set.
-var AllDateBases = []DateBasis{DateEffective, DateLastUpdated, DateRetrievedOnly}
+var AllDateBases = []DateBasis{DateEffective, DateLastUpdated, DateRetrievedOnly, DateNotRetrieved}
 
 // CiteRole says what a cited document does.
 type CiteRole string

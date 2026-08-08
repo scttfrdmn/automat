@@ -1228,3 +1228,60 @@ names this transcription had the opportunity to get wrong.
 The model, the six published schemes it was derived from, the trust model for
 cosigning a derived profile, and the four things automat must never become as a
 result of publishing this format: `docs/institutional-profiles.md`.
+
+## Pre-publication change to classification-profile/v1: `date_basis: not-retrieved`
+
+No version bump — `classification-profile/v1` has not been published, so this lands
+as part of the still-unreleased 1.0.0 rather than as a migration. After publication
+this would be a **minor** bump: it adds an enum value and two `allOf` constraints,
+and every document that validated before still validates unchanged.
+
+**Listed for the record under rule 6 anyway**, since it is new structure rather than
+a pure tightening: `date_basis` gained a fourth value, `not-retrieved`, and
+`source_id` is now conditionally forbidden where it was previously required. Decided
+by the maintainer following AUDIT-2's F5 finding and Q18.
+
+**The gap.** All three prior `date_basis` values describe a document that WAS
+retrieved: `published-effective-date` and `last-updated-in-document` name where the
+date came from, and `retrieved-only` means "retrieved, and it bears no date." There
+was no value for *never retrieved* — and a citation needs one, because a profile
+legitimately names a governing document it has not read: BFB-IS-3 is the parent
+policy UC's own Classification Standard says drives it, and a reader of the profile
+needs to know it exists and governs even though automat has not fetched it (retrieval
+was attempted and failed with a TLS error).
+
+**What shipped instead, and why it was wrong in the machine-readable direction.**
+The only value available that forbade `effective_date` was `retrieved-only`, so the
+citation used it — asserting retrieved bytes that do not exist. The validator then
+*required* `source_id` on that basis (with no published date, the retrieval record is
+the only dating available), so the citation named the Classification Standard's
+`source_id` instead — a different document, whose hash does not cover BFB-IS-3's
+bytes at all. The prose note said "NOT RETRIEVED" in its first two words; the two
+fields a tool actually reads asserted the opposite. Reasonable under the shapes
+available, and wrong in the field that matters.
+
+**The fix.** `date_basis: not-retrieved` forbids both `effective_date` and
+`source_id` — unlike `retrieved-only`, which forbids only the former. Their absence
+now means exactly what the prose says: nothing was read, so there is no date and no
+hash to point at. A future reader filtering `citations[]` by `date_basis` gets an
+honest partition instead of a `retrieved-only` entry that lies about being read.
+
+Two shapes rule 6 also reserved were not chosen, and the reasoning is worth keeping
+even though it is not the change: a separate `unretrieved_references[]` block would
+keep `citations[]` meaning strictly "documents this profile read," at the cost of
+splitting one reader-facing list into two; dropping the citation entirely was graded
+worst of the three, because the reader would then lose the fact that BFB-IS-3 governs
+the scheme at all — true and load-bearing whether or not automat has fetched it.
+
+**Consequence for `catalogs/classification/uc-protection-levels.json`.** The BFB-IS-3
+citation now carries `date_basis: not-retrieved` with no `source_id`. `citations[]`
+is inside the content hash, so this moved the document's `content_sha256`, and its
+`interpreted-by` attestation was re-signed over the new hash —
+`TestTheShippedAttestationsAreAboutTheShippedContent` is what would have caught it
+otherwise. The claim about the policy itself did not change: BFB-IS-3 still governs
+and is still unread, and every checkable claim in this profile still traces to the
+Classification Standard, the only document actually hashed.
+
+`internal/classprofile/schema_conformance_test.go` gained accept cases for a bare
+`not-retrieved` citation and reject cases for one carrying either forbidden field, so
+both validators agree on the new value the same way they agree on the other three.

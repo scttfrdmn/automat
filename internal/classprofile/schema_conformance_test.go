@@ -356,6 +356,17 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			// The pairing that keeps a retrieval timestamp from being read as publication.
 			p.Citations[0].DateBasis = DateRetrievedOnly
 		}},
+		{"a not-retrieved citation carrying an effective date", func(_ *testing.T, p *Profile) {
+			// Automat did not read this document, so it has no date to report.
+			p.Citations[0].DateBasis = DateNotRetrieved
+		}},
+		{"a not-retrieved citation carrying a source_id", func(_ *testing.T, p *Profile) {
+			// The exact confusion not-retrieved exists to close: naming a source's hash
+			// for a document whose bytes were never fetched.
+			p.Citations[0].DateBasis = DateNotRetrieved
+			p.Citations[0].EffectiveDate = ""
+			p.Citations[0].SourceID = "example-policy"
+		}},
 		{"an effective date that is a timestamp", func(_ *testing.T, p *Profile) {
 			p.Citations[0].EffectiveDate = "2024-06-01T00:00:00Z"
 		}},
@@ -617,6 +628,14 @@ func TestSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			// date the policy took effect.
 			p.Citations[0].DateBasis = DateLastUpdated
 		}},
+		{"a not-retrieved citation, which is what a governing document nobody fetched is",
+			func(_ *testing.T, p *Profile) {
+				// BFB-IS-3's shape: named because a reader needs to know it governs, never
+				// retrieved, so no date and no source_id (AUDIT-2 F5).
+				p.Citations[0].DateBasis = DateNotRetrieved
+				p.Citations[0].EffectiveDate = ""
+				p.Citations[0].SourceID = ""
+			}},
 		{"a citation reference carrying the source's own words", func(_ *testing.T, p *Profile) {
 			// The field that makes a claim checkable at a glance, and the one a reviewer
 			// reads first. Optional, because a quote on every control would be a

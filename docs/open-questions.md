@@ -644,9 +644,16 @@ Q15 — both are "what does this hash cover", and answering them together is lik
 than answering either alone. Wanted before Phase 4's `verify`, which has to decide what it
 is verifying an account *against*.
 
-### Q18 — `classification-profile/v1` has no way to record a citation it could not retrieve
+### Q18 — `classification-profile/v1` has no way to record a citation it could not retrieve. DECIDED
 
-`citation.date_basis` has three values, and all three describe a document that WAS
+**Resolved by the maintainer: option 1, a fourth `date_basis` value.** `not-retrieved` is
+implemented — see `schema/CHANGELOG.md`, "Pre-publication change to
+classification-profile/v1: `date_basis: not-retrieved`" — and `catalogs/classification/
+uc-protection-levels.json`'s BFB-IS-3 citation now carries it, with `source_id` removed and
+its `interpreted-by` attestation re-signed over the new content hash. The reasoning below is
+kept as the record of why, and why the other two options were not chosen.
+
+`citation.date_basis` had three values, and all three describe a document that WAS
 retrieved: `published-effective-date` and `last-updated-in-document` name where in the
 bytes the date was read from, and `retrieved-only` means "retrieved, and it bears no date
 at all." There is no value for *never retrieved*.

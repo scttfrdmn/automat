@@ -409,15 +409,15 @@
         },
         "title": { "$ref": "#/$defs/prose" },
         "date_basis": {
-          "description": "WHERE THE DATE COMES FROM, which institutional policy makes a real question rather than a formality. `published-effective-date` — the document states when it took effect or was approved. `last-updated-in-document` — it carries only a revision or last-updated stamp. `retrieved-only` — it is a living web page bearing no date at all, and the retrieval timestamp in `sources` is the only fact available. The third value exists so that a dateless source is recorded as dateless: an effective date invented for a living page would be automat's fabrication sitting in the field a reader checks for staleness.",
-          "enum": ["published-effective-date", "last-updated-in-document", "retrieved-only"]
+          "description": "WHERE THE DATE COMES FROM, which institutional policy makes a real question rather than a formality. `published-effective-date` — the document states when it took effect or was approved. `last-updated-in-document` — it carries only a revision or last-updated stamp. `retrieved-only` — it is a living web page bearing no date at all, and the retrieval timestamp in `sources` is the only fact available. `not-retrieved` — automat has not read this document at all; it is named because a reader needs to know it exists and governs, and retrieval was attempted and failed, or has not been attempted. The distinction from `retrieved-only` is exactly which of `effective_date` and `source_id` a reader can trust: `retrieved-only` asserts the bytes were read and found dateless, and points `source_id` at them; `not-retrieved` asserts nothing was read, and forbids `source_id` because there are no retrieved bytes to point at. Conflating the two — recording an unread document as `retrieved-only` and naming a *different* document's `source_id` because the validator requires one — is precisely the failure this value exists to close: the field a re-verifier reads asserts the wrong thing about which document was read.",
+          "enum": ["published-effective-date", "last-updated-in-document", "retrieved-only", "not-retrieved"]
         },
         "effective_date": {
-          "description": "The date, required unless `date_basis` is `retrieved-only` and forbidden when it is.",
+          "description": "The date, required unless `date_basis` is `retrieved-only` or `not-retrieved`, and forbidden for both.",
           "$ref": "#/$defs/date"
         },
         "source_id": {
-          "description": "The `sources[]` entry holding the retrieved bytes of this citation, where it was retrieved.",
+          "description": "The `sources[]` entry holding the retrieved bytes of this citation, where it was retrieved. Forbidden when `date_basis` is `not-retrieved`: there are no retrieved bytes for an unread document to point at, and naming another document's source here is the exact confusion `not-retrieved` exists to prevent.",
           "$ref": "#/$defs/slug"
         },
         "uri": { "$ref": "#/$defs/prose" },
@@ -429,9 +429,18 @@
       },
       "allOf": [
         {
-          "if": { "properties": { "date_basis": { "const": "retrieved-only" } }, "required": ["date_basis"] },
+          "description": "effective_date is forbidden for either dateless basis (retrieved-only: a living page with no date; not-retrieved: no bytes were read at all) and required otherwise.",
+          "if": {
+            "properties": { "date_basis": { "enum": ["retrieved-only", "not-retrieved"] } },
+            "required": ["date_basis"]
+          },
           "then": { "not": { "required": ["effective_date"] } },
           "else": { "required": ["effective_date"] }
+        },
+        {
+          "description": "source_id is forbidden when the document was never retrieved: there are no retrieved bytes for it to point at.",
+          "if": { "properties": { "date_basis": { "const": "not-retrieved" } }, "required": ["date_basis"] },
+          "then": { "not": { "required": ["source_id"] } }
         }
       ]
     },

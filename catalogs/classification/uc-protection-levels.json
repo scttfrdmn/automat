@@ -2,8 +2,8 @@
   "schema_version": "1.0.0",
   "classification_profile": {
     "id": "uc-protection-levels",
-    "title": "University of California Protection Levels (P1–P4)",
-    "description": "The four Protection Levels defined by the UC Institutional Information and IT Resource Classification Standard, IT Security Committee Item SC-0002. Read from the published Standard and nothing else: the Standard defines the levels and the classification process, while the security controls required at each level live in BFB-IS-3 Electronic Information Security and the Location implementations under it. This profile therefore states NO controls at any level — see the note on levels[].controls being absent throughout, which is the honest rendering of a source that defines levels without stating per-level controls.\n\nAn EXAMPLE, not a maintained document. Fork it, correct automat's reading against your own reading, and re-attest."
+    "title": "University of California Protection Levels (P1\u2013P4)",
+    "description": "The four Protection Levels defined by the UC Institutional Information and IT Resource Classification Standard, IT Security Committee Item SC-0002. Read from the published Standard and nothing else: the Standard defines the levels and the classification process, while the security controls required at each level live in BFB-IS-3 Electronic Information Security and the Location implementations under it. This profile therefore states NO controls at any level \u2014 see the note on levels[].controls being absent throughout, which is the honest rendering of a source that defines levels without stating per-level controls.\n\nAn EXAMPLE, not a maintained document. Fork it, correct automat's reading against your own reading, and re-attest."
   },
   "issuer": {
     "id": "uc",
@@ -24,8 +24,8 @@
     {
       "role": "interpreted-by",
       "identity": "automat maintainers",
-      "statement": "We read the cited published Standard and wrote this profile as our own reading of it. This attests to authorship of the reading and to nothing else: not that the reading is correct, not that it is complete, and not that the University of California has seen it. No signature material accompanies this attestation, and automat verifies none in v1. Re-attested at AUDIT-2 for two provenance corrections, neither of which changed a claim about the policy. F6: sources[].uri now names the Standard's own PDF rather than the .html policy page it was retrieved from, and the recorded hash was confirmed by re-fetching that PDF \u2014 e36e44a7, unchanged. F5: the BFB-IS-3 citation's note now states outright that its date_basis and source_id are wrong in the machine-readable direction, because the schema has no value for a citation that was never retrieved; the shape of the fix is the maintainer's call and is recorded as Q18.",
-      "content_sha256": "ff32ebd38b607f5efd816518003716cde49360b07da2e3f347ab3977ff51c1b4",
+      "statement": "We read the cited published Standard and wrote this profile as our own reading of it. This attests to authorship of the reading and to nothing else: not that the reading is correct, not that it is complete, and not that the University of California has seen it. No signature material accompanies this attestation, and automat verifies none in v1. Re-attested at AUDIT-2 for three provenance corrections, none of which changed a claim about the policy. F6: sources[].uri now names the Standard's own PDF rather than the .html policy page it was retrieved from, and the recorded hash was confirmed by re-fetching that PDF \u2014 e36e44a7, unchanged. F5, resolved: the BFB-IS-3 citation now carries date_basis not-retrieved and no source_id, rather than retrieved-only with source_id naming a different document \u2014 the schema gained a fourth date_basis value for a citation that was never read at all, per the maintainer's decision on Q18. The claim about the policy is unchanged: BFB-IS-3 still governs and is still unread; only the machine-readable fields now say so correctly.",
+      "content_sha256": "04d3e534e7985d04435724ce8c85e5b067e245b67a57d5d0fe713ab929ac2a3c",
       "attested_at": "2026-08-06"
     }
   ],
@@ -40,30 +40,30 @@
     "automat_determines": false,
     "citation": {
       "source_id": "uc-classification-standard",
-      "section": "Section 4.2 Classifying Institutional Information, Steps 1–3 (pages 7–10); Section 6 Appendix A – Roles and Responsibilities (page 14)",
+      "section": "Section 4.2 Classifying Institutional Information, Steps 1\u20133 (pages 7\u201310); Section 6 Appendix A \u2013 Roles and Responsibilities (page 14)",
       "quote": "Proprietors must comply with this Standard and are responsible for determining the Protection Levels for Institutional Information and IT Resources under their area of responsibility."
     },
     "may_raise": "yes",
     "may_lower": {
       "permitted": "only-by-exception",
-      "exception_process": "IS-3, III.2.2, “Exception Process”",
+      "exception_process": "IS-3, III.2.2, \u201cException Process\u201d",
       "citation": {
         "source_id": "uc-classification-standard",
         "section": "Section 4.2 Classifying Institutional Information, Step 2, item 2 (page 10)",
-        "quote": "Proprietors may use the published Protection Level in the guide or raise it based on the specific use case, but they cannot lower it without going through the exception process described in IS-3, III.2.2, “Exception Process.”"
+        "quote": "Proprietors may use the published Protection Level in the guide or raise it based on the specific use case, but they cannot lower it without going through the exception process described in IS-3, III.2.2, \u201cException Process.\u201d"
       }
     },
-    "notes": "The asymmetry is the source's, stated in one sentence: a Proprietor may raise the published Protection Level on a use case but may not lower it outside the named exception process. The same sentence goes on to say that the AVAILABILITY Level may be raised or lowered on use case — an axis this profile does not model; see unmodeled_axes.\n\nThe named exception process lives in BFB-IS-3, a document this profile has NOT retrieved or hashed. It is recorded here as the process the Standard names, cited to the Standard, and no claim is made about what IS-3 III.2.2 says."
+    "notes": "The asymmetry is the source's, stated in one sentence: a Proprietor may raise the published Protection Level on a use case but may not lower it outside the named exception process. The same sentence goes on to say that the AVAILABILITY Level may be raised or lowered on use case \u2014 an axis this profile does not model; see unmodeled_axes.\n\nThe named exception process lives in BFB-IS-3, a document this profile has NOT retrieved or hashed. It is recorded here as the process the Standard names, cited to the Standard, and no claim is made about what IS-3 III.2.2 says."
   },
   "levels": [
     {
       "id": "p1",
-      "label": "P1 – Minimal",
+      "label": "P1 \u2013 Minimal",
       "rank": 1,
       "definition": "Public information or information intended to be readily obtainable by the public, but whose integrity is important and for which unauthorized modification is the primary protection concern. IT Resources for which the application of minimum security requirements is sufficient. The source's one-word gloss for this level is \"Public\".",
       "citation": {
         "source_id": "uc-classification-standard",
-        "section": "Section 3.1 Protection Levels, P1 – Minimal row (page 5–6)",
+        "section": "Section 3.1 Protection Levels, P1 \u2013 Minimal row (page 5\u20136)",
         "quote": "Public information or information intended to be readily obtainable by the public, but whose integrity is important and for which unauthorized modification is the primary protection concern."
       },
       "examples": [
@@ -76,12 +76,12 @@
     },
     {
       "id": "p2",
-      "label": "P2 – Low",
+      "label": "P2 \u2013 Low",
       "rank": 2,
       "definition": "Institutional Information and related IT Resources that may not be specifically protected by statute, regulations or other contractual obligations or mandates, but are generally not intended for public use or access. In addition, information of which unauthorized use, access, disclosure, acquisition, modification or loss could result in minor damage or small financial loss, or cause minor impact on the privacy of an individual or group. The source's one-word gloss for this level is \"Internal\".",
       "citation": {
         "source_id": "uc-classification-standard",
-        "section": "Section 3.1 Protection Levels, P2 – Low row (page 5)",
+        "section": "Section 3.1 Protection Levels, P2 \u2013 Low row (page 5)",
         "quote": "Institutional Information and related IT Resources that may not be specifically protected by statute, regulations or other contractual obligations or mandates, but are generally not intended for public use or access."
       },
       "examples": [
@@ -93,17 +93,17 @@
     },
     {
       "id": "p3",
-      "label": "P3 – Moderate",
+      "label": "P3 \u2013 Moderate",
       "rank": 3,
       "definition": "Institutional Information and related IT Resources whose unauthorized disclosure or modification could result in small to moderate fines, penalties or civil actions. Institutional Information of which unauthorized use, access, disclosure, acquisition, modification, loss or deletion could result in moderate damage to UC, its students, patients, research subjects, employees, community and/or reputation related to a breach or compromise; could have a moderate impact on the privacy of a group; could result in moderate financial loss; or could require legal action. This classification level also includes lower risk items that, when combined, represent increased risk. The source's one-word gloss for this level is \"Proprietary\".",
       "citation": {
         "source_id": "uc-classification-standard",
-        "section": "Section 3.1 Protection Levels, P3 – Moderate row (pages 4–5)",
+        "section": "Section 3.1 Protection Levels, P3 \u2013 Moderate row (pages 4\u20135)",
         "quote": "This classification level also includes lower risk items that, when combined, represent increased risk."
       },
       "examples": [
         "Student records (FERPA)",
-        "Certain types of Personally Identifiable Information (PII) – not classified as P4",
+        "Certain types of Personally Identifiable Information (PII) \u2013 not classified as P4",
         "Certain special services records",
         "Security camera recordings",
         "Building entry records from automated card key system",
@@ -114,12 +114,12 @@
     },
     {
       "id": "p4",
-      "label": "P4 – High",
+      "label": "P4 \u2013 High",
       "rank": 4,
       "definition": "Institutional Information and related IT Resources whose unauthorized disclosure or modification could result in significant fines, penalties, regulatory action, or civil or criminal violations. Statutory, regulatory and contract obligations are major drivers for this risk level. Other drivers include, but are not limited to: the risk of significant harm or impairment to UC students, patients, research subjects, employees, guests/program participants, UC reputation related to a breach or compromise, the overall operation of the Location or essential services. The source's one-word gloss for this level is \"Statutory\".",
       "citation": {
         "source_id": "uc-classification-standard",
-        "section": "Section 3.1 Protection Levels, P4 – High row (page 4)",
+        "section": "Section 3.1 Protection Levels, P4 \u2013 High row (page 4)",
         "quote": "Institutional Information and related IT Resources whose unauthorized disclosure or modification could result in significant fines, penalties, regulatory action, or civil or criminal violations."
       },
       "examples": [
@@ -127,12 +127,12 @@
         "Credit card data",
         "Controlled Unclassified Information (CUI)",
         "Financial aid information",
-        "Certain types of Personally Identifiable Information (PII) – large collections or special sensitivity to privacy",
+        "Certain types of Personally Identifiable Information (PII) \u2013 large collections or special sensitivity to privacy",
         "Human subject research data with individual identifiers",
         "Medical devices supporting care",
         "Industrial Control Systems affecting life and safety"
       ],
-      "notes": "The source's examples at this level name several external regimes by their subject matter — protected health information, credit card data, Controlled Unclassified Information. They are recorded above as examples, which is what the source calls them, and NOT as external_obligations entries: the Standard names data types the Proprietor may recognize, it does not state that a regime applies at this level. Reading a routing rule into an example list would be automat concluding that a regime applies, which is the operator's declaration to make."
+      "notes": "The source's examples at this level name several external regimes by their subject matter \u2014 protected health information, credit card data, Controlled Unclassified Information. They are recorded above as examples, which is what the source calls them, and NOT as external_obligations entries: the Standard names data types the Proprietor may recognize, it does not state that a regime applies at this level. Reading a routing rule into an example list would be automat concluding that a regime applies, which is the operator's declaration to make."
     }
   ],
   "composition": {
@@ -156,8 +156,8 @@
   },
   "unmodeled_axes": [
     {
-      "name": "Availability Level (A1–A4)",
-      "statement": "The Standard classifies Institutional Information and IT Resources on TWO independent axes: Protection Level P1–P4, based on the level of concern related to confidentiality and integrity, and Availability Level A1–A4, based on the business impact a loss of availability or service would have. This profile models the Protection axis only, because a Protection Level is what an account is rated for.\n\nRecorded rather than omitted, and the disclosure is the point. To a reader who knows this Standard, a profile showing four levels and no availability axis looks like an incomplete transcription; to a reader who does not, it looks as though UC classified on one axis. The two axes are also not parallel in the one place it matters most: a Proprietor may not lower a Protection Level outside the exception process, but the Standard says explicitly that a Proprietor MAY select a lower Availability Level than the guide specifies. An implementation that treated the availability axis as another instance of this one would carry that permission across, and be wrong in the permissive direction.",
+      "name": "Availability Level (A1\u2013A4)",
+      "statement": "The Standard classifies Institutional Information and IT Resources on TWO independent axes: Protection Level P1\u2013P4, based on the level of concern related to confidentiality and integrity, and Availability Level A1\u2013A4, based on the business impact a loss of availability or service would have. This profile models the Protection axis only, because a Protection Level is what an account is rated for.\n\nRecorded rather than omitted, and the disclosure is the point. To a reader who knows this Standard, a profile showing four levels and no availability axis looks like an incomplete transcription; to a reader who does not, it looks as though UC classified on one axis. The two axes are also not parallel in the one place it matters most: a Proprietor may not lower a Protection Level outside the exception process, but the Standard says explicitly that a Proprietor MAY select a lower Availability Level than the guide specifies. An implementation that treated the availability axis as another instance of this one would carry that permission across, and be wrong in the permissive direction.",
       "citation": {
         "source_id": "uc-classification-standard",
         "section": "Section 3.2 Availability Levels (page 6); Section 4.2 Step 1, item 4 Required Availability Level (page 8)",
@@ -174,18 +174,17 @@
       "source_id": "uc-classification-standard",
       "uri": "https://security.ucop.edu/policies/institutional-information-and-it-resource-classification.html",
       "role": "defines-levels",
-      "note": "Dated by the “Last Updated: 8/21/2019” stamp in the document's own page footer, which is why date_basis is last-updated-in-document rather than published-effective-date. The revision history records a later event — “10/3/19 … Approved by ITLC” — and that approval date is NOT used as the effective date here: the Standard's own footer is what the document presents as its date on every page, and choosing the later of two dates a document states would be automat picking which one counts.\n\nThe URI is the classification policy page the Standard's Step 2 names as where the classification guides can be found; the PDF hashed in sources[] was retrieved from that page's document link."
+      "note": "Dated by the \u201cLast Updated: 8/21/2019\u201d stamp in the document's own page footer, which is why date_basis is last-updated-in-document rather than published-effective-date. The revision history records a later event \u2014 \u201c10/3/19 \u2026 Approved by ITLC\u201d \u2014 and that approval date is NOT used as the effective date here: the Standard's own footer is what the document presents as its date on every page, and choosing the later of two dates a document states would be automat picking which one counts.\n\nThe URI is the classification policy page the Standard's Step 2 names as where the classification guides can be found; the PDF hashed in sources[] was retrieved from that page's document link."
     },
     {
       "id": "BFB-IS-3",
       "title": "UC Electronic Information Security (BFB-IS-3)",
-      "date_basis": "retrieved-only",
-      "source_id": "uc-classification-standard",
+      "date_basis": "not-retrieved",
       "role": "governs",
-      "note": "NOT RETRIEVED. The parent policy the Standard says drives it, and the document holding the exception process the Standard names. Recorded because a reader of this profile needs to know it exists and that this profile has not read it; its source_id points at the Standard, which is the only document hashed here, so every claim in this profile still traces to bytes somebody can check. NO claim in this profile is sourced to IS-3 itself — the exception-process reference under determination.may_lower is cited to the Standard's own sentence naming it. Retrieval was attempted and failed with a TLS error.\n\nREAD THE PROSE, NOT THIS ENTRY'S FIELDS, and here is exactly why. `classification-profile/v1` has no value meaning NOT RETRIEVED: all three date_basis values describe a document that was retrieved, and retrieved-only specifically means \"retrieved, and it bears no date.\" This entry carries retrieved-only because it is the only value that does not require an effective_date this profile has no basis to state, and inventing a date would be worse. The validator then requires a source_id on that basis, so this one names the Classification Standard \u2014 a DIFFERENT document, and the bytes that hash covers are not IS-3's. Both fields are therefore wrong in the machine-readable direction while the prose is right, which is the reverse of the usual failure and no better. AUDIT-2 recorded it as F5 and did NOT fix it: every repair needs a fourth enum value or a relaxed source_id rule, and both loosen a published contract, which rule 6 reserves for the maintainer. Tracked as Q18 in docs/open-questions.md. A consumer filtering these fields must not treat this citation as retrieved."
+      "note": "NOT RETRIEVED. The parent policy the Standard says drives it, and the document holding the exception process the Standard names. Recorded because a reader of this profile needs to know it exists and that this profile has not read it. Retrieval was attempted and failed with a TLS error. NO claim in this profile is sourced to IS-3 itself \u2014 the exception-process reference under determination.may_lower is cited to the Standard's own sentence naming it, and that citation's source_id points at the Standard (uc-classification-standard), which is the only document hashed here. Every checkable claim in this profile still traces to bytes somebody can verify.\n\ndate_basis is not-retrieved, added at AUDIT-2 F5's resolution: the prior draft recorded this citation as retrieved-only with source_id naming the Standard, because the schema had no fourth value for \"never read\" and the validator required a source_id on the only basis available that forbade an effective_date. That made both machine-readable fields wrong \u2014 retrieved-only asserts bytes were read and found dateless, and this document's bytes were never fetched at all; source_id pointed a re-verifier at a hash that is not IS-3's. not-retrieved forbids both fields, so their absence now means exactly what the prose says instead of contradicting it."
     }
   ],
-  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
+  "policy_caveat": "automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous \u2014 for example the NIH 800-171 revision question \u2014 automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.",
   "sources": [
     {
       "id": "uc-classification-standard",

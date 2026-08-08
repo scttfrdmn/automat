@@ -193,10 +193,11 @@ Revision 3.
   citation id `BFB-IS-3`.
 - **Authority:** UC Office of the President.
 - **What would falsify it:** nothing falsifies "unread" — this item's
-  disposition is to actually retrieve BFB-IS-3, which needs the shape
-  decided at F5 / Q18 first (there is no field to record it correctly once
-  retrieved, under the current schema).
-- **Last verified by a human:** not yet; blocked on F5/Q18.
+  disposition is to actually retrieve BFB-IS-3. The citation now carries
+  `date_basis: not-retrieved` (F5/Q18, resolved), so the schema has a field
+  to record it correctly once that happens; retrieval itself remains
+  outstanding.
+- **Last verified by a human:** not yet.
 
 ---
 

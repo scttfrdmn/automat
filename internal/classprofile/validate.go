@@ -988,6 +988,22 @@ func (p *Profile) validateCitations(probs *problems) {
 						"specifically: with no published date, the retrieval timestamp and hash are "+
 						"the only dating the citation has, and both live in sources[]")
 			}
+		} else if c.DateBasis == DateNotRetrieved {
+			if c.EffectiveDate != "" {
+				probs.add(path+".effective_date",
+					fmt.Sprintf("is %s on a not-retrieved citation", safe(c.EffectiveDate)),
+					"remove it, or change date_basis. Automat has not read this document, so it has no "+
+						"date to report — one supplied here would claim a reading that never happened")
+			}
+			if c.SourceID != "" {
+				probs.add(path+".source_id",
+					fmt.Sprintf("is %s on a not-retrieved citation", safe(c.SourceID)),
+					"remove it, or change date_basis. There are no retrieved bytes for this citation to "+
+						"point at — naming a source here, even the correct parent document, asserts that "+
+						"bytes were read when none were. If a different document actually WAS retrieved "+
+						"and this one is a related reference within it, cite that document instead and "+
+						"use its own source_id")
+			}
 		} else {
 			switch {
 			case c.EffectiveDate == "":
