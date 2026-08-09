@@ -94,7 +94,18 @@ var (
 	// newlines and tabs.
 	reProse     = regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`)
 	reLongProse = regexp.MustCompile(`^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$`)
+	// reRoundTripID mirrors schema/operator-determinations-v1.schema.json's
+	// $defs/round_trip_id: a determination's id is typed by an operator and
+	// later retyped or searched for (CLAUDE.md rule 8), so no whitespace or
+	// shell metacharacter may enter it.
+	reRoundTripID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 )
+
+const maxRoundTripID = 128
+
+func validRoundTripID(s string) bool {
+	return s != "" && len(s) <= maxRoundTripID && reRoundTripID.MatchString(s)
+}
 
 const (
 	maxProse     = 512
@@ -400,4 +411,136 @@ func (p *Profile) validateHashedReference(probs *problems, path string, h Hashed
 	if !reSHA256.MatchString(h.SHA256) {
 		probs.add(path+".sha256", "not a lowercase hex SHA-256", "")
 	}
+}
+
+// Validate checks the determinations document against
+// schema/operator-determinations-v1.schema.json's shape-only constraints —
+// everything that does not require knowing which obligation profile this
+// document is for. ValidateAgainst covers the rest (vocabulary, the
+// revision-policy requirement) once a profile is in hand.
+//
+// Reports every problem in one pass, same reasoning as Profile.Validate.
+func (d *Determinations) Validate() error {
+	var probs problems
+
+	if d.SchemaVersion == "" {
+		probs.add("schema_version", "missing", "set it, e.g. \"1.0.0\"")
+	} else if !reSemver.MatchString(d.SchemaVersion) {
+		probs.add("schema_version", fmt.Sprintf("%s is not semver", safe(d.SchemaVersion)), "use MAJOR.MINOR.PATCH")
+	}
+
+	if len(d.List) == 0 {
+		probs.add("determinations", "empty", "at least one determination must be given")
+	}
+	seenObjective := map[string]string{}
+	seenID := map[string]bool{}
+	for i, det := range d.List {
+		path := fmt.Sprintf("determinations[%d]", i)
+		if !validRoundTripID(det.ID) {
+			probs.add(path+".id", fmt.Sprintf("%s is not a round-trip id", safe(det.ID)),
+				"letters, digits, dot, dash, underscore only — CLAUDE.md rule 8")
+		} else if seenID[det.ID] {
+			probs.add(path+".id", fmt.Sprintf("%s appears twice", safe(det.ID)), "")
+		}
+		seenID[det.ID] = true
+
+		if len(det.Objectives) == 0 {
+			probs.add(path+".objectives", "empty", "name at least one objective this determination covers")
+		}
+		for j, obj := range det.Objectives {
+			if !validProse(obj) {
+				probs.add(fmt.Sprintf("%s.objectives[%d]", path, j), "not printable single-line text", "")
+				continue
+			}
+			if owner, ok := seenObjective[obj]; ok && owner != det.ID {
+				probs.add(fmt.Sprintf("%s.objectives[%d]", path, j),
+					fmt.Sprintf("%s is also claimed by determination %s", safe(obj), safe(owner)),
+					"one objective may not carry two conflicting determinations")
+			}
+			seenObjective[obj] = det.ID
+		}
+
+		if !validProse(det.Value) {
+			probs.add(path+".value", "missing or not printable single-line text", "")
+		}
+		if !validLongProse(det.Statement) {
+			probs.add(path+".statement", "missing or not printable text",
+				"a determination needs a statement a reader can evaluate, not a bare value")
+		}
+		if det.Date == "" || !reDate.MatchString(det.Date) {
+			probs.add(path+".date", "missing or not a YYYY-MM-DD date", "")
+		}
+		if !validProse(det.ResponsibleParty) {
+			probs.add(path+".responsible_party", "missing or not printable single-line text", "")
+		}
+	}
+
+	if d.RevisionDetermination != nil {
+		rd := d.RevisionDetermination
+		if !validProse(rd.Catalog) {
+			probs.add("revision_determination.catalog", "missing or not printable single-line text", "")
+		}
+		if !validProse(rd.Revision) {
+			probs.add("revision_determination.revision", "missing or not printable single-line text", "")
+		}
+		if !validProse(rd.DeterminedBy) {
+			probs.add("revision_determination.determined_by", "missing or not printable single-line text", "")
+		}
+		if rd.DeterminedAt == "" || !reDate.MatchString(rd.DeterminedAt) {
+			probs.add("revision_determination.determined_at", "missing or not a YYYY-MM-DD date", "")
+		}
+		if !validLongProse(rd.Statement) {
+			probs.add("revision_determination.statement", "missing or not printable text", "")
+		}
+	}
+
+	if len(probs.list) == 0 {
+		return nil
+	}
+	return &ValidationError{Subject: "operator determinations", Problems: probs.list}
+}
+
+// ValidateAgainst checks the determinations document against the specific
+// obligation profile it is meant to accompany: every determination's value
+// must be a member of the profile's own vocabulary (schema/
+// operator-determinations-v1.schema.json's own comment: "validated against
+// the named profile's vocabulary at load time"), and a profile whose
+// control-catalog revision is left operator-determined must be accompanied
+// by a RevisionDetermination — automat ships no default for either, since a
+// default here would silently pick an institution's compliance posture for
+// it.
+func (d *Determinations) ValidateAgainst(p *Profile) error {
+	var probs problems
+
+	for i, det := range d.List {
+		if det.Value != "" && !oneOf(det.Value, p.Determinations.Values) {
+			probs.add(fmt.Sprintf("determinations[%d].value", i),
+				fmt.Sprintf("%s is not a member of %s's determination vocabulary (%s)",
+					safe(det.Value), safe(p.Meta.ID), joined(p.Determinations.Values)),
+				"spell the value exactly as the obligation profile's determinations.values names it")
+		}
+	}
+
+	for _, cat := range p.ControlCatalogs {
+		if cat.RevisionPolicy != RevisionOperatorDetermined {
+			continue
+		}
+		if d.RevisionDetermination == nil {
+			probs.add("revision_determination",
+				fmt.Sprintf("missing, but %s's catalog %s leaves its revision operator-determined",
+					safe(p.Meta.ID), safe(cat.Catalog)),
+				"automat ships no default revision; state which one applies and why")
+			continue
+		}
+		if d.RevisionDetermination.Catalog != cat.Catalog {
+			probs.add("revision_determination.catalog",
+				fmt.Sprintf("%s does not match %s's operator-determined catalog %s",
+					safe(d.RevisionDetermination.Catalog), safe(p.Meta.ID), safe(cat.Catalog)), "")
+		}
+	}
+
+	if len(probs.list) == 0 {
+		return nil
+	}
+	return &ValidationError{Subject: "operator determinations against profile " + safe(p.Meta.ID), Problems: probs.list}
 }

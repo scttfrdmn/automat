@@ -4,6 +4,7 @@
 package assess
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,8 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-
-	"github.com/scttfrdmn/automat/internal/artifact"
 )
 
 // Profile is an obligation profile's full document — the first Go-typed
@@ -208,17 +207,8 @@ func LoadProfileFS(fsys fs.FS, path string, opts LoadOptions) (*Profile, error) 
 // dropped, exactly the failure evidence's own Decode refuses for the same
 // reason.
 func decodeProfile(data []byte, opts LoadOptions) (*Profile, error) {
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
-
 	var p Profile
-	if err := dec.Decode(&p); err != nil {
-		return nil, decodeError(err)
-	}
-	if err := ensureEOF(dec); err != nil {
-		return nil, err
-	}
-	if err := artifact.RejectDuplicateKeys(data); err != nil {
+	if err := decodeStrict(data, &p); err != nil {
 		return nil, err
 	}
 	if !opts.SkipValidate {
@@ -227,6 +217,13 @@ func decodeProfile(data []byte, opts LoadOptions) (*Profile, error) {
 		}
 	}
 	return &p, nil
+}
+
+// newByteReader is the one place this package turns a []byte into the
+// io.Reader json.NewDecoder wants, so decodeStrict has a single import to
+// account for rather than each caller picking its own.
+func newByteReader(data []byte) io.Reader {
+	return bytes.NewReader(data)
 }
 
 func ensureEOF(dec *json.Decoder) error {
