@@ -1,0 +1,34 @@
+DRAFT — NOT A SUBMISSION
+
+CMMC Level 1 self-assessment summary — account 111122223333
+Rendered 2026-08-09T00:00:00Z by automat golden-test.
+
+Scope, as declared by the operator: This AWS account is the entire system boundary for this assessment.
+
+Assessed against obligation profile cmmc-l1 (content 45b5be91095e63b9f30e9d8415b0d2afba70082d815363bf9a2dbf1f228a4c65) and control artifact cmmc-l1 (content 7c18a4a04ebd7f9a86bdf345e77afbffc10be84b4507bebc5375634f5d95ac53).
+
+automat contributes no machine evidence for this catalog yet — cmmc-l1's controls carry no SCP fragments and no AWS Config read path exists in this build. Every row below is an operator determination or the silence Invariant 3 renders NOT MET.
+
+| Practice | Resolved | Basis |
+|---|---|---|
+| AC.L1-b.1.i | MET | operator determination met-AC.L1-b.1.i |
+| AC.L1-b.1.ii | MET | operator determination met-AC.L1-b.1.ii |
+| AC.L1-b.1.iii | MET | operator determination met-AC.L1-b.1.iii |
+| AC.L1-b.1.iv | MET | operator determination met-AC.L1-b.1.iv |
+| IA.L1-b.1.v | MET | operator determination met-IA.L1-b.1.v |
+| IA.L1-b.1.vi | MET | operator determination met-IA.L1-b.1.vi |
+| MP.L1-b.1.vii | MET | operator determination met-MP.L1-b.1.vii |
+| PE.L1-b.1.ix | MET | operator determination met-PE.L1-b.1.ix |
+| PE.L1-b.1.viii | MET | operator determination met-PE.L1-b.1.viii |
+| SC.L1-b.1.x | MET | operator determination met-SC.L1-b.1.x |
+| SC.L1-b.1.xi | MET | operator determination met-SC.L1-b.1.xi |
+| SI.L1-b.1.xii | MET | operator determination met-SI.L1-b.1.xii |
+| SI.L1-b.1.xiii | MET | operator determination met-SI.L1-b.1.xiii |
+| SI.L1-b.1.xiv | MET | operator determination met-SI.L1-b.1.xiv |
+| SI.L1-b.1.xv | MET | operator determination met-SI.L1-b.1.xv |
+
+Total: 15 practices, 15 MET, 0 NOT MET.
+
+Every practice resolves MET. CMMC Level 1 permits no partial credit and no plan of action, so this is the one state in which the senior official's own annual review of this posture has something to conclude about. That review, and any resulting paperwork, is outside this tool.
+
+automat encodes a technical reading of published policy. It is not legal advice and not a compliance determination. The agreement, award terms, or contract clause your institution signed governs; your sponsored programs office, contracts office, or counsel decides what applies and which revision. Where policy is ambiguous — for example the NIH 800-171 revision question — automat records the operator's declaration rather than resolving it. Policy citations carry effective dates and change; verify against the primary source before relying on them.
