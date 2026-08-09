@@ -42,35 +42,41 @@ func interfaceMethods(t *testing.T, iface reflect.Type) []string {
 func allInterfaces(t *testing.T) map[string]reflect.Type {
 	t.Helper()
 	return map[string]reflect.Type{
-		"STSAPI":       reflect.TypeOf((*STSAPI)(nil)).Elem(),
-		"OrgAPI":       reflect.TypeOf((*OrgAPI)(nil)).Elem(),
-		"OrgVendAPI":   reflect.TypeOf((*OrgVendAPI)(nil)).Elem(),
-		"OrgPolicyAPI": reflect.TypeOf((*OrgPolicyAPI)(nil)).Elem(),
-		"OrgInitAPI":   reflect.TypeOf((*OrgInitAPI)(nil)).Elem(),
-		"OrgSetupAPI":  reflect.TypeOf((*OrgSetupAPI)(nil)).Elem(),
-		"OrgVerifyAPI": reflect.TypeOf((*OrgVerifyAPI)(nil)).Elem(),
-		"IAMAPI":       reflect.TypeOf((*IAMAPI)(nil)).Elem(),
-		"IAMRoleAPI":   reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
-		"QuotaAPI":     reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
-		"SSOOIDCAPI":   reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
+		"STSAPI":        reflect.TypeOf((*STSAPI)(nil)).Elem(),
+		"OrgAPI":        reflect.TypeOf((*OrgAPI)(nil)).Elem(),
+		"OrgVendAPI":    reflect.TypeOf((*OrgVendAPI)(nil)).Elem(),
+		"OrgPolicyAPI":  reflect.TypeOf((*OrgPolicyAPI)(nil)).Elem(),
+		"OrgInitAPI":    reflect.TypeOf((*OrgInitAPI)(nil)).Elem(),
+		"OrgSetupAPI":   reflect.TypeOf((*OrgSetupAPI)(nil)).Elem(),
+		"OrgVerifyAPI":  reflect.TypeOf((*OrgVerifyAPI)(nil)).Elem(),
+		"OrgReclaimAPI": reflect.TypeOf((*OrgReclaimAPI)(nil)).Elem(),
+		"IAMAPI":        reflect.TypeOf((*IAMAPI)(nil)).Elem(),
+		"IAMRoleAPI":    reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
+		"QuotaAPI":      reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
+		"SSOOIDCAPI":    reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
 	}
 }
 
 // TestNoWriteInterfaceCanDestroy is the invariant the api.go comment claims.
 //
 // Every one of these operations is irreversible or nearly so, and CLAUDE.md rule
-// 5 puts them behind a plan/apply split and `--yes`. None of that plumbing exists
-// yet in Phase 2, and the honest way to enforce a gate that does not exist is to
-// make the action unreachable rather than to trust that nobody calls it.
+// 5 puts them behind a plan/apply split and `--yes`. Most of that plumbing does
+// not exist for the operations still listed here, and the honest way to enforce
+// a gate that does not exist is to make the action unreachable rather than to
+// trust that nobody calls it.
 //
-// The onboarding bundle *does* request DetachPolicy and DeletePolicy — `verify`
-// and `reclaim` will need them — so the grant and the capability are deliberately
-// out of step for now. That is the safe direction: a grant automat cannot exercise
-// costs nothing, while a capability automat has without a gate is the thing rule 5
-// is about.
+// DetachPolicy and CloseAccount are DELIBERATELY ABSENT from this map as of
+// Phase 5: docs/reclaim-design.md settled reclaim's plan/apply split and its
+// unconditional --yes gate before OrgReclaimAPI was written, and
+// TestOrgReclaimAPICarriesExactlyItsDesignedSurface (below) is what now holds
+// that those two methods appear on OrgReclaimAPI and nowhere else, the same
+// job this map did for them until reclaim had a gate to check against.
 //
-// When `reclaim` is written, the fix is a new interface with its own doc comment
-// explaining the gate, not a method appended to one of these.
+// The onboarding bundle *does* still request DeletePolicy —
+// docs/reclaim-design.md considered and rejected using it — so the grant and
+// the capability remain deliberately out of step for it. That is the safe
+// direction: a grant automat cannot exercise costs nothing, while a
+// capability automat has without a gate is the thing rule 5 is about.
 func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 	// Why each one, because "destructive" is not self-evident for all of them.
 	//
@@ -87,10 +93,8 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 	// reading the existing resource policy first and refusing to overwrite content
 	// that is not already automat's own rendering of the request.
 	destructive := map[string]string{
-		"DetachPolicy":                     "removes a control from a live account; the account stops being what its evidence manifest says it is",
 		"DeletePolicy":                     "destroys the control itself, not just its attachment",
 		"DeleteOrganizationalUnit":         "an OU with accounts under it is the destination every SCP resource ARN names",
-		"CloseAccount":                     "irreversible, and rate-limited to ~10% of member accounts per 30 days (DESIGN §3 fact 11), so a mistake is not re-runnable",
 		"RemoveAccountFromOrganization":    "the account keeps existing and stops being governed by any SCP",
 		"LeaveOrganization":                "the same, initiated from the child",
 		"DeleteOrganization":               "deletes the org automat was pointed at",
@@ -112,6 +116,32 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 				"unreachable rather than merely uncalled. If it is time to build it, add "+
 				"an interface that says so in its doc comment and remove this entry — "+
 				"do not append the method here.", name, m, why)
+		}
+	}
+}
+
+// TestOrgReclaimAPICarriesExactlyItsDesignedSurface is DetachPolicy's and
+// CloseAccount's replacement guard, now that reclaim has a gate to check
+// against: exactly the four methods docs/reclaim-design.md specifies, no
+// more (a DeletePolicy added here would silently widen the destructive
+// surface reclaim uses without a corresponding design decision) and no
+// fewer (a method quietly dropped would break reclaim's own detach-then-close
+// sequencing without any test noticing why).
+func TestOrgReclaimAPICarriesExactlyItsDesignedSurface(t *testing.T) {
+	want := []string{"CloseAccount", "DetachPolicy", "ListPoliciesForTarget", "ListTagsForResource"}
+	sort.Strings(want)
+	got := interfaceMethods(t, reflect.TypeOf((*OrgReclaimAPI)(nil)).Elem())
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("OrgReclaimAPI methods = %v, want %v (docs/reclaim-design.md's designed surface)", got, want)
+	}
+	forbidden := []string{"DeletePolicy", "DeleteOrganizationalUnit", "RemoveAccountFromOrganization",
+		"LeaveOrganization", "DeleteOrganization", "DeregisterDelegatedAdministrator",
+		"DisablePolicyType", "DeleteResourcePolicy", "UntagResource"}
+	for _, m := range got {
+		for _, f := range forbidden {
+			if m == f {
+				t.Errorf("OrgReclaimAPI has %s, which docs/reclaim-design.md explicitly decided against", m)
+			}
 		}
 	}
 }
@@ -167,7 +197,7 @@ func TestTheVendAndPolicyHalvesStaySeparate(t *testing.T) {
 // "OrgAPI can already list policies" does not help. A write interface with no
 // reads on it can only blind-write, which is the opposite of idempotent.
 func TestEveryWriteInterfaceCanReadBackWhatItWrote(t *testing.T) {
-	for _, name := range []string{"OrgVendAPI", "OrgPolicyAPI"} {
+	for _, name := range []string{"OrgVendAPI", "OrgPolicyAPI", "OrgReclaimAPI"} {
 		methods := interfaceMethods(t, allInterfaces(t)[name])
 		var reads int
 		for _, m := range methods {

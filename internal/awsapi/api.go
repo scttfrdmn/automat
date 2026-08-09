@@ -182,20 +182,61 @@ type OrgVerifyAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.ListTagsForResourceOutput, error)
 }
 
-// # What is deliberately absent from all three
+// OrgReclaimAPI is `automat reclaim`'s destructive surface — the one this
+// project has deliberately kept unreachable through every prior phase
+// (docs/reclaim-design.md). Two of its three write methods appear on the
+// destructive list below in every OTHER interface in this file; here, they
+// are reachable, behind the plan/apply split and the unconditional `--yes`
+// gate (CLAUDE.md rule 5) `cmd/automat/reclaim.go` builds around this
+// interface, never around a bare client call.
 //
-// DetachPolicy, DeletePolicy, DeleteOrganizationalUnit, CloseAccount,
-// RemoveAccountFromOrganization, LeaveOrganization, DeleteOrganization.
+// DetachPolicy is delegable at the Organizations level (DESIGN §3 fact 3) and
+// carried natively in MANAGEMENT or by the caller's own delegated identity in
+// MEMBER — never brokered, the same credential shape OrgPolicyAPI already
+// uses. CloseAccount is NOT delegable (absent from every delegable-action
+// list DESIGN documents, the same class as CreateAccount/
+// CreateOrganizationalUnit), so it needs the brokered vendor role in MEMBER —
+// the same MANAGEMENT/MEMBER split OrgVendAPI already implements for
+// CreateAccount, reused here rather than reinvented. The two halves of this
+// interface are therefore reached through two different client
+// constructions depending on org state, exactly as OrgVendAPI's own doc
+// comment already describes for its own two halves.
 //
-// The onboarding bundle *does* request DetachPolicy and DeletePolicy — `verify`
-// and `reclaim` need them, and the bundle discloses that in its cover note. But a
-// granted action automat has no interface method for is an action no code path in
-// this repository can reach, which is a stronger guarantee than a code review.
-// The same reasoning made OrgAPI read-only through Phase 1; these are its Phase 5
-// counterpart. When `reclaim` is written, they land on their own interface behind
-// the plan/apply split and the `--yes` gate (CLAUDE.md rule 5) rather than being
-// appended here, so that "automat can close an account" is a visible change to
-// this file.
+// ListPoliciesForTarget and ListTagsForResource are the read-before-write
+// pair `docs/reclaim-design.md` requires: reclaim detaches only a policy
+// carrying automat's own owner tag, the identical ownership check
+// EnsurePolicyAttachment already performs before ever attaching one.
+//
+// DeletePolicy is deliberately ABSENT even though the onboarding bundle
+// currently requests it: docs/reclaim-design.md decided reclaim detaches but
+// does not delete, so this interface stays narrower than the grant it could
+// use — the safe direction, since a granted-but-unreachable action costs
+// nothing (this file's own guardrail, restated below).
+type OrgReclaimAPI interface {
+	DetachPolicy(ctx context.Context, in *organizations.DetachPolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error)
+	CloseAccount(ctx context.Context, in *organizations.CloseAccountInput,
+		optFns ...func(*organizations.Options)) (*organizations.CloseAccountOutput, error)
+
+	ListPoliciesForTarget(ctx context.Context, in *organizations.ListPoliciesForTargetInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListPoliciesForTargetOutput, error)
+	ListTagsForResource(ctx context.Context, in *organizations.ListTagsForResourceInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListTagsForResourceOutput, error)
+}
+
+// # What is deliberately absent from all four
+//
+// DeletePolicy, DeleteOrganizationalUnit, RemoveAccountFromOrganization,
+// LeaveOrganization, DeleteOrganization.
+//
+// The onboarding bundle *does* request DeletePolicy —
+// `docs/reclaim-design.md` considered and rejected using it. But a granted
+// action automat has no interface method for is an action no code path in
+// this repository can reach, which is a stronger guarantee than a code
+// review. The same reasoning made OrgAPI read-only through Phase 1;
+// DetachPolicy and CloseAccount were their Phase 5 counterpart until
+// OrgReclaimAPI above gave them the plan/apply split and the unconditional
+// `--yes` gate (CLAUDE.md rule 5) that made them safe to make reachable.
 //
 // TestNoWriteInterfaceCanDestroy holds this. Adding one of these methods to an
 // interface above fails the build rather than the review.
@@ -271,15 +312,16 @@ type SSOOIDCAPI interface {
 // upgrade changes a signature, this fails at build time in one place rather than
 // wherever the interface happens to be used.
 var (
-	_ STSAPI       = (*sts.Client)(nil)
-	_ OrgAPI       = (*organizations.Client)(nil)
-	_ OrgVendAPI   = (*organizations.Client)(nil)
-	_ OrgPolicyAPI = (*organizations.Client)(nil)
-	_ OrgInitAPI   = (*organizations.Client)(nil)
-	_ OrgSetupAPI  = (*organizations.Client)(nil)
-	_ OrgVerifyAPI = (*organizations.Client)(nil)
-	_ IAMAPI       = (*iam.Client)(nil)
-	_ IAMRoleAPI   = (*iam.Client)(nil)
-	_ QuotaAPI     = (*servicequotas.Client)(nil)
-	_ SSOOIDCAPI   = (*ssooidc.Client)(nil)
+	_ STSAPI        = (*sts.Client)(nil)
+	_ OrgAPI        = (*organizations.Client)(nil)
+	_ OrgVendAPI    = (*organizations.Client)(nil)
+	_ OrgPolicyAPI  = (*organizations.Client)(nil)
+	_ OrgInitAPI    = (*organizations.Client)(nil)
+	_ OrgSetupAPI   = (*organizations.Client)(nil)
+	_ OrgVerifyAPI  = (*organizations.Client)(nil)
+	_ OrgReclaimAPI = (*organizations.Client)(nil)
+	_ IAMAPI        = (*iam.Client)(nil)
+	_ IAMRoleAPI    = (*iam.Client)(nil)
+	_ QuotaAPI      = (*servicequotas.Client)(nil)
+	_ SSOOIDCAPI    = (*ssooidc.Client)(nil)
 )
