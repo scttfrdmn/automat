@@ -157,6 +157,28 @@ func TestCloseAccountReportsTheQuotaByName(t *testing.T) {
 	mustErr(t, err, "250", "20%", "rolling 30 day", "Quotas for Organizations")
 }
 
+// TestCloseAccountReRunAgainstAnAlreadyClosedAccountIsUnchangedNotAnError is
+// AUDIT-6 M1: CLAUDE.md rule 4 requires reclaim be safely re-runnable, and
+// docs/reclaim-design.md's own resumability argument depends on a second
+// `reclaim --yes` against an account this command already closed reporting
+// success, not surfacing AWS's raw AccountAlreadyClosedException.
+func TestCloseAccountReRunAgainstAnAlreadyClosedAccountIsUnchangedNotAnError(t *testing.T) {
+	f := newReclaimFixture(t)
+	acct := f.State.SeedAccount("lab", testEmail, testRoot)
+	if _, err := f.R.CloseAccount(ctx(), acct); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+
+	action, err := f.R.CloseAccount(ctx(), acct)
+	if err != nil {
+		t.Fatalf("re-running CloseAccount against an already-closed account returned an error, want "+
+			"success: %v", err)
+	}
+	if action.Verb != VerbUnchanged || action.Applied {
+		t.Errorf("action = %+v, want an unapplied unchanged", action)
+	}
+}
+
 // TestDetachOwnedPoliciesRefusesAnEmptyTarget.
 func TestDetachOwnedPoliciesRefusesAnEmptyTarget(t *testing.T) {
 	f := newReclaimFixture(t)

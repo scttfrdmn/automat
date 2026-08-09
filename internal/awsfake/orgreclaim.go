@@ -99,7 +99,11 @@ func (f *OrgReclaim) DetachPolicy(_ context.Context, in *organizations.DetachPol
 // says a closed account settles into (docs/reclaim-design.md quotes it).
 // CloseAccountQuotaExceeded, when set, makes this fail with the real reason
 // code instead — the one path Reclaimer.CloseAccount has bespoke remediation
-// text for.
+// text for. An account already SUSPENDED fails with
+// AccountAlreadyClosedException (AUDIT-6 M1) — a real, named SDK exception
+// type, reachable by re-running `reclaim --yes` against an account this same
+// command already closed, which docs/reclaim-design.md's own resumability
+// promise depends on being handled rather than surfaced raw.
 func (f *OrgReclaim) CloseAccount(_ context.Context, in *organizations.CloseAccountInput,
 	_ ...func(*organizations.Options)) (*organizations.CloseAccountOutput, error) {
 	f.Record("CloseAccount")
@@ -131,6 +135,11 @@ func (f *OrgReclaim) CloseAccount(_ context.Context, in *organizations.CloseAcco
 		return nil, &orgtypes.ConstraintViolationException{
 			Message: aws.String("You can't close the management account."),
 			Reason:  orgtypes.ConstraintViolationExceptionReasonCannotCloseManagementAccount,
+		}
+	}
+	if acct.Status == orgtypes.AccountStatusSuspended {
+		return nil, &orgtypes.AccountAlreadyClosedException{
+			Message: aws.String(fmt.Sprintf("The account %s is already closed.", id)),
 		}
 	}
 	acct.Status = orgtypes.AccountStatusSuspended

@@ -286,6 +286,23 @@ func (r *Reclaimer) CloseAccount(ctx context.Context, accountID string) (*Action
 		}), nil
 	}
 
+	// AccountAlreadyClosedException (AUDIT-6 M1): a real, named exception type
+	// in the SDK, reachable by re-running `reclaim --yes` against an account
+	// this same command already closed — the exact resumable case
+	// docs/reclaim-design.md promises ("the operator re-runs reclaim"). Without
+	// this branch the second run surfaced AWS's bare exception with none of
+	// this command's own remediation, which is not what "resumable" means:
+	// CLAUDE.md rule 4 asks for safely re-runnable, and re-running the ensure
+	// half of a two-step operation must report "already true", not fail.
+	var alreadyClosed *orgtypes.AccountAlreadyClosedException
+	if errors.As(err, &alreadyClosed) {
+		return r.record(Action{
+			Verb: VerbUnchanged, Kind: "account", ID: accountID,
+			Detail: "already closed: AWS reports this account was closed by an earlier request. " +
+				"Nothing further for this step to do",
+		}), nil
+	}
+
 	var cv *orgtypes.ConstraintViolationException
 	if errors.As(err, &cv) {
 		switch cv.Reason {
