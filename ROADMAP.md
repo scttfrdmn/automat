@@ -209,7 +209,7 @@ Design authority: `docs/assessment-reporting.md`. Read it before writing any of 
 - **SSP generation is out of scope for v1** — noted as future in the design page. An SSP is mostly about things outside the AWS account, and a partial SSP that looks complete is invariant 1's hazard in another form.
 - **Accept:** golden reports for a fully-evidenced account, a partially-evidenced one, and one with no machine evidence at all; the DRAFT marking asserted across every renderer and the signature-affordance list asserted absent; no generated document contains a `MET`/`SATISFIED` automat wrote. The three L1 practices with no AWS surface (media disposal, both physical-access practices) must render NOT MET absent a determination — that is the acceptance test for invariants 2 and 3 together, not an edge case.
 
-- **Accept (phase):** property suite green; `verify` golden reports for compliant / drifted / findings-only scenarios; `assess` acceptance above.
+- **Accept (phase):** property suite green; **`verify` golden reports SHIPPED** for compliant / drifted / freshness-lapsed scenarios (`cmd/automat/verify_golden_test.go`) — reinterpreted from this line's original "findings-only" third scenario, which has no referent in what `verify` checks (D4: no detective layer, so no "findings" as DESIGN §12 uses the term); `assess` acceptance above.
 
 ## Phase 5 — Polish + lifecycle
 - `reclaim` design + implementation (closure rate limits, plan/apply, `--yes`).

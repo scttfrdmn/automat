@@ -1,0 +1,14 @@
+Account 777788889999 (OU/root "ou-exam-golden03")
+
+Policy layer:
+  automat-golden-1: matches
+
+Freshness layer:
+  environment profile golden-stale: review_by 2020-01-01 has passed; re-read this document against current policy
+
+Structural honesty (control sets this compile drew from):
+  baseline-protection
+  cmmc-l1
+  (detective and procedural findings are not checked in this build — see `automat verify --help`)
+
+automat dev
