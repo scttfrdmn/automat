@@ -1,6 +1,14 @@
 # automat and AWS Control Tower
 
-This page describes automat v1. Where implementation is still in progress (as of Phase 1: `vend`, `verify`, and evidence manifests — the onboarding bundle has shipped, see `docs/phase-1.md`), ROADMAP.md is authoritative; every claim here is re-verified against code before v1 ships.
+This page describes automat v1. As of Phase 5, `login`, `preflight`, `init`, `vend`,
+`verify`, `list`, `assess` (Stage 3, the CMMC L1 summary), and `reclaim` have all shipped
+— see README's feature table for what each does. The largest gap between this page's
+"what both do" section and shipped code is the **in-child baseline**: `internal/baseline`
+(the Config recorder, conformance pack, and provisioning role DESIGN §7 step 5 describes)
+does not exist yet, so a vended account has preventive controls (service control
+policies) only — nothing inside it is watched. ROADMAP.md is authoritative on what has
+and has not landed; every claim on this page is re-verified against code before v1 ships,
+and this pass (Phase 5) is that re-verification.
 
 People reasonably ask how automat relates to AWS Control Tower. Short answer: they share a mechanical core — both drive the same AWS Organizations primitives — and differ in almost everything wrapped around it. This page states the overlap and the differences in both directions, so you can decide honestly. In several situations Control Tower is the better choice; automat exists for the situations where it isn't an option at all.
 
@@ -8,9 +16,16 @@ People reasonably ask how automat relates to AWS Control Tower. Short answer: th
 
 - Create accounts via `organizations:CreateAccount` and place them into a target OU (there is no privileged API underneath either tool; account creation is the same primitive for everyone).
 - Attach preventive guardrails as Service Control Policies at the OU level (in automat's case these are its baseline-protection and profile SCPs; its framework catalogs deliberately assert no preventive claims — see below).
-- Deploy detective controls (AWS Config recorder + managed rules) into new accounts so they are evaluated from early in their life.
-- Baseline new accounts by assuming a provisioning role inside them.
-- Maintain an inventory of the accounts they govern.
+- Maintain an inventory of the accounts they govern (`automat list`).
+
+**What Control Tower also does that automat does not yet**: deploy detective controls
+(a Config recorder and managed rules) into a new account, or assume a provisioning role
+inside it to baseline anything. automat's in-child baseline work (DESIGN §7 step 5,
+`internal/baseline`) is not built — a vended account today gets preventive controls
+(service control policies) only, and both `vend`'s plan and its evidence manifest say so
+rather than staying silent about the gap. This is the largest capability difference this
+page names, and it belongs here rather than only in the table below because it changes
+what "both do" actually means today.
 
 ## What Control Tower does that automat does not
 
@@ -33,10 +48,11 @@ People reasonably ask how automat relates to AWS Control Tower. Short answer: th
 | No landing-zone prerequisite | automat works against bare AWS Organizations. No OU restructuring, no mandatory shared accounts, no multi-week enablement project. |
 | Standalone-account bootstrap | A lone account with no organization can run `automat init` and become the management account of its own fresh org, then vend. |
 | Compliance-framework-first catalogs | Controls are organized by framework (CMMC 2.0 Level 1, NIST 800-171 r2/r3) with per-control crosswalks, statement text, and source provenance (NIST catalog hashes, AWS mapping sources) — not by AWS service. |
-| Explicit enforcement honesty | Every control declares its class: detective Config rule or procedural — plus a separate baseline-protection class carrying the SCPs that guard the detective baseline itself. Framework catalogs never claim preventive enforcement automat cannot honestly deliver. Procedural controls generate attestation stubs instead of silently vanishing. `verify` reports "N of M enforceable by this tool" — it never claims coverage it doesn't deliver. |
+| Explicit enforcement honesty | Every control declares its class: config-rule or procedural — plus a separate baseline-protection class carrying the SCPs that guard the detective baseline itself. Framework catalogs never claim preventive enforcement automat cannot honestly deliver. Procedural controls are disclosed rather than silently vanishing, though no attestation-stub renderer exists yet (`internal/baseline`, not built). `verify` reports which control sets a compile drew from and states plainly that it checks the policy and freshness layers only, not a per-control "N of M enforceable" breakdown — that finer-grained report is designed (DESIGN §12) but not yet rendered. |
 | Composable control sets with checked union semantics | Control sets merge under defined laws (denies union, allowlists intersect, parameter conflicts are hard errors, cross-framework duplicates dedupe via crosswalks). The merged artifact is itself versioned and hashed. |
-| Evidence manifests | Every vend writes a signed, hash-chained record: what was attached, when, by whom, under which artifact hash. The "born compliant" claim is backed by a chain of custody, not a screenshot. |
-| Reviewable trust surface | The entire grant central IT approves is one delegation policy statement and one IAM role (~60 lines). Compare with security-reviewing a landing zone. |
+| Evidence manifests | Every vend writes a hash-chained record: what was attached, when, by whom, under which artifact hash. Optionally signed with a KMS key or a local ed25519 key (an operator's own choice, config-only) — unsigned is a valid document too, and most manifests today are. The "born compliant" claim is backed by a chain of custody, not a screenshot. |
+| Reviewable trust surface | The entire grant central IT approves is one delegation policy statement and one IAM role, roughly three hundred lines of JSON/YAML/HCL across both files rendered — still short enough to read in one sitting; see `docs/security-review.md` for the line-by-line inventory. Compare with security-reviewing a landing zone. |
+| Account closure with the same evidence discipline | `automat reclaim` detaches its own controls and closes an account, appending an evidence record the same way `vend` does. Account Factory has no equivalent close/reclaim path exposed to a delegated caller. |
 | Single static binary | No service footprint, no additional AWS cost for the tool itself, scriptable, CI-friendly. |
 
 ## Honest caveats
