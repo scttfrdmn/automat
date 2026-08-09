@@ -79,6 +79,44 @@ func TestLoadOverridesRejectsADuplicateEntry(t *testing.T) {
 	}
 }
 
+// TestLoadOverridesRejectsADuplicateKey is AUDIT-4 H1, and it is a different
+// failure from TestLoadOverridesRejectsADuplicateEntry above: that one is two
+// entries in the list, which validate() catches. This one is one entry whose
+// "value" key appears twice, which DisallowUnknownFields cannot catch — the key
+// is known, twice — so encoding/json takes the LAST occurrence silently. The
+// operator reviewing the file reads the first.
+//
+// AUDIT-2 H8 established this refusal on every document automat reads. An
+// override file is the document whose entire content is one value a human
+// decided on, so a read that quietly prefers the value they did not write is
+// the worst place for the gap.
+func TestLoadOverridesRejectsADuplicateKey(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+	}{
+		{"value twice", `{"overrides":[{"rule":"X","parameter":"Y","value":"14","value":"6"}]}`},
+		{"rule twice", `{"overrides":[{"rule":"X","rule":"Z","parameter":"Y","value":"1"}]}`},
+		{"overrides twice", `{"overrides":[{"rule":"X","parameter":"Y","value":"1"}],` +
+			`"overrides":[{"rule":"X","parameter":"Y","value":"2"}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "overrides.json")
+			if err := os.WriteFile(path, []byte(tc.json), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			o, err := LoadOverrides(path)
+			if err == nil {
+				t.Fatalf("LoadOverrides accepted a document naming a key twice and resolved it to "+
+					"%+v; the operator reading the file sees the other value", o.Entries)
+			}
+			if !strings.Contains(err.Error(), "twice") {
+				t.Errorf("the refusal does not say a key appeared twice: %v", err)
+			}
+		})
+	}
+}
+
 func TestOverrideResolvesAMergeConflict(t *testing.T) {
 	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
 		Identifier: "IAM_PASSWORD_POLICY",

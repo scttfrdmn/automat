@@ -43,10 +43,24 @@ type Override struct {
 // tool reads applies: an override file with a typo'd key silently resolves
 // nothing, and the conflict it was meant to fix still hard-errors — better
 // to refuse the file than to let an operator believe they had fixed it.
+//
+// # Duplicate keys are refused, on the same read path as every other document (AUDIT-4 H1)
+//
+// artifact.RejectDuplicateKeys runs before the decode, because
+// DisallowUnknownFields does not fire on a key that is known twice —
+// `"value": "14", "value": "6"` decodes to 6 with no complaint, and the
+// operator reviewing the file reads the 14. AUDIT-2 H8 established this
+// refusal on every document automat reads; this file is a document automat
+// reads, and it is the one whose whole purpose is to state a single value a
+// human decided on. Unpublished (no JSON Schema) does not make it exempt: it
+// makes the Go read path the only place the refusal can live.
 func LoadOverrides(path string) (*Overrides, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // operator-supplied path, same trust level as --environment-profile
 	if err != nil {
 		return nil, fmt.Errorf("read override file %s: %w", path, err)
+	}
+	if err := artifact.RejectDuplicateKeys(data); err != nil {
+		return nil, fmt.Errorf("override file %s: %w", path, err)
 	}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.DisallowUnknownFields()
