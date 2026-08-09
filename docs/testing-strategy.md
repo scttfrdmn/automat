@@ -40,20 +40,26 @@ substrate server (`emulator.StartTestServer`) rather than `awsfake.STS` — the 
 correctness (HTTP, XML marshaling, response parsing) a hand-rolled fake cannot get wrong
 by construction, because it never parses anything off a wire.
 
-**It does not test the property Task 4 was scoped to test.** ROADMAP.md's justification for
-reaching for an emulator here was that substrate's auth controller enforces a role's trust
-policy — including the `sts:ExternalId` condition — on `AssumeRole`. Reading substrate's own
-`emulator/sts_plugin.go` (checked against the version this module pins) shows `AssumeRole`
-verifies only that the named role exists; it never reads `AssumeRolePolicyDocument` and
-never evaluates an `ExternalId` against it. A call made *with* an assumed session is
-authorized against the role's *permissions* policy (substrate#411, closed) — that half
-works — but the assumption itself is unconditional today. Filed as
-[substrate#593](https://github.com/scttfrdmn/substrate/issues/593).
+**It now also tests the property Task 4 was originally scoped to test, and did not at
+first.** ROADMAP.md's justification for reaching for an emulator here was that substrate's
+auth controller enforces a role's trust policy — including the `sts:ExternalId` condition —
+on `AssumeRole`. Substrate v0.94.0 did not do this: `AssumeRole` verified only that the
+named role existed, never reading `AssumeRolePolicyDocument` or evaluating an `ExternalId`
+against it. Filed as [substrate#593](https://github.com/scttfrdmn/substrate/issues/593);
+fixed in **v0.95.0**, which this module now pins.
 
-`TestBrokerAssumeAgainstARealSTSServer`'s own doc comment carries this disclosure, and
-asserts the current (unenforced) behavior explicitly with a comment naming the issue, so a
-substrate upgrade that closes #593 turns the assertion red instead of leaving a silent false
-negative. `TestBrokerAssumeIsRejectedForAnUnknownRole` is the one trust-adjacent rejection
-substrate does implement today — a role absent from state refuses with
-`NoSuchEntityException` — and is the whole ExternalId-adjacent coverage this module can
-honestly claim until #593 lands.
+Trust-policy enforcement needs a **signed, real principal** — substrate's own testing guide:
+"existence in state is the opt-in", and an unauthenticated caller (the `test`/`test`
+credentials this module still uses for setup calls like `CreateRole` and `CreateUser`) is
+never evaluated against anything, trust policies included. `signedMemberCaller` mints a
+real IAM user and access key for exactly this reason.
+
+- `TestBrokerAssumeSucceedsWithTheRightExternalId` and `TestBrokerAssumeFailsWithNoExternalId`
+  are the confused-deputy defense itself: a signed caller the trust policy's `Principal`
+  admits, with and without the correct `sts:ExternalId`.
+- `TestBrokerAssumeFailsForAnUntrustedPrincipal` is the other half: correct `ExternalId`,
+  wrong account.
+- `TestBrokerAssumeIsRejectedForAnUnknownRole` is unrelated to trust-policy enforcement — a
+  role absent from state entirely, refused with a real HTTP-level `NoSuchEntityException`,
+  which is the class of thing a fake cannot get wrong by construction because it never
+  parses an error off the wire.
