@@ -89,6 +89,9 @@ var (
 	reSlug   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$`)
 	reDate   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 	reSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// reTimestamp mirrors $defs/hashed_reference's retrieved_at pattern in
+	// schema/obligation-profile-v1.schema.json.
+	reTimestamp = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)
 	// prose forbids control characters (a value rendered into a report or
 	// table, where a newline forges a row); long_prose additionally permits
 	// newlines and tabs.
@@ -99,6 +102,14 @@ var (
 	// later retyped or searched for (CLAUDE.md rule 8), so no whitespace or
 	// shell metacharacter may enter it.
 	reRoundTripID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	// reAssessAccountID mirrors schema/assessment-result-v1.schema.json's
+	// $defs/account_id and cmd/automat/assess.go's own reAssessAccountID: a
+	// bare 12-digit AWS account id. Checked again here because
+	// ResultAccount can be constructed directly by any caller in this
+	// package's test suite, and Invariant-bearing validation belongs beside
+	// the type it protects rather than only at the one call site that
+	// happens to have a flag parser in front of it.
+	reAssessAccountID = regexp.MustCompile(`^[0-9]{12}$`)
 )
 
 const maxRoundTripID = 128
@@ -241,6 +252,12 @@ func (p *Profile) validateCitation(probs *problems, i int, c Citation) {
 	if c.Role != "" && !oneOf(c.Role, allCitationRoles) {
 		probs.add(path+".role", fmt.Sprintf("%s is not one of %s", safe(c.Role), joined(allCitationRoles)), "")
 	}
+	if c.Note != "" && !validLongProse(c.Note) {
+		probs.add(path+".note", "not printable text", "")
+	}
+	if c.URI != "" && !validProse(c.URI) {
+		probs.add(path+".uri", "not printable single-line text", "")
+	}
 }
 
 func (p *Profile) validateCatalogReference(probs *problems, i int, c CatalogReference) {
@@ -263,6 +280,12 @@ func (p *Profile) validateCatalogReference(probs *problems, i int, c CatalogRefe
 			probs.add(path+".revision", "forbidden when revision_policy is operator-determined",
 				"a pinned revision here is a default wearing a different hat")
 		}
+	}
+	if c.ArtifactID != "" && !reSlug.MatchString(c.ArtifactID) {
+		probs.add(path+".artifact_id", fmt.Sprintf("%s is not a lowercase-and-hyphens id", safe(c.ArtifactID)), "")
+	}
+	if c.Note != "" && !validLongProse(c.Note) {
+		probs.add(path+".note", "not printable text", "")
 	}
 }
 
@@ -411,6 +434,21 @@ func (p *Profile) validateHashedReference(probs *problems, path string, h Hashed
 	if !reSHA256.MatchString(h.SHA256) {
 		probs.add(path+".sha256", "not a lowercase hex SHA-256", "")
 	}
+	if h.Title != "" && !validProse(h.Title) {
+		probs.add(path+".title", "not printable single-line text", "")
+	}
+	if h.Version != "" && !validProse(h.Version) {
+		probs.add(path+".version", "not printable single-line text", "")
+	}
+	if h.URI != "" && !validProse(h.URI) {
+		probs.add(path+".uri", "not printable single-line text", "")
+	}
+	if h.RetrievedAt != "" && !reTimestamp.MatchString(h.RetrievedAt) {
+		probs.add(path+".retrieved_at", fmt.Sprintf("%s is not an RFC 3339 UTC timestamp", safe(h.RetrievedAt)), "")
+	}
+	if h.Note != "" && !validLongProse(h.Note) {
+		probs.add(path+".note", "not printable text", "")
+	}
 }
 
 // Validate checks the determinations document against
@@ -543,4 +581,40 @@ func (d *Determinations) ValidateAgainst(p *Profile) error {
 		return nil
 	}
 	return &ValidationError{Subject: "operator determinations against profile " + safe(p.Meta.ID), Problems: probs.list}
+}
+
+// validateResultAccount checks a ResultAccount before SummarizeL1 embeds it
+// in a Result — the account id against the same 12-digit shape
+// cmd/automat/assess.go's own flag check enforces (schema/
+// assessment-result-v1.schema.json's $defs/account_id), and the scope
+// statement against long_prose (the schema's own $ref for
+// account.scope_statement).
+//
+// Every other prose field this package renders — PolicyCaveat, a
+// determination's Statement, an obligation profile's Applicability.Trigger —
+// goes through validProse/validLongProse before it reaches Result or a
+// renderer. ScopeStatement did not: it is operator-supplied on the command
+// line exactly like a determination's Statement is operator-supplied in a
+// file, and RenderL1Summary writes it into the DRAFT summary unescaped
+// ("Scope, as declared by the operator: %s"). An unvalidated value there is
+// two different failures at once — a control character or ANSI escape
+// reaches a report meant to be forwarded and read literally, and a scope
+// statement is exactly the sentence TestNoRendererHasASignatureAffordance
+// polices for every other field in this document, so a value crafted to
+// contain "I certify" or a signature line would defeat Invariant 1 through
+// the one field nothing was checking.
+func validateResultAccount(account ResultAccount) error {
+	var probs problems
+	if !reAssessAccountID.MatchString(account.ID) {
+		probs.add("account.id", fmt.Sprintf("%s is not a 12-digit AWS account id", safe(account.ID)), "")
+	}
+	if !validLongProse(account.ScopeStatement) {
+		probs.add("account.scope_statement", "missing or not printable text",
+			"state the system boundary in your own words; control characters are refused because "+
+				"this value is rendered verbatim into the DRAFT summary")
+	}
+	if len(probs.list) == 0 {
+		return nil
+	}
+	return &ValidationError{Subject: "assessment account", Problems: probs.list}
 }

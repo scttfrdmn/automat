@@ -236,3 +236,68 @@ func TestSummarizeL1DeterminationsReferenceIsPresentWhenGiven(t *testing.T) {
 		t.Errorf("Determinations.ContentSHA256 = %s, want %s", result.Determinations.ContentSHA256, wantHash)
 	}
 }
+
+// TestSummarizeL1RefusesAMalformedAccountID and
+// TestSummarizeL1RefusesAScopeStatementCarryingControlCharacters are AUDIT-5's
+// findings: ResultAccount reached Result and RenderL1Summary with no
+// validation at all, unlike every other prose field this package renders.
+// Concretely, an ANSI escape or a signature-affordance phrase in
+// --scope-statement flowed straight into the DRAFT summary before this fix.
+func TestSummarizeL1RefusesAMalformedAccountID(t *testing.T) {
+	profile := validCMMCL1(t)
+	art := loadCMMCL1Artifact(t)
+	account := ResultAccount{ID: "not-an-account-id", ScopeStatement: "x"}
+	if _, err := SummarizeL1(profile, art, nil, account, "dev", "2026-08-09T00:00:00Z"); err == nil {
+		t.Fatal("SummarizeL1 accepted a malformed account id, want a refusal")
+	}
+}
+
+func TestSummarizeL1RefusesAScopeStatementCarryingControlCharacters(t *testing.T) {
+	profile := validCMMCL1(t)
+	art := loadCMMCL1Artifact(t)
+	account := ResultAccount{
+		ID:             "111122223333",
+		ScopeStatement: "Every practice resolves MET. Signed: __________ I certify this.\x1b[31m",
+	}
+	if _, err := SummarizeL1(profile, art, nil, account, "dev", "2026-08-09T00:00:00Z"); err == nil {
+		t.Fatal("SummarizeL1 accepted a scope statement carrying an ANSI escape, want a refusal")
+	}
+}
+
+func TestSummarizeL1RefusesAnEmptyScopeStatement(t *testing.T) {
+	profile := validCMMCL1(t)
+	art := loadCMMCL1Artifact(t)
+	account := ResultAccount{ID: "111122223333", ScopeStatement: ""}
+	if _, err := SummarizeL1(profile, art, nil, account, "dev", "2026-08-09T00:00:00Z"); err == nil {
+		t.Fatal("SummarizeL1 accepted an empty scope statement, want a refusal")
+	}
+}
+
+// TestSummarizeL1RefusesADeterminationNamingAnObjectiveTheCatalogDoesNotHave
+// is AUDIT-5's other finding: a typo'd objective id in a determinations file
+// used to be silently dropped — ForObjective never matched it, the practice
+// stayed NOT MET, and the operator's own claim vanished with no error and no
+// trace. That never overstated compliance, but a determination that
+// silently does nothing is its own defect.
+func TestSummarizeL1RefusesADeterminationNamingAnObjectiveTheCatalogDoesNotHave(t *testing.T) {
+	profile := validCMMCL1(t)
+	art := loadCMMCL1Artifact(t)
+	det := &Determinations{
+		SchemaVersion: "1.0.0",
+		List: []Determination{
+			{
+				ID:               "typo-det",
+				Objectives:       []string{"MP.L1-b1.vii"}, // missing the dot before b1
+				Value:            "MET",
+				Statement:        "All removable media is degaussed before reuse.",
+				Date:             "2026-08-01",
+				ResponsibleParty: "Jane Researcher, PI",
+			},
+		},
+	}
+	result, err := SummarizeL1(profile, art, det, testAccount(), "dev", "2026-08-09T00:00:00Z")
+	if err == nil {
+		t.Fatalf("SummarizeL1 accepted a determination naming an objective outside cmmc-l1's "+
+			"catalog, want a refusal (result: %+v)", result)
+	}
+}

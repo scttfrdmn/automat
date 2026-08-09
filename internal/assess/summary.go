@@ -41,6 +41,9 @@ func SummarizeL1(profile *Profile, art *artifact.Artifact, det *Determinations,
 			"assess's other two shipped profiles (dfars-7012, nih-cadr-dua) have no Stage 3 renderer yet",
 			profile.Meta.ID)
 	}
+	if err := validateResultAccount(account); err != nil {
+		return nil, err
+	}
 	profileHash, err := profile.ContentHash()
 	if err != nil {
 		return nil, fmt.Errorf("hash obligation profile %s: %w", profile.Meta.ID, err)
@@ -68,8 +71,10 @@ func SummarizeL1(profile *Profile, art *artifact.Artifact, det *Determinations,
 		result.Determinations = &DocRef{ID: "operator-determinations", ContentSHA256: detHash}
 	}
 
+	catalogObjectives := make(map[string]bool, len(art.Controls))
 	metCount, notMetCount := 0, 0
 	for _, c := range art.Controls {
+		catalogObjectives[c.ID] = true
 		// EvidencePointer stays absent: there is no machine evidence to point
 		// to for any objective in this build (NoMachineEvidenceYet states
 		// that fact once, at the document level, rather than per row — see
@@ -92,6 +97,32 @@ func SummarizeL1(profile *Profile, art *artifact.Artifact, det *Determinations,
 			metCount++
 		}
 		result.Objectives = append(result.Objectives, row)
+	}
+
+	// A determination naming an objective id the catalog does not have would
+	// otherwise be dropped with no effect and no error: ForObjective simply
+	// never matches it, the practice it was meant to address stays at the
+	// profile's understatement value, and the operator's own claim vanishes
+	// without a trace. That never overstates (Invariant 2 still holds — the
+	// row stays NOT MET), but a determination that silently does nothing is
+	// its own defect: an operator who typo'd MP.L1-b.1.vii as MP.L1-b1.vii
+	// believes they addressed media disposal and the rendered summary agrees
+	// with nothing they said. Refusing to run is the same discipline
+	// ValidateAgainst already applies to a value outside the vocabulary —
+	// this is a reference outside the catalog, checked here because only
+	// SummarizeL1 has both the determinations and the artifact in hand.
+	if det != nil {
+		for _, d := range det.List {
+			for _, obj := range d.Objectives {
+				if !catalogObjectives[obj] {
+					return nil, fmt.Errorf("operator determination %q names objective %q, which is not "+
+						"one of cmmc-l1's fifteen practices in control artifact %s — check for a typo; "+
+						"a determination naming an objective the catalog does not have is silently "+
+						"dropped otherwise, and the practice it was meant to address would stay NOT MET "+
+						"with no record of why", d.ID, obj, art.Meta.ID)
+				}
+			}
+		}
 	}
 
 	result.L1Summary = L1Summary{
