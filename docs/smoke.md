@@ -85,6 +85,7 @@ restatement.
 | 5 | **Q5** — what `preflight` can detect about delegation from the member side | Whether `DescribeResourcePolicy` is readable from the member account at all; if not, preflight must be told rather than detect, and the bundle must carry that fact |
 | 6 | **Q6** — SCP quota edges under real union output | Now largely answered offline against `catalogs/baseline-protection.json`: the shipped set plus a profile's allowlists packs into **one** policy at 46% of the limit. What a live run still adds is what a *campus* baseline in the reserved institutional slot looks like, and whether the three usable slots survive contact with one |
 | 7 | **Q13** — `BP.IAM-1` denies re-permissioning the baseline roles, automat included | Whether the protection SCP governs automat's own `PutRolePolicy` on `automat-automation` once attached, and how long after `AttachPolicy` that becomes true. Attempt the write from the automation role and record the result, then re-run the full vend and confirm it is a no-op rather than a denied write |
+| 8 | **Q24** — does `reclaim`'s detach-then-close sequence behave the way `docs/reclaim-design.md` assumes | Vend a throwaway account, `reclaim --yes` it, and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `DetachPolicy` on a just-attached SCP succeeded immediately, and — only if the sandbox org's own history permits reaching it safely — the exact shape of a closure-quota rejection |
 
 Q8 deserves the emphasis it has above: it is the one on this list whose bad case is
 silent. Q9 fails visibly, Q7 fails visibly, Q5 and Q6 are questions about capability
@@ -95,6 +96,11 @@ Q13 is the near miss: its bad case fails visibly but *late*. If SCP attachment h
 propagation delay, an attach-then-write sequence succeeds on the run that establishes it
 and fails on some later run, which is why the run must attempt the denied write
 deliberately rather than conclude from a vend that happened to work.
+
+Q24 is last on purpose: it is the only entry that destroys the account it tests against,
+so it should run after every other question on this list has already been answered
+using accounts this same sandbox run vends — reclaiming early would remove the very
+account the earlier questions still need.
 
 ## Phase 1 review item 7 applies here too
 

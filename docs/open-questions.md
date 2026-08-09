@@ -316,6 +316,40 @@ role establishment before policy attachment, and must not treat an `AccessDenied
 `automat-automation` from the automation role itself and record the result; then re-run the
 full vend and confirm it is a no-op rather than a denied write.
 
+### Q24 — Does `reclaim`'s detach-then-close sequence behave against a real organization the way `docs/reclaim-design.md` assumes?
+
+`internal/org.Reclaimer` and `cmd/automat/reclaim.go` (Phase 5) are built and tested against
+`awsfake.OrgReclaim`, whose `CloseAccount` is a synchronous state flip
+(`ACTIVE`→`SUSPENDED`) and whose `DetachPolicy` has no propagation delay. Real
+`organizations:CloseAccount` is explicitly asynchronous (the SDK's own doc comment: a
+successful response can return while the account is still `PENDING_CLOSURE`), and nothing
+verifies against a live org:
+
+- Whether `DetachPolicy` on an SCP just attached, or about to be relied on by
+  `baseline-protection`, has the same "no documented propagation delay" risk Q13 already
+  flags for attach — the same worry in the opposite direction, for a call `reclaim` makes
+  rather than `vend`.
+- Whether the closure rate-limit rejection (`ConstraintViolationException` with reason
+  `CLOSE_ACCOUNT_QUOTA_EXCEEDED` or `CLOSE_ACCOUNT_REQUESTS_LIMIT_EXCEEDED`) is actually the
+  shape AWS returns today — the reason codes are read from the SDK's own generated types,
+  never observed against a real rejection, so the remediation text `Reclaimer.CloseAccount`
+  prints is unverified prose about an error nobody has seen fire.
+- What `DescribeAccount` reports for an account mid-`PENDING_CLOSURE` if `reclaim` (or any
+  other command) reads it in that window — no code path handles that status today because
+  no live account has ever been in it.
+
+**What the code assumes now:** `CloseAccount`'s response can be trusted as a request
+accepted, full stop — `Reclaimer.CloseAccount` reports `Applied: true` on any `nil` error,
+with no poll loop the way `vend`'s account-creation step has one for
+`DescribeCreateAccountStatus`. If closure needs the same asynchronous-completion handling
+account creation does, that is undiscovered work, not a decided design.
+
+**Phase 5 smoke runbook:** vend a throwaway account in the sandbox org, `reclaim --yes` it,
+and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `DetachPolicy`
+succeeded immediately after the SCP's own attach (a fresh attach followed by an immediate
+detach in the same run), and — only if the sandbox org's history permits reaching it
+without risking a real account — the exact shape of a closure-quota rejection.
+
 ---
 
 ## Decided by the maintainer
