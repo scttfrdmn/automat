@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -154,7 +155,7 @@ func newVerifyCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			manifestPath, werr := writeVerifyEvidence(in, accountID, target, callerARN, now)
+			manifestPath, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport)
 			if werr != nil {
 				return werr
 			}
@@ -301,7 +302,13 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		return err
 	}
 
-	if err := p("Account %s (OU/root %s)\n\n", accountID, target); err != nil {
+	// target is quoted, accountID is not: accountID passed reVerifyAccountID
+	// before any of this ran, so its character class is already known, while
+	// target is whatever ListParents returned and has been checked against
+	// nothing. Same for an orphan's name below. AUDIT-0 M1's discipline: a
+	// value that can carry a newline can forge a line of a report, and this
+	// report is what an operator reads to decide whether an account drifted.
+	if err := p("Account %s (OU/root %q)\n\n", accountID, target); err != nil {
 		return err
 	}
 
@@ -325,7 +332,7 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		}
 	}
 	for _, o := range policy.Orphans {
-		if err := p("  orphan (attached, automat's, no longer named by this compile): %s\n", o); err != nil {
+		if err := p("  orphan (attached, automat's, no longer named by this compile): %q\n", o); err != nil {
 			return err
 		}
 	}
@@ -358,7 +365,26 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // writeVerifyEvidence appends an OpVerify record to the account's evidence
 // manifest, following the same OpenDir/LoadOrNew/Append/Write sequence
 // writeVendEvidence (vend.go) uses.
-func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time) (string, error) {
+//
+// # The outcome is the finding, not the exit status of the process (AUDIT-4 H2)
+//
+// It used to be evidence.OutcomeSuccess unconditionally, so a run that reported
+// drift and exited 2 left a record reading `"outcome": "success"` — and the
+// manifest is the durable artifact, read long after the exit code is gone. A
+// reader counting successful verify records would have counted the drift ones.
+//
+// A drifted account is recorded as `failure` with the required error block. Not
+// `parked`: parked means real AWS state was left behind for `vend --resume` to
+// find (evidence.OutcomeParked's own doc comment), and verify wrote nothing to
+// resume. The `failure` here is the CHECK's finding, which is what an operation
+// named "verify" failing can only mean — it did not fail to run, it ran and
+// found the account is not what the profile says.
+//
+// Freshness is deliberately not part of this: a lapsed review_by is a warning
+// that changes no exit code (DESIGN §11a, §12), and a record marked failure for
+// a date would say the account drifted when nothing about it moved.
+func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
+	policy *verify.PolicyReport) (string, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
@@ -376,11 +402,16 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 			accountID, err)
 	}
 
+	outcome, recErr := evidence.OutcomeSuccess, (*evidence.RecordError)(nil)
+	if !policy.Clean() {
+		outcome, recErr = evidence.OutcomeFailure, verifyDriftError(policy)
+	}
 	rec := evidence.Record{
 		Timestamp: now.UTC().Format(time.RFC3339),
 		Operation: evidence.OpVerify,
-		Outcome:   evidence.OutcomeSuccess,
+		Outcome:   outcome,
 		Operator:  evidence.Operator{ARN: callerARN},
+		Err:       recErr,
 		Target:    &evidence.Target{AccountID: accountID, OUID: target},
 		EnvProfile: &evidence.EnvProfileRef{
 			ID: in.profile.Meta.ID, ContentSHA256: in.contentHash,
@@ -396,4 +427,72 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 		return "", err
 	}
 	return path, nil
+}
+
+// verifyDriftError is the RecordError a drifted verify record carries.
+//
+// The message names each finding rather than saying "drift was found", because
+// the manifest is what an operator reads weeks later with no terminal scrollback
+// (evidence.RecordError's own doc comment, CLAUDE.md rule 7) — and the three
+// findings need three different actions: a missing policy is re-attached by
+// re-running `vend`, a differing one by correcting whichever side is wrong, and
+// an orphan by a detach automat cannot perform at all.
+//
+// Every policy name is quoted for the same reason renderVerifyReport quotes
+// them: a name reaches this text from AWS, and this text goes into a document.
+func verifyDriftError(policy *verify.PolicyReport) *evidence.RecordError {
+	var missing, differs, unowned []string
+	for _, s := range policy.Expected {
+		switch {
+		case !s.Attached:
+			missing = append(missing, fmt.Sprintf("%q", s.Name))
+		case !s.Owned:
+			unowned = append(unowned, fmt.Sprintf("%q", s.Name))
+		case !s.Matches:
+			differs = append(differs, fmt.Sprintf("%q", s.Name))
+		}
+	}
+	orphans := make([]string, 0, len(policy.Orphans))
+	for _, o := range policy.Orphans {
+		orphans = append(orphans, fmt.Sprintf("%q", o))
+	}
+
+	parts := make([]string, 0, 4)
+	add := func(names []string, what string) {
+		if len(names) > 0 {
+			parts = append(parts, what+": "+strings.Join(names, ", "))
+		}
+	}
+	add(missing, "not attached")
+	add(differs, "attached but the content differs from a fresh compile")
+	add(unowned, "attached under automat's name without automat's owner tag, so this is a "+
+		"name collision rather than automat's drift")
+	add(orphans, "attached, automat's, and no longer named by this compile")
+
+	return &evidence.RecordError{
+		Message: "the policy layer does not match a fresh compile of this environment profile. " +
+			strings.Join(parts, "; "),
+		Action:      "organizations:ListPoliciesForTarget",
+		Resource:    policy.Target,
+		Remediation: verifyDriftRemediation(len(missing)+len(differs) > 0, len(orphans) > 0),
+	}
+}
+
+// verifyDriftRemediation names the action for the findings actually present.
+// Split out so the sentence about a detach automat cannot perform appears only
+// when there is an orphan to detach, rather than in every drift record.
+func verifyDriftRemediation(reattach, orphaned bool) string {
+	var parts []string
+	if reattach {
+		parts = append(parts, "re-run `automat vend` with this environment profile (and the same "+
+			"--override, if one was used) to re-ensure the policies; it is idempotent, and a policy "+
+			"whose content differs is corrected in place rather than replaced")
+	}
+	if orphaned {
+		parts = append(parts, "an orphan is left in force and cannot be removed by this build — "+
+			"automat holds no DetachPolicy — so detach it in the management account if it should "+
+			"not apply. It is a Deny policy, so leaving it makes the account more restricted than "+
+			"this profile asks for, not less")
+	}
+	return strings.Join(parts, ". ")
 }

@@ -4,8 +4,12 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/scttfrdmn/automat/internal/envprofile"
+	"github.com/scttfrdmn/automat/internal/evidence"
 )
 
 // verifyArgs is the common flag set.
@@ -194,5 +198,60 @@ func TestVerifyWritesAnEvidenceRecord(t *testing.T) {
 	}
 	if !strings.Contains(out, "Evidence:") {
 		t.Errorf("verify did not report where it wrote the evidence manifest:\n%s", out)
+	}
+}
+
+// TestVerifyRecordsDriftAsAFailedOutcome is AUDIT-4 H2. The record used to say
+// `"outcome": "success"` on a run that reported drift and exited 2, and the
+// manifest is the artifact that outlives the exit code — a reader counting
+// successful verify records would have counted the drifted ones.
+//
+// Asserted against the manifest on disk rather than against the printed report:
+// the report was already right, and the whole finding is that the durable
+// document disagreed with it.
+func TestVerifyRecordsDriftAsAFailedOutcome(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+	accountID := vendThenVerify(t, g, f, profile)
+
+	names := f.State.PolicyNames()
+	if len(names) == 0 {
+		t.Fatal("the vend attached no policies; nothing for this test to drift")
+	}
+	f.State.SetPolicyContent(f.State.PolicyIDByName(names[0]),
+		`{"Version":"2012-10-17","Statement":[{"Sid":"HandEdited","Effect":"Deny",`+
+			`"Action":"s3:*","Resource":"*"}]}`)
+
+	if _, _, err := runCLI(t, g, verifyArgs(profile, accountID)...); err == nil {
+		t.Fatal("verify succeeded against a hand-edited policy, want a drift exit")
+	}
+
+	m, err := evidence.Load(filepath.Join(envprofile.DefaultEvidenceDir, accountID+".json"), nil)
+	if err != nil {
+		t.Fatalf("load the manifest verify wrote: %v", err)
+	}
+	var last *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpVerify {
+			last = &m.Records[i]
+		}
+	}
+	if last == nil {
+		t.Fatal("no verify record in the manifest")
+	}
+	if last.Outcome != evidence.OutcomeFailure {
+		t.Errorf("the verify record's outcome is %q on a run that found drift and exited %d; the "+
+			"manifest outlives the exit code, so a reader counting successful verifies counts this one",
+			last.Outcome, exitVerifyDrift)
+	}
+	if last.Err == nil {
+		t.Fatal("a failed verify record carries no error block, so the manifest says the check " +
+			"failed and withholds what it found")
+	}
+	if !strings.Contains(last.Err.Message, "differs") {
+		t.Errorf("the error block does not name the finding: %+v", last.Err)
+	}
+	if last.Err.Remediation == "" {
+		t.Error("the error block carries no remediation (CLAUDE.md rule 7)")
 	}
 }
