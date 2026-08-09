@@ -326,7 +326,9 @@ automat vend         # §7 steps 1-4 and 6 (compile control set, create account,
                       # silent about the gap.
 automat verify       # §12: policy + freshness layers only (detective/procedural NOT YET
                       # IMPLEMENTED — see docs/cli-surface.md D4)
-automat list         # vended accounts (by tags), parked accounts, OUs
+automat list         # accounts and OUs under --ou (or the config `ou`, or the org root),
+                      # plus parked accounts from local evidence manifests under
+                      # --evidence-dir. No tag-based filtering — see docs/cli-surface.md D5
 automat reclaim      # LATER (Phase 5): close/park accounts; respect closure rate limits
 ```
 

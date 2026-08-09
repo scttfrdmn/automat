@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/scttfrdmn/automat/internal/safeio"
 )
@@ -160,6 +162,41 @@ func (m *Manifest) checkIsAbout(accountID, organizationID, shown string) error {
 			shown, safe(got), safe(organizationID))
 	}
 	return nil
+}
+
+// ListAccountIDs returns the account id every manifest file in this directory
+// names, sorted — the id being whatever precedes ".json" in the filename, not
+// a field read out of the manifest's own content.
+//
+// `automat list` needs to enumerate what is here before it can load anything,
+// and the filename is what `Path`/`Write` already use as the account's key —
+// reading it back is cheaper and cannot disagree with itself the way parsing
+// every file's Meta.AccountID and hoping it matches the filename could.
+// Entries that are not ordinary files ending in ".json" are skipped rather
+// than reported: a stray directory or dotfile in an evidence tree is not an
+// account's manifest, and this is an inventory, not a validator — `list`
+// loads each entry through LoadOrNew/Load afterward, where a malformed file
+// is a real failure to surface for that one account rather than a name to
+// silently drop.
+func (d *Dir) ListAccountIDs() ([]string, error) {
+	entries, err := fs.ReadDir(d.root.FS(), ".")
+	if err != nil {
+		return nil, fmt.Errorf("list %s: %w", d.shown, err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		id, ok := strings.CutSuffix(name, ".json")
+		if !ok || id == "" {
+			continue
+		}
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // Write writes a manifest into this directory, with the same temp-file-first

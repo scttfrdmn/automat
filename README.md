@@ -38,6 +38,7 @@ everything else in the design is marked as not shipping yet, in this file and in
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
 | `automat setup` (no `--request`) | Applies the delegation policy and creates the vendor role directly, from the management account. Requires a real target OU (`--ou`) and an ExternalId reference (`--external-id-ref`) — no template parameter to defer either to, and automat does not generate an ExternalId. Ensure-semantics: a second run corrects drift | Phase 3 |
 | `automat verify` | Re-checks one account's attached service control policies against a fresh compile of the environment profile that vended it, and warns if the profile's `review_by` date has passed. Read-only; checks the policy and freshness layers only — the detective and procedural layers have nothing to check against until the in-child baseline exists (see below) | Phase 4 |
+| `automat list` | Inventories the organizational units and accounts under the configured OU (or the root), plus every account a local evidence manifest records as parked. Read-only. Tag-based filtering is not available — see below | Phase 4 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
 
@@ -61,7 +62,12 @@ worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
   so the plan reports the step as not performed, and the evidence manifest carries a
   **parked** `baseline-apply` record. That record is what stops a manifest which is merely
   silent about the baseline from reading as a baseline that succeeded.
-- **`automat list`** — tag-driven inventory. Phase 4.
+- **`list`'s tag-based filtering** — DESIGN §13 describes it as inventorying "vended
+  accounts (by tags)". The vendor role bundle grants no
+  `organizations:ListTagsForResource` on account resources
+  ([`docs/open-questions.md`](docs/open-questions.md) Q19), so an account's
+  `automat:vended-by`/`automat:ou` tags cannot be read back through this client — `list`
+  shows every account under the walked OU regardless of tag.
 - **`automat assess`** — assessment reporting: 800-171A objective worksheets, CMMC L1
   MET/NOT MET summaries, DFARS score arithmetic. Phase 4, scope approved in
   [`docs/assessment-reporting.md`](docs/assessment-reporting.md).

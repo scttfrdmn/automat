@@ -187,7 +187,7 @@ a documented gap around it.
   - **`verify`'s result is a structured value** (`internal/verify.PolicyReport`/`FreshnessStatus`); the printed report renders from it, not the reverse — `assess` (below) is meant to consume this later.
   - Writes an `evidence.OpVerify` record per run.
 - Union semantics complete: crosswalk dedupe, parameter partial orders, conflict reports + override files; property tests (idempotent/commutative/associative/monotone).
-- `list` (tag-driven inventory incl. parked accounts).
+- **`list` SHIPPED, without tag-based filtering.** `automat list --ou <id> --evidence-dir <dir>` walks the OU tree via a new `org.WalkTree` (`internal/org/tree.go`) and separately scans local evidence manifests for parked accounts (`evidence.Dir.ListAccountIDs`, `Manifest.Parked`). Every account under the walked OU is listed regardless of tag: `awsapi.OrgVendAPI` has no `ListTagsForResource` for account resources, and the published vendor-role bundle does not grant it — the same absence docs/open-questions.md Q19 already documents for a different reason. See docs/cli-surface.md D5.
 
 ### Assessment reporting (`assess`) — approved scope, staged within this phase
 

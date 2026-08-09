@@ -25,7 +25,7 @@ adds `init` and `vend`.
 | `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
 | `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |
 | `automat verify` | **Shipped** — policy and freshness layers only, `--account` not `--account \| --ou`; see D4 | `cmd/automat/verify.go` |
-| `automat list` | Not yet — Phase 4 | ROADMAP Phase 4 |
+| `automat list` | **Shipped** — no tag-based filtering; see D5 | `cmd/automat/list.go` |
 | `automat reclaim` | Not yet — Phase 5 | ROADMAP Phase 5, `LATER` in §13 |
 
 Also present and not in §13: `version`, `help`, `completion`. `version` is a
@@ -47,6 +47,7 @@ shipped command is absent from §13.**
 | `init` | `--ou-name`, `--dry-run`, `--yes` | §13 names none of these |
 | `vend` | `--environment-profile`, `--name`, `--email`, `--ou`, `--resume`, `--dry-run` | §13 line 100 names `--profile`; see the naming note below |
 | `verify` | `--account`, `--environment-profile` | §13 names `--account \| --ou`; see D4 |
+| `list` | `--ou`, `--evidence-dir` | §13 names none of these; see D5 |
 
 §13 specifies commands, not flags, so a flag cannot contradict it by existing. The two
 with security semantics remain the ones AUDIT-1 flagged: `--force` (discards a hand
@@ -262,6 +263,37 @@ code path first: DESIGN.md's `verify` line now states `--account <id>` only and 
 the policy and freshness layers as what is checked, pointing here for the reasoning. When
 `internal/baseline` exists, the detective and procedural layers become checkable and this
 page is where that closes; nothing about resolving it now blocks that later.
+
+### D5 — `automat list` has no tag-based filtering, and its two flags are not in §13. RESOLVED — §13 amended
+
+§13 describes `list` as "vended accounts (by tags), parked accounts, OUs" and names no
+flags. As built, `list` walks the OU tree rooted at `--ou` (or the config file's `ou`, or
+the organization root if neither is set) and lists every account under it regardless of
+tag, plus every account a local evidence manifest under `--evidence-dir` records as
+parked.
+
+**Tag-based filtering is not available because the read grant does not exist.**
+`awsapi.OrgVendAPI` has no `ListTagsForResource` for account resources — the same
+absence `docs/open-questions.md` Q19 already documents, there for a different reason
+(adopting an account by email cannot be corroborated by its `automat:vended-by` tag).
+The published `vendor-role.cfn.yaml`/`vendor-role.tf` do not grant
+`organizations:ListTagsForResource` on account ARNs, so even a native (MANAGEMENT-state)
+caller reading through the same interface a MEMBER-state caller would use gets no tags
+back — widening the interface for one state and not the other would mean `list` behaves
+differently depending on where it runs, which is worse than the gap it would close. The
+fix is the same one Q19 names for its own problem: widen the bundle, which is a version
+event for a published, reviewed document and is not done casually.
+
+**`--ou` and `--evidence-dir` exist because `list` has no other way to find its two data
+sources.** `--ou` matches `vend`'s own override pattern (config file default, CLI
+override) for the traversal root. `--evidence-dir` exists because `list` has no
+`--environment-profile` — unlike `vend` and `verify`, which read a single profile's
+`baseline.evidence.local_dir`, `list` inventories accounts as a group and needs a
+directory to scan before it knows which profiles, if any, vended what is in it.
+
+**Resolved by amending §13's line**: DESIGN.md's `list` line now names `--ou` and
+`--evidence-dir` and states that tag-based filtering is not available, pointing here for
+the reasoning.
 
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 
