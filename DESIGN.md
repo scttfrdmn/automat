@@ -318,14 +318,17 @@ automat init         # STANDALONE or MANAGEMENT: CreateOrganization(ALL) + resea
 automat setup        # MANAGEMENT: apply delegation + create vendor role for a member acct
 automat setup --request   # MEMBER: emit onboarding bundle (§6)
 automat vend         # §7 steps 1-4 and 6 (compile control set, create account, move, attach SCPs,
-                      # write evidence + birth certificate). Step 5, the in-child baseline (Config
-                      # recorder, conformance pack, opt-in regions, automation role), is NOT YET
-                      # IMPLEMENTED — see docs/cli-surface.md D3. A vended account's preventive
-                      # controls are real; nothing in it is being watched yet, and `vend` says so in
-                      # its plan, its evidence manifest, and its birth certificate rather than staying
-                      # silent about the gap.
+                      # write evidence + birth certificate). --override resolves a Config-rule
+                      # parameter conflict the union could not settle on its own (§9, D6). Step 5,
+                      # the in-child baseline (Config recorder, conformance pack, opt-in regions,
+                      # automation role), is NOT YET IMPLEMENTED — see docs/cli-surface.md D3. A
+                      # vended account's preventive controls are real; nothing in it is being
+                      # watched yet, and `vend` says so in its plan, its evidence manifest, and
+                      # its birth certificate rather than staying silent about the gap.
 automat verify       # §12: policy + freshness layers only (detective/procedural NOT YET
-                      # IMPLEMENTED — see docs/cli-surface.md D4)
+                      # IMPLEMENTED — see docs/cli-surface.md D4). --override must match the one
+                      # `vend` used (D6), or the recompiled expectation will not be the one
+                      # actually attached.
 automat list         # accounts and OUs under --ou (or the config `ou`, or the org root),
                       # plus parked accounts from local evidence manifests under
                       # --evidence-dir. No tag-based filtering — see docs/cli-surface.md D5

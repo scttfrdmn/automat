@@ -100,8 +100,10 @@
 //
 // # What this package does not do
 //
-// Full union semantics — crosswalk dedupe, Config-rule parameter resolution,
-// conflict reports, override files — is Phase 4 and lives with
-// artifact.RuleParameter.Resolve. This package handles the SCP half, which
-// Phase 2 needs because a vend cannot attach a control it cannot fit.
+// Crosswalk dedupe — merging procedural-control attestations across
+// frameworks via Control.Crosswalk so one practice is attested once rather
+// than once per framework id (DESIGN §9) — is not built. Config-rule dedupe,
+// parameter resolution (configrules.go, built on artifact.RuleParameter.
+// Resolve), conflict reports (conflicts.go), and override files
+// (overrides.go) are.
 package compilesets

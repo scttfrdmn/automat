@@ -46,17 +46,17 @@ type MergedConfigRule struct {
 // happens through the same accumulator Combine later folds across artifacts —
 // so two controls in ONE artifact binding the same rule are deduped here
 // exactly as two artifacts binding it are deduped in Combine.
-func (m *Merged) addConfigRules(rules []artifact.ConfigRule, artifactID, controlID string) *ConflictReport {
+func (m *Merged) addConfigRules(rules []artifact.ConfigRule, artifactID, controlID string, overrides *Overrides) *ConflictReport {
 	origin := artifactID + ":" + controlID
 	for _, rule := range rules {
-		if err := m.addOneConfigRule(rule, origin); err != nil {
+		if err := m.addOneConfigRule(rule, origin, overrides); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string) *ConflictReport {
+func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string, overrides *Overrides) *ConflictReport {
 	if m.ConfigRules == nil {
 		m.ConfigRules = map[string]*MergedConfigRule{}
 	}
@@ -88,7 +88,11 @@ func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string) *Conf
 		}
 		resolved, err := current.Resolve(incoming, rule.Identifier, name)
 		if err != nil {
-			return conflictReportFrom(err, rule.Identifier, name, existing.Origins, origin)
+			if ov, ok := overrides.apply(rule.Identifier, name, current.Order); ok {
+				resolved = ov
+			} else {
+				return conflictReportFrom(err, rule.Identifier, name, existing.Origins, origin)
+			}
 		}
 		existing.Parameters[name] = resolved
 	}
@@ -104,7 +108,7 @@ func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string) *Conf
 // nor aliases its inputs" contract (merge.go) — the property tests call
 // Combine repeatedly on the same operands, and an in-place fold would make
 // the second call see the first call's output.
-func combineConfigRules(a, b *Merged) (map[string]*MergedConfigRule, *ConflictReport) {
+func combineConfigRules(a, b *Merged, overrides *Overrides) (map[string]*MergedConfigRule, *ConflictReport) {
 	if len(a.ConfigRules) == 0 && len(b.ConfigRules) == 0 {
 		return nil, nil
 	}
@@ -126,7 +130,11 @@ func combineConfigRules(a, b *Merged) (map[string]*MergedConfigRule, *ConflictRe
 			}
 			resolved, err := currentParam.Resolve(incomingParam, id, name)
 			if err != nil {
-				return nil, conflictReportFrom(err, id, name, existing.Origins, incoming.Origins...)
+				if ov, ok := overrides.apply(id, name, currentParam.Order); ok {
+					resolved = ov
+				} else {
+					return nil, conflictReportFrom(err, id, name, existing.Origins, incoming.Origins...)
+				}
 			}
 			existing.Parameters[name] = resolved
 		}

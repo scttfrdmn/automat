@@ -36,13 +36,27 @@ import (
 // without a binary operation. The n-ary form is the convenience; Combine is the
 // operation.
 func Merge(artifacts ...*artifact.Artifact) (*Merged, error) {
+	return MergeWithOverrides(nil, artifacts...)
+}
+
+// MergeWithOverrides is Merge, but a Config-rule parameter conflict that
+// names a matching entry in overrides resolves to the override's value
+// instead of returning a *ConflictReport.
+//
+// A separate entry point rather than a parameter added to Merge's own
+// signature: Merge already changed shape once this session (adding the
+// error return), and every caller — production and test — was just updated
+// for that. Overrides are the uncommon path DESIGN §9 reserves for a
+// conflict a human has to settle, so it gets its own name rather than a
+// third argument every ordinary caller would pass as nil.
+func MergeWithOverrides(overrides *Overrides, artifacts ...*artifact.Artifact) (*Merged, error) {
 	acc := &Merged{}
 	for _, a := range artifacts {
-		next, err := FromArtifact(a)
+		next, err := FromArtifactWithOverrides(a, overrides)
 		if err != nil {
 			return nil, err
 		}
-		acc, err = Combine(acc, next)
+		acc, err = CombineWithOverrides(acc, next, overrides)
 		if err != nil {
 			return nil, err
 		}
@@ -70,6 +84,14 @@ func Merge(artifacts ...*artifact.Artifact) (*Merged, error) {
 // artifact's own catalog compile (gen/catalog) already keeps each
 // blockedPort slot to one value.
 func FromArtifact(a *artifact.Artifact) (*Merged, error) {
+	return FromArtifactWithOverrides(a, nil)
+}
+
+// FromArtifactWithOverrides is FromArtifact, applying overrides to any
+// Config-rule conflict between two controls within this one artifact. See
+// MergeWithOverrides for why this is a separate name rather than a new
+// parameter on FromArtifact.
+func FromArtifactWithOverrides(a *artifact.Artifact, overrides *Overrides) (*Merged, error) {
 	m := &Merged{}
 	if a == nil {
 		return m, nil
@@ -79,7 +101,7 @@ func FromArtifact(a *artifact.Artifact) (*Merged, error) {
 			m.addSCP(c.SCP, a.Meta.ID, c.ID)
 		}
 		if len(c.ConfigRules) > 0 {
-			if cr := m.addConfigRules(c.ConfigRules, a.Meta.ID, c.ID); cr != nil {
+			if cr := m.addConfigRules(c.ConfigRules, a.Meta.ID, c.ID, overrides); cr != nil {
 				return nil, cr
 			}
 		}
@@ -123,6 +145,13 @@ func FromArtifact(a *artifact.Artifact) (*Merged, error) {
 // Combine calls would, without needing every intermediate Merged value to
 // already be in re-slotted form.
 func Combine(a, b *Merged) (*Merged, error) {
+	return CombineWithOverrides(a, b, nil)
+}
+
+// CombineWithOverrides is Combine, applying overrides to any Config-rule
+// conflict between a and b. See MergeWithOverrides for why this is a
+// separate name rather than a new parameter on Combine.
+func CombineWithOverrides(a, b *Merged, overrides *Overrides) (*Merged, error) {
 	if a == nil && b == nil {
 		return &Merged{}, nil
 	}
@@ -140,7 +169,7 @@ func Combine(a, b *Merged) (*Merged, error) {
 		}
 	}
 
-	configRules, cr := combineConfigRules(a, b)
+	configRules, cr := combineConfigRules(a, b, overrides)
 	if cr != nil {
 		return nil, cr
 	}

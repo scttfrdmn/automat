@@ -45,8 +45,8 @@ shipped command is absent from §13.**
 | `preflight` | none | — |
 | `setup` | `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`, `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`, `--vendor-role-name`, `--contact` | §13 names none of these |
 | `init` | `--ou-name`, `--dry-run`, `--yes` | §13 names none of these |
-| `vend` | `--environment-profile`, `--name`, `--email`, `--ou`, `--resume`, `--dry-run` | §13 line 100 names `--profile`; see the naming note below |
-| `verify` | `--account`, `--environment-profile` | §13 names `--account \| --ou`; see D4 |
+| `vend` | `--environment-profile`, `--name`, `--email`, `--ou`, `--resume`, `--override`, `--dry-run` | §13 line 100 names `--profile`; see the naming note below and D6 for `--override` |
+| `verify` | `--account`, `--environment-profile`, `--override` | §13 names `--account \| --ou`; see D4 and D6 |
 | `list` | `--ou`, `--evidence-dir` | §13 names none of these; see D5 |
 
 §13 specifies commands, not flags, so a flag cannot contradict it by existing. The two
@@ -294,6 +294,31 @@ directory to scan before it knows which profiles, if any, vended what is in it.
 **Resolved by amending §13's line**: DESIGN.md's `list` line now names `--ou` and
 `--evidence-dir` and states that tag-based filtering is not available, pointing here for
 the reasoning.
+
+### D6 — `vend` and `verify` gain `--override`, not named in §13. RESOLVED — §13 amended
+
+§9 states the remedy for a Config-rule parameter conflict the union cannot resolve on its
+own: "hard error with a conflict report demanding explicit resolution (an override file)."
+It names the mechanism without naming a flag, a file format, or which commands read one.
+
+**`--override <file>` on both `vend` and `verify`**, a JSON document naming each resolved
+`{rule, parameter, value}` triple (`internal/compilesets.Overrides`/`LoadOverrides`).
+Unpublished — no `schema/` entry, per rule 6's proportionality: this is a small,
+operator-local file with no cross-institution provenance requirement, unlike an
+environment profile or a control artifact. `MergeWithOverrides`/`CombineWithOverrides`/
+`FromArtifactWithOverrides` are new entry points beside `Merge`/`Combine`/`FromArtifact`
+rather than a fourth parameter on the existing ones, which had already changed shape once
+this phase (gaining an error return) and every caller — production and test — had just
+been updated for that.
+
+`verify` needs the same flag as `vend` for the same reason it needs `--environment-profile`
+at all: it recompiles the expected policy set from scratch rather than reading a prior
+evidence record, so an account vended with an override needs the same override replayed at
+verify time or the recompiled expectation will not be the one actually attached — a false
+drift report, not a missing feature.
+
+**Resolved by amending §13's line**: DESIGN.md's `vend` and `verify` lines both now name
+`--override`, pointing here for the reasoning.
 
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 

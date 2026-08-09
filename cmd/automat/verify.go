@@ -69,8 +69,9 @@ var reVerifyAccountID = regexp.MustCompile(`^[0-9]{12}$`)
 // rather than offered and silently wrong.
 func newVerifyCmd(g *globals) *cobra.Command {
 	var (
-		accountID   string
-		profilePath string
+		accountID    string
+		profilePath  string
+		overridePath string
 	)
 
 	cmd := &cobra.Command{
@@ -109,7 +110,7 @@ func newVerifyCmd(g *globals) *cobra.Command {
 					"should be attached; it does not read one back out of the account")
 			}
 
-			in, err := loadVerifyInput(profilePath, accountID)
+			in, err := loadVerifyInput(profilePath, accountID, overridePath)
 			if err != nil {
 				return err
 			}
@@ -177,6 +178,10 @@ func newVerifyCmd(g *globals) *cobra.Command {
 	f.StringVar(&accountID, "account", "", "the account to check (required)")
 	f.StringVar(&profilePath, "environment-profile", "",
 		"the environment profile this account was vended from (required)")
+	f.StringVar(&overridePath, "override", "",
+		"path to an override file resolving a Config-rule parameter conflict the union "+
+			"could not settle on its own (DESIGN §9) — must match the one `vend` used, or the "+
+			"recompiled expected policy set will not be the one actually attached")
 	return cmd
 }
 
@@ -199,7 +204,7 @@ type verifyInput struct {
 // which verify has any use for, and threading an unused vendInput through
 // verify's call path would let a vend-only field silently start mattering to
 // a command it has no business touching.
-func loadVerifyInput(profilePath, accountID string) (*verifyInput, error) {
+func loadVerifyInput(profilePath, accountID, overridePath string) (*verifyInput, error) {
 	p, err := envprofile.Load(profilePath, envprofile.LoadOptions{})
 	if err != nil {
 		return nil, err
@@ -214,7 +219,14 @@ func loadVerifyInput(profilePath, accountID string) (*verifyInput, error) {
 		return nil, err
 	}
 
-	merged, err := compilesets.Merge(sets.Artifacts...)
+	var overrides *compilesets.Overrides
+	if overridePath != "" {
+		overrides, err = compilesets.LoadOverrides(overridePath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	merged, err := compilesets.MergeWithOverrides(overrides, sets.Artifacts...)
 	if err != nil {
 		return nil, err
 	}

@@ -91,12 +91,13 @@ var (
 // account all know the id and pack normally.
 func newVendCmd(g *globals) *cobra.Command {
 	var (
-		profilePath string
-		name        string
-		email       string
-		ouID        string
-		resume      string
-		dryRun      bool
+		profilePath  string
+		name         string
+		email        string
+		ouID         string
+		resume       string
+		overridePath string
+		dryRun       bool
 	)
 
 	cmd := &cobra.Command{
@@ -133,11 +134,12 @@ func newVendCmd(g *globals) *cobra.Command {
 			// still text on a screen (Q14's E5), and a refusal that waited for
 			// credentials would arrive after the operator had gone to fetch them.
 			in, err := loadVendInput(vendFlags{
-				profilePath: profilePath,
-				name:        name,
-				email:       email,
-				ouID:        ouID,
-				resume:      resume,
+				profilePath:  profilePath,
+				name:         name,
+				email:        email,
+				ouID:         ouID,
+				resume:       resume,
+				overridePath: overridePath,
 			}, orgCtx)
 			if err != nil {
 				return err
@@ -255,6 +257,9 @@ func newVendCmd(g *globals) *cobra.Command {
 		"destination OU id, overriding the environment profile's placement.target_ou")
 	f.StringVar(&resume, "resume", "",
 		"continue an earlier vend by its create-account request id")
+	f.StringVar(&overridePath, "override", "",
+		"path to an override file resolving a Config-rule parameter conflict the union "+
+			"could not settle on its own (DESIGN §9); see the conflict report's own remediation text")
 	f.BoolVar(&dryRun, "dry-run", false, "print the plan and stop")
 
 	return cmd
@@ -262,11 +267,12 @@ func newVendCmd(g *globals) *cobra.Command {
 
 // vendFlags is what the operator typed, before any of it is checked.
 type vendFlags struct {
-	profilePath string
-	name        string
-	email       string
-	ouID        string
-	resume      string
+	profilePath  string
+	name         string
+	email        string
+	ouID         string
+	resume       string
+	overridePath string
 }
 
 // vendInput is one vend's resolved inputs: the documents, the narrowed control
@@ -372,7 +378,14 @@ func loadVendInput(f vendFlags, orgCtx config.Context) (*vendInput, error) {
 		return nil, err
 	}
 
-	merged, err := compilesets.Merge(sets.Artifacts...)
+	var overrides *compilesets.Overrides
+	if f.overridePath != "" {
+		overrides, err = compilesets.LoadOverrides(f.overridePath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	merged, err := compilesets.MergeWithOverrides(overrides, sets.Artifacts...)
 	if err != nil {
 		return nil, err
 	}
