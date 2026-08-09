@@ -214,7 +214,10 @@ func loadVerifyInput(profilePath, accountID string) (*verifyInput, error) {
 		return nil, err
 	}
 
-	merged := compilesets.Merge(sets.Artifacts...)
+	merged, err := compilesets.Merge(sets.Artifacts...)
+	if err != nil {
+		return nil, err
+	}
 	var permittedRegions, permittedServices []string
 	if p.Permitted != nil {
 		permittedRegions, permittedServices = p.Permitted.Regions, p.Permitted.Services

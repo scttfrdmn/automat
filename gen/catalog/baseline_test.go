@@ -37,6 +37,28 @@ func compileBaselineForTest(t *testing.T) *artifact.Artifact {
 	return a
 }
 
+// mustFromArtifact and mustMerge wrap the fallible compilesets functions for
+// the ordinary case in a test where the inputs are not expected to conflict —
+// the baseline artifact's own Config-rule bindings, if any, never disagree
+// with themselves or with a hand-built "other" fixture in these tests.
+func mustFromArtifact(t *testing.T, a *artifact.Artifact) *compilesets.Merged {
+	t.Helper()
+	m, err := compilesets.FromArtifact(a)
+	if err != nil {
+		t.Fatalf("FromArtifact: %v", err)
+	}
+	return m
+}
+
+func mustMergeArtifacts(t *testing.T, artifacts ...*artifact.Artifact) *compilesets.Merged {
+	t.Helper()
+	m, err := compilesets.Merge(artifacts...)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	return m
+}
+
 // loadBaselineSource reads the curated source into a doc a test can mutate.
 //
 // Read fresh per case rather than shared: check() takes the doc by pointer and the
@@ -144,7 +166,7 @@ func TestEveryBaselineControlIsBaselineProtectionClass(t *testing.T) {
 // compiled statements have, not by the presence of a control id, because a control
 // can be renamed, merged, or split without changing what the account may do.
 func TestTheBaselineCoversEveryDesignSection10Bullet(t *testing.T) {
-	statements := compilesets.FromArtifact(compileBaselineForTest(t)).Statements
+	statements := mustFromArtifact(t, compileBaselineForTest(t)).Statements
 	const researcher = "arn:aws:iam::333333333333:role/researcher"
 
 	cases := []struct {
@@ -194,7 +216,7 @@ func TestTheBaselineCoversEveryDesignSection10Bullet(t *testing.T) {
 // to refuse at compile time, checked here at the behavioral layer as well because
 // the two could drift.
 func TestTheRootDenyStillLetsRolesWork(t *testing.T) {
-	statements := compilesets.FromArtifact(compileBaselineForTest(t)).Statements
+	statements := mustFromArtifact(t, compileBaselineForTest(t)).Statements
 	for _, action := range []string{"s3:GetObject", "ec2:RunInstances", "sts:AssumeRole", "logs:PutLogEvents"} {
 		req := compilesets.Request{
 			Principal: "arn:aws:iam::333333333333:role/researcher",
@@ -216,7 +238,7 @@ func TestTheRootDenyStillLetsRolesWork(t *testing.T) {
 // the account from the organization, which are the two holes BP.IAM-1's and
 // BP.ORG-1's extends_design text promises are absent.
 func TestTheAutomationExemptionAppliesToTheDetectiveBaselineOnly(t *testing.T) {
-	statements := compilesets.FromArtifact(compileBaselineForTest(t)).Statements
+	statements := mustFromArtifact(t, compileBaselineForTest(t)).Statements
 	const automation = artifact.AutomationRolePlaceholder
 
 	allowed := []string{
@@ -263,8 +285,8 @@ func TestTheBaselineIsRefusedIfItCanBeMergedIntoSomethingWider(t *testing.T) {
 	baseline := compileBaselineForTest(t)
 	other := compileForTest(t)
 
-	alone := compilesets.Merge(baseline).Statements
-	merged := compilesets.Merge(baseline, other).Statements
+	alone := mustMergeArtifacts(t, baseline).Statements
+	merged := mustMergeArtifacts(t, baseline, other).Statements
 
 	probes := []compilesets.Request{
 		{Principal: "arn:aws:iam::333333333333:role/researcher",

@@ -494,7 +494,8 @@ func TestNarrowingCommutesWithCombining(t *testing.T) {
 		opts := drawNarrowOptions(rt, "p")
 
 		// Narrow the union.
-		lhs, lerr := Narrow(Combine(a, b), opts)
+		ab := combine(rt, a, b)
+		lhs, lerr := Narrow(ab, opts)
 		// Narrow each side, then unite.
 		na, aerr := Narrow(a, opts)
 		nb, berr := Narrow(b, opts)
@@ -506,7 +507,7 @@ func TestNarrowingCommutesWithCombining(t *testing.T) {
 			// nothing. What must not differ is the answer when both succeed.
 			return
 		}
-		rhs := Combine(na.Merged, nb.Merged)
+		rhs := combine(rt, na.Merged, nb.Merged)
 
 		for _, axis := range []struct {
 			name string

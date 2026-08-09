@@ -14,6 +14,21 @@ import (
 	"github.com/scttfrdmn/automat/internal/artifact"
 )
 
+// combine is Combine plus a fatal check on the error, for this file's
+// generators only: drawMerged/drawRenderable never populate ConfigRules, so
+// Combine here can never return a *ConflictReport — a non-nil error is a
+// bug in this file's generators or in Combine itself, either of which
+// TestUnionIsMonotone and its siblings should fail loudly on rather than
+// silently ignore.
+func combine(rt *rapid.T, a, b *Merged) *Merged {
+	u, err := Combine(a, b)
+	if err != nil {
+		rt.Fatalf("Combine: %v (drawMerged/drawRenderable do not generate ConfigRules, so this "+
+			"should be unreachable)", err)
+	}
+	return u
+}
+
 // Property tests for the SCP union (DESIGN §9).
 //
 //	idempotence   A ∪ A = A
@@ -390,7 +405,7 @@ func TestUnionIsMonotone(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawMerged(rt, "a")
 		b := drawMerged(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		denied := deniedSet(u.Statements)
 		for _, side := range []struct {
@@ -419,7 +434,7 @@ func TestUnionIsMonotoneOnAllowlists(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawMerged(rt, "a")
 		b := drawMerged(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		for _, axis := range []struct {
 			name string
@@ -478,7 +493,7 @@ func TestUnionIsMonotoneOnTheGlobalServiceExemptionList(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawRenderable(rt, "a")
 		b := drawRenderable(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		got := pickMembers(u.RegionDenyExemptServices)
 		for _, side := range []struct {
@@ -543,7 +558,7 @@ func TestUnionIsMonotoneOverRenderedPolicies(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawRenderable(rt, "a")
 		b := drawRenderable(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		union, err := Pack(u, packOpts())
 		if err != nil {
@@ -691,7 +706,7 @@ func TestTheRenderedMonotonicityPropertyIsNotMostlyRefusals(t *testing.T) {
 		if packed+refused >= runs {
 			return
 		}
-		u := Combine(drawRenderable(rt, "a"), drawRenderable(rt, "b"))
+		u := combine(rt, drawRenderable(rt, "a"), drawRenderable(rt, "b"))
 		if _, err := Pack(u, packOpts()); err != nil {
 			refused++
 			return
@@ -762,7 +777,7 @@ func drawRenderable(t *rapid.T, label string) *Merged {
 func TestUnionIsIdempotent(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawMerged(rt, "a")
-		u := Combine(a, a)
+		u := combine(rt, a, a)
 
 		if got, want := mergedKey(u), mergedKey(a); got != want {
 			rt.Fatalf("A ∪ A ≠ A.\n%s\n%s", describe("A", a), describe("A ∪ A", u))
@@ -783,7 +798,7 @@ func TestUnionIsCommutative(t *testing.T) {
 		a := drawMerged(rt, "a")
 		b := drawMerged(rt, "b")
 
-		ab, ba := Combine(a, b), Combine(b, a)
+		ab, ba := combine(rt, a, b), combine(rt, b, a)
 		if mergedKey(ab) != mergedKey(ba) {
 			rt.Fatalf("A ∪ B ≠ B ∪ A.\n%s\n%s", describe("A ∪ B", ab), describe("B ∪ A", ba))
 		}
@@ -801,8 +816,8 @@ func TestUnionIsAssociative(t *testing.T) {
 		b := drawMerged(rt, "b")
 		c := drawMerged(rt, "c")
 
-		left := Combine(Combine(a, b), c)
-		right := Combine(a, Combine(b, c))
+		left := combine(rt, combine(rt, a, b), c)
+		right := combine(rt, a, combine(rt, b, c))
 		if mergedKey(left) != mergedKey(right) {
 			rt.Fatalf("(A ∪ B) ∪ C ≠ A ∪ (B ∪ C).\n%s\n%s",
 				describe("(A ∪ B) ∪ C", left), describe("A ∪ (B ∪ C)", right))
@@ -826,7 +841,7 @@ func TestCombineDoesNotMutateItsOperands(t *testing.T) {
 		b := drawMerged(rt, "b")
 		beforeA, beforeB := mergedKey(a), mergedKey(b)
 
-		_ = Combine(a, b)
+		_ = combine(rt, a, b)
 
 		if mergedKey(a) != beforeA {
 			rt.Fatalf("Combine mutated its left operand")
@@ -848,7 +863,7 @@ func TestEveryMergedStatementKeepsItsProvenance(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawMerged(rt, "a")
 		b := drawMerged(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		want := map[string]bool{}
 		for _, side := range [][]Statement{a.Statements, b.Statements} {
@@ -900,7 +915,7 @@ func TestNoExemptionIsEffectiveThatBothSidesDidNotGrant(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		a := drawMerged(rt, "a")
 		b := drawMerged(rt, "b")
-		u := Combine(a, b)
+		u := combine(rt, a, b)
 
 		for _, r := range probeRequests {
 			if Denies(u.Statements, r) {
@@ -949,7 +964,7 @@ func TestAnExemptionOnlyOneSideGrantedDoesNotSurviveAMerge(t *testing.T) {
 	a := guard(artifact.ExemptPrincipal{Principal: breakGlass, Reason: "audited break-glass procedure"})
 	b := guard()
 
-	u := Combine(a, b)
+	u := mustCombine(t, a, b)
 	if len(u.Statements) != 1 {
 		t.Fatalf("expected the two statements to merge into one, got %d:\n%s", len(u.Statements), describe("A ∪ B", u))
 	}
@@ -988,7 +1003,7 @@ func TestBothSidesExemptingOneRoleKeepsTheHoleAndBothReasons(t *testing.T) {
 		}}}
 	}
 
-	u := Combine(guard("incident response"), guard("audited break-glass procedure"))
+	u := mustCombine(t, guard("incident response"), guard("audited break-glass procedure"))
 	if len(u.Statements) != 1 {
 		t.Fatalf("expected one statement, got %d", len(u.Statements))
 	}

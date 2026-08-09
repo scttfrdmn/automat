@@ -13,15 +13,19 @@ import (
 	"github.com/scttfrdmn/automat/internal/artifact"
 )
 
-// Merge combines the preventive halves of several artifacts into one statement
-// set plus the intersected allowlists.
+// Merge combines the preventive AND detective halves of several artifacts
+// into one statement set, the intersected allowlists, and the deduped,
+// resolved Config-rule set.
 //
-// The three operations, per DESIGN §9:
+// Per DESIGN §9:
 //
 //   - Deny statements concatenate, then merge where a merge is exact.
 //   - Region and service allowlists INTERSECT. "us-east-1,us-west-2" merged
 //     with "us-east-1" is "us-east-1": permitting fewer regions is stricter.
 //   - Exemption lists intersect, inside the statement merge.
+//   - Config rules set-union deduped by identifier; overlapping parameters
+//     resolve by the declared per-parameter order, or fail with a
+//     *ConflictReport (which implements error) when they cannot.
 //
 // An empty result for an allowlist is meaningful and different from an absent
 // one — see Merged.RegionAllowlist.
@@ -31,30 +35,54 @@ import (
 // all: associativity is a claim about grouping, and there is nothing to group
 // without a binary operation. The n-ary form is the convenience; Combine is the
 // operation.
-func Merge(artifacts ...*artifact.Artifact) *Merged {
+func Merge(artifacts ...*artifact.Artifact) (*Merged, error) {
 	acc := &Merged{}
 	for _, a := range artifacts {
-		acc = Combine(acc, FromArtifact(a))
+		next, err := FromArtifact(a)
+		if err != nil {
+			return nil, err
+		}
+		acc, err = Combine(acc, next)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return acc
+	if err := reSlotBlockedPorts(acc.ConfigRules); err != nil {
+		return nil, err
+	}
+	return acc, nil
 }
 
-// FromArtifact lifts one artifact's preventive half into a Merged.
+// FromArtifact lifts one artifact's preventive and detective halves into a
+// Merged.
 //
 // The within-artifact merge happens here too: one artifact can carry the same
-// Deny under two control ids (a framework that states a requirement twice), and
-// leaving those unmerged until Combine would make FromArtifact's output depend on
-// whether anything was combined with it.
-func FromArtifact(a *artifact.Artifact) *Merged {
+// Deny — or the same Config rule — under two control ids (a framework that
+// states a requirement twice), and leaving those unmerged until Combine would
+// make FromArtifact's output depend on whether anything was combined with it.
+//
+// Returns an error only when two controls WITHIN this one artifact bind a
+// Config rule parameter incompatibly — a catalog authoring bug, since a
+// single artifact's own controls should agree with each other before it is
+// ever unioned with anything else. reSlotBlockedPorts is deliberately NOT
+// called here: Q1's re-slotting only has something to do once ports from
+// more than one source might have accumulated in one slot, and a single
+// artifact's own catalog compile (gen/catalog) already keeps each
+// blockedPort slot to one value.
+func FromArtifact(a *artifact.Artifact) (*Merged, error) {
 	m := &Merged{}
 	if a == nil {
-		return m
+		return m, nil
 	}
 	for _, c := range a.Controls {
-		if c.SCP == nil {
-			continue
+		if c.SCP != nil {
+			m.addSCP(c.SCP, a.Meta.ID, c.ID)
 		}
-		m.addSCP(c.SCP, a.Meta.ID, c.ID)
+		if len(c.ConfigRules) > 0 {
+			if cr := m.addConfigRules(c.ConfigRules, a.Meta.ID, c.ID); cr != nil {
+				return nil, cr
+			}
+		}
 	}
 	// Artifact-level, so it is seeded here rather than in addSCP: the list states
 	// an AWS fact about which endpoints answer where, whose scope is the whole
@@ -67,7 +95,7 @@ func FromArtifact(a *artifact.Artifact) *Merged {
 	}
 	m.Statements = mergeStatements(m.Statements)
 	sortStatements(m.Statements)
-	return m
+	return m, nil
 }
 
 // Combine is the binary union of two merged control sets: the meet on permitted
@@ -84,9 +112,19 @@ func FromArtifact(a *artifact.Artifact) *Merged {
 // once (see its comment), so renormalizing the concatenation gives the same answer
 // as normalizing either side alone would have — which is what makes Combine
 // associative.
-func Combine(a, b *Merged) *Merged {
+//
+// Config rules resolve per shared parameter via artifact.RuleParameter.Resolve
+// (configrules.go's combineConfigRules), returning a *ConflictReport — which
+// implements error — when two artifacts bind one parameter incompatibly.
+// Deliberately NOT re-slotted here (see reSlotBlockedPorts): the underlying
+// set-union over a blockedPort slot's members is associative regardless of
+// how many Combine calls contributed to it, so re-slotting once at the end
+// of the whole fold (Merge) produces the same five values any grouping of
+// Combine calls would, without needing every intermediate Merged value to
+// already be in re-slotted form.
+func Combine(a, b *Merged) (*Merged, error) {
 	if a == nil && b == nil {
-		return &Merged{}
+		return &Merged{}, nil
 	}
 	if a == nil {
 		a = &Merged{}
@@ -102,14 +140,20 @@ func Combine(a, b *Merged) *Merged {
 		}
 	}
 
+	configRules, cr := combineConfigRules(a, b)
+	if cr != nil {
+		return nil, cr
+	}
+
 	out := &Merged{
 		Statements:               mergeStatements(sts),
 		RegionAllowlist:          intersectSets(a.RegionAllowlist, b.RegionAllowlist),
 		ServiceAllowlist:         intersectSets(a.ServiceAllowlist, b.ServiceAllowlist),
 		RegionDenyExemptServices: intersectSets(a.RegionDenyExemptServices, b.RegionDenyExemptServices),
+		ConfigRules:              configRules,
 	}
 	sortStatements(out.Statements)
-	return out
+	return out, nil
 }
 
 // intersectSets intersects two accumulated allowlists.
@@ -205,6 +249,16 @@ type Merged struct {
 	// agreed on nothing, which is a conflict between two claims about AWS and
 	// cannot be resolved by picking one.
 	RegionDenyExemptServices *AllowSet
+
+	// ConfigRules is the detective half: every AWS Config managed rule bound
+	// by any control in any merged artifact, deduped by identifier
+	// (configrules.go). nil means no artifact bound any Config rule, which
+	// is ordinary — cmmc-l1's preventive controls, say, need none.
+	//
+	// A map rather than a slice because dedupe-by-identifier is exactly what
+	// a map gives for free; SortedConfigRules is the deterministic view for
+	// a caller that needs one.
+	ConfigRules map[string]*MergedConfigRule
 }
 
 // AllowSet is an intersected allowlist that remembers who constrained it.

@@ -45,7 +45,7 @@ var goldenScenarios = []struct {
 		// merged. This is what a real `compile` of two catalogs looks like, and the
 		// interesting part of the diff is which statements collapsed.
 		dir:   "two-frameworks",
-		build: func(t *testing.T) *Merged { return Merge(goldenFrameworkA(t), goldenFrameworkB(t)) },
+		build: func(t *testing.T) *Merged { return mustMerge(t, goldenFrameworkA(t), goldenFrameworkB(t)) },
 	},
 	{
 		// Exemption arithmetic, visible in the output. One set exempts a break-glass
@@ -53,7 +53,7 @@ var goldenScenarios = []struct {
 		// action they share, and both must keep the exemption for the actions only
 		// one of them constrains.
 		dir:   "disagreeing-exemptions",
-		build: func(t *testing.T) *Merged { return Merge(goldenFrameworkA(t), goldenExemptionDisagreement(t)) },
+		build: func(t *testing.T) *Merged { return mustMerge(t, goldenFrameworkA(t), goldenExemptionDisagreement(t)) },
 	},
 	{
 		// The allowlists, which are the only NotAction statements automat emits and
@@ -61,7 +61,7 @@ var goldenScenarios = []struct {
 		// list changes shape.
 		dir: "allowlists",
 		build: func(t *testing.T) *Merged {
-			return Merge(goldenFrameworkA(t), goldenAllowlisted(t))
+			return mustMerge(t, goldenFrameworkA(t), goldenAllowlisted(t))
 		},
 	},
 	{
@@ -441,7 +441,7 @@ func TestTheModelUnderstandsEveryOperatorTheCatalogsUse(t *testing.T) {
 				scpControls++
 			}
 		}
-		statements = append(statements, FromArtifact(a).Statements...)
+		statements = append(statements, mustFromArtifact(t, a).Statements...)
 	}
 	if scpControls == 0 || len(statements) == 0 {
 		t.Fatalf("the shipped catalogs contribute %d SCP-bearing controls and %d statements. This test's "+
@@ -484,7 +484,7 @@ func shippedCatalogs(t *testing.T) []string {
 // enough to exercise merging, exemptions, and both allowlists at once.
 func goldenMerged(t *testing.T) *Merged {
 	t.Helper()
-	return Merge(goldenFrameworkA(t), goldenFrameworkB(t), goldenAllowlisted(t))
+	return mustMerge(t, goldenFrameworkA(t), goldenFrameworkB(t), goldenAllowlisted(t))
 }
 
 // goldenFrameworkA is a plausible baseline-protection control set: don't let the

@@ -23,6 +23,38 @@ import (
 // associatively — while being useless against the 5-policy quota that is the whole
 // reason the packer exists.
 
+// mustMerge, mustCombine, and mustFromArtifact wrap the now-fallible
+// Merge/Combine/FromArtifact for the ordinary case in a test where the
+// inputs are not expected to conflict — the same shape mustPack (pack_test.go)
+// already gives Pack. Tests specifically exercising a Config-rule conflict
+// call the functions directly to inspect the error.
+func mustMerge(t *testing.T, artifacts ...*artifact.Artifact) *Merged {
+	t.Helper()
+	m, err := Merge(artifacts...)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	return m
+}
+
+func mustCombine(t *testing.T, a, b *Merged) *Merged {
+	t.Helper()
+	m, err := Combine(a, b)
+	if err != nil {
+		t.Fatalf("Combine: %v", err)
+	}
+	return m
+}
+
+func mustFromArtifact(t *testing.T, a *artifact.Artifact) *Merged {
+	t.Helper()
+	m, err := FromArtifact(a)
+	if err != nil {
+		t.Fatalf("FromArtifact: %v", err)
+	}
+	return m
+}
+
 // deny builds a statement fragment for a table entry.
 func deny(sid string, actions []string, resource []string, cond artifact.Condition, exempt ...artifact.ExemptPrincipal) Statement {
 	return Statement{
@@ -329,7 +361,7 @@ func TestNoAllowlistStatementIsEverMerged(t *testing.T) {
 		// field is set only by regionStatement and serviceStatement, which
 		// renderable calls after the merge. A future edit that moved the allowlist
 		// rendering into Merge would break here rather than in production.
-		m := Merge(artifactWithSCP(t, "set", &artifact.SCP{
+		m := mustMerge(t, artifactWithSCP(t, "set", &artifact.SCP{
 			Statements:       []artifact.SCPStatement{denyFragment("A", "iam:CreateUser")},
 			RegionAllowlist:  []string{"us-east-1"},
 			ServiceAllowlist: []string{"s3"},
@@ -555,7 +587,7 @@ func TestAllowlistsIntersectAcrossArtifacts(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := Merge(
+			m := mustMerge(t,
 				artifactWithSCP(t, "set-a", &artifact.SCP{
 					Statements:      []artifact.SCPStatement{denyFragment("A", "iam:CreateUser")},
 					RegionAllowlist: tc.a,
@@ -598,8 +630,8 @@ func TestAnUnconstrainedArtifactDoesNotConstrain(t *testing.T) {
 		name string
 		got  *Merged
 	}{
-		{"constrained first", Merge(constrained, silent)},
-		{"silent first", Merge(silent, constrained)},
+		{"constrained first", mustMerge(t, constrained, silent)},
+		{"silent first", mustMerge(t, silent, constrained)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.got.RegionAllowlist == nil {
@@ -611,7 +643,7 @@ func TestAnUnconstrainedArtifactDoesNotConstrain(t *testing.T) {
 		})
 	}
 
-	if got := Merge(silent, silent); got.RegionAllowlist != nil {
+	if got := mustMerge(t, silent, silent); got.RegionAllowlist != nil {
 		t.Errorf("two artifacts that say nothing about regions must leave the allowlist nil, got %v",
 			got.RegionAllowlist.Members)
 	}
@@ -628,7 +660,7 @@ func TestMergeIgnoresControlsWithoutAnSCP(t *testing.T) {
 			{ID: "c-1", Title: "Monitored only", Enforcement: []artifact.EnforcementClass{artifact.EnforcementConfigRule}},
 		},
 	}
-	m := Merge(a)
+	m := mustMerge(t, a)
 	if len(m.Statements) != 0 {
 		t.Fatalf("expected no statements, got %d", len(m.Statements))
 	}
@@ -641,11 +673,13 @@ func TestMergeToleratesNilArtifacts(t *testing.T) {
 	// Not defensive noise: the vend path builds this list from optional sources —
 	// a catalog, a campus baseline, an override — and a nil for "not supplied" is
 	// the natural shape. A panic here would surface as a crash mid-vend.
-	if m := Merge(nil, nil); m == nil || len(m.Statements) != 0 {
-		t.Fatal("Merge(nil, nil) must return an empty result, not nil and not a panic")
+	m, err := Merge(nil, nil)
+	if err != nil || m == nil || len(m.Statements) != 0 {
+		t.Fatalf("Merge(nil, nil) must return an empty result and no error, not nil and not a panic (err=%v)", err)
 	}
-	if m := Combine(nil, nil); m == nil {
-		t.Fatal("Combine(nil, nil) must return an empty result")
+	c, cerr := Combine(nil, nil)
+	if cerr != nil || c == nil {
+		t.Fatalf("Combine(nil, nil) must return an empty result and no error (err=%v)", cerr)
 	}
 }
 

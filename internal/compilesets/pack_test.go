@@ -482,7 +482,7 @@ func TestASidDoesNotClaimToDescribeTheStatement(t *testing.T) {
 		"ProtectConfigRecorder", "ProtectCloudTrail", "DenyRootUser",
 		"AuditLogProtection", "DenyIAMUserCreation",
 	}
-	for _, p := range mustPack(t, Merge(goldenFrameworkA(t), goldenFrameworkB(t)), packOpts()).Policies {
+	for _, p := range mustPack(t, mustMerge(t, goldenFrameworkA(t), goldenFrameworkB(t)), packOpts()).Policies {
 		for _, st := range p.Statements {
 			for _, in := range inputs {
 				if st.Sid == in {
@@ -1180,7 +1180,7 @@ func TestAnExemptionListThatIntersectsToNothingIsRefused(t *testing.T) {
 func TestTheExemptionRefusalHappensBeforeAnyPolicyIsProduced(t *testing.T) {
 	// A set with plenty of ordinary statements that would pack fine on their own,
 	// plus one constrained axis with no exemption list.
-	m := Merge(goldenFrameworkA(t), goldenFrameworkB(t))
+	m := mustMerge(t, goldenFrameworkA(t), goldenFrameworkB(t))
 	m.RegionAllowlist = newAllowSet([]string{"us-west-2"}, "set-a:c1")
 
 	got, err := Pack(m, packOpts())
