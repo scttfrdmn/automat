@@ -264,3 +264,45 @@ func TestCloseAccountRefusesAnEmptyAccountID(t *testing.T) {
 		t.Fatal("CloseAccount accepted an empty account id, want a refusal")
 	}
 }
+
+// TestDetachPolicyDeniedInBrokeredStateBlamesTheDelegationPolicyNotTheVendorRole
+// is AUDIT-6 H2: DetachPolicy (and the three read methods DetachOwnedPolicies
+// calls) run on r.Policy, which the type's own doc says is NEVER brokered —
+// in MEMBER state it is the caller's own delegated identity, gated by
+// delegation-policy.json, not by the vendor role CloseAccount uses. A
+// Reclaimer built for MEMBER state sets Credential to Brokered because
+// CloseAccount needs that word; before this fix, denied() read only that one
+// field and told every denial — including this one — to widen the vendor
+// role, a file that cannot grant a policy action at all.
+func TestDetachPolicyDeniedInBrokeredStateBlamesTheDelegationPolicyNotTheVendorRole(t *testing.T) {
+	f := newReclaimFixture(t)
+	f.R.Credential = Brokered
+	ou := f.State.SeedOU("Research", testRoot)
+	owned := f.seedOwnedPolicy("automat-x-1", scpDoc)
+	f.State.SeedAttachment(owned, ou)
+	f.Reclaim.State.Errs["DetachPolicy"] = awsfake.AccessDenied("organizations:DetachPolicy")
+
+	_, err := f.R.DetachOwnedPolicies(ctx(), ou, "")
+	mustErr(t, err, "delegation-policy.json")
+	if strings.Contains(err.Error(), "vendor-role") {
+		t.Errorf("a DetachPolicy denial pointed at the vendor role, which cannot grant a policy "+
+			"action: %v", err)
+	}
+}
+
+// TestCloseAccountDeniedInBrokeredStateStillBlamesTheVendorRole is the other
+// half: CloseAccount itself must still be attributed to the vendor role in
+// MEMBER state, unchanged by the fix above.
+func TestCloseAccountDeniedInBrokeredStateStillBlamesTheVendorRole(t *testing.T) {
+	f := newReclaimFixture(t)
+	f.R.Credential = Brokered
+	acct := f.State.SeedAccount("lab", testEmail, testRoot)
+	f.Reclaim.State.Errs["CloseAccount"] = awsfake.AccessDenied("organizations:CloseAccount")
+
+	_, err := f.R.CloseAccount(ctx(), acct)
+	mustErr(t, err, "vendor-role")
+	if strings.Contains(err.Error(), "delegation-policy") {
+		t.Errorf("a CloseAccount denial pointed at the delegation policy, which cannot grant "+
+			"account closure: %v", err)
+	}
+}

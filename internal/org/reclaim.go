@@ -66,21 +66,42 @@ func (r *Reclaimer) record(a Action) *Action {
 }
 
 // denied wraps an authorization failure with the remediation for this
-// credential. Mirrors Ensurer.denied's shape; not shared by embedding, for
-// the same reason the two types are not merged — a shared helper here would
-// be the one seam through which Reclaimer's destructive calls could ride
-// along on Ensurer's machinery.
+// credential. Mirrors Ensurer.denied's shape but is NOT a bare Brokered/
+// Native switch on r.Credential the way an earlier version of this function
+// was (AUDIT-6 H2): r.Credential describes CloseAccount's own credential —
+// native in MANAGEMENT, the brokered vendor role in MEMBER — but every OTHER
+// action DetachOwnedPolicies calls (DetachPolicy, ListPoliciesForTarget,
+// ListTagsForResource, ListAccountsForParent) runs on r.Policy, which is
+// NEVER brokered (this type's own field doc, and DESIGN §3 fact 3): in
+// MEMBER state it is the caller's own delegated identity, gated by the
+// delegation policy, not the vendor role. Attributing one of those four
+// denials to "widen the vendor role" sends the operator to edit a file that
+// cannot grant the action at all — the same distinction
+// Ensurer.denied already draws for the identical policy-vs-account split.
 func (r *Reclaimer) denied(err error, action, resource string) error {
 	if err == nil || !awsapi.IsAccessDenied(err) {
 		return err
 	}
 	var grant string
-	if r.Credential == Brokered {
+	switch {
+	case action == "organizations:CloseAccount" && r.Credential == Brokered:
 		grant = "ask the organization's management account to add " + action + " on " + resource +
 			" to the vendor role this account assumes — the file is vendor-role.cfn.yaml (or " +
 			"vendor-role.tf) in the onboarding bundle (`automat setup --request`); account closure " +
 			"cannot be delegated to a member account and must travel through that role"
-	} else {
+	case action == "organizations:CloseAccount":
+		grant = "grant " + action + " on " + resource + " to " + principalOr(r.Principal, "the calling identity") +
+			" in the management account; automat is running natively rather than through a broker, so " +
+			"this is your own identity policy rather than a delegation somebody else owns"
+	case r.Credential == Brokered:
+		// DetachPolicy and the three read methods: always the delegation
+		// policy, never the vendor role, regardless of which credential
+		// CloseAccount itself uses in this same Reclaimer.
+		grant = "ask the organization's management account to add " + action + " on " + resource +
+			" to the delegation policy it applied for this account — the file is " +
+			"delegation-policy.json in the onboarding bundle (`automat setup --request`); policy " +
+			"operations travel through that document, never through the vendor role"
+	default:
 		grant = "grant " + action + " on " + resource + " to " + principalOr(r.Principal, "the calling identity") +
 			" in the management account; automat is running natively rather than through a broker, so " +
 			"this is your own identity policy rather than a delegation somebody else owns"
