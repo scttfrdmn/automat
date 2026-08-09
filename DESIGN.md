@@ -49,7 +49,7 @@ These are load-bearing; do not "improve" them away without re-verifying against 
 8. SCPs require the org to be in `ALL` feature set (not consolidated-billing-only). `CreateOrganization` must pass `FeatureSet=ALL`.
 9. `iam:SimulatePrincipalPolicy` does **not** evaluate SCPs — permission preflight from a member account is best-effort and must be labeled as such.
 10. OU nesting depth: max five levels of OU under the root.
-11. Practical quotas: default accounts-per-org quota is low (raiseable via Service Quotas); account closure is rate-limited (~10% of member accounts per rolling 30 days); each account needs a globally unique email.
+11. Practical quotas: default accounts-per-org quota is low (raiseable via Service Quotas); account closure is rate-limited (the higher of 250 or 20% of member accounts per rolling 30 days, up to 1,000 — verified directly against the `CloseAccount` API's own documentation, correcting an earlier approximation of "~10%"); each account needs a globally unique email.
 12. Standalone accounts can call `CreateOrganization` and become the management account of a fresh org. Member accounts cannot leave an org without management-account cooperation.
 
 ## 4. The three org states (preflight state machine)
@@ -388,6 +388,6 @@ No references to any commercial suite, company, or upstream product in code, doc
 ## 16. Known risks / open questions for the human
 
 - Approval-per-vend: some central ITs will demand a human in the loop. v1 is standing-delegation only; a request/approve queue is explicitly out of scope (note in README).
-- `reclaim` semantics (ephemeral vs durable accounts) deferred to Phase 5; design vend so nothing precludes it.
+- `reclaim` semantics — **resolved**: durable by default (`docs/reclaim-design.md`), settled before implementation the same way `docs/assessment-reporting.md` settled `assess`'s scope.
 - SCP count/size quotas per target (5 SCPs directly attached per target; 5120-char SCP size) will constrain how union output is packed into policies — the SCP packer needs to be quota-aware and is a real piece of work, not a serialization detail.
 - Delegation-policy visibility from the member side (what preflight can actually detect vs. must be told) needs empirical testing against a real org.
