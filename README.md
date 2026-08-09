@@ -26,7 +26,7 @@ attached to an agreement, usually without whatever page explained the caveat.
 
 ## What works today
 
-This is a **Phase 2 build in progress**. The list below is what you can actually run;
+This is a **Phase 5 build in progress**. The list below is what you can actually run;
 everything else in the design is marked as not shipping yet, in this file and in
 `automat --help`.
 
@@ -48,6 +48,90 @@ Read preflight's **certainty column**. A permission check is evidence, not autho
 `iam:SimulatePrincipalPolicy` does not evaluate service control policies, so from a member
 account a call reported as allowed can still be denied by an SCP above you. A check
 reliably tells you a grant is *missing*; it cannot promise a call will succeed.
+
+## Quickstart: a standalone account, start to finish
+
+This walks a single AWS account with no organization yet through `init` → `vend` →
+`verify`. Every command below is copy-pasteable; flag names are exact.
+
+**1. Sign in**, or export credentials another way — anything the standard AWS credential
+chain resolves works.
+
+```
+automat login
+```
+
+**2. Check where you stand.**
+
+```
+automat preflight
+```
+
+A standalone account reports STANDALONE and points you at `init`. If it reports MANAGEMENT
+or MEMBER instead, you are further along (or in the wrong account) — read its output before
+continuing; the rest of this walkthrough assumes STANDALONE.
+
+**3. Prepare the organization.** `--dry-run` first, to see the plan before anything is
+created — this is the one step that makes this account a management account permanently,
+so it needs `--yes` to apply.
+
+```
+automat init --dry-run
+automat init --yes
+```
+
+**4. Write an environment profile.** This is the only file you author by hand — everything
+else is discovered from AWS. `placement.target_ou` is the OU id `init` just printed (an
+`ou-xxxx-xxxxxxxx` value, not the OU's name):
+
+```json
+{
+  "schema_version": "1.0.0",
+  "environment_profile": {
+    "id": "research-cui",
+    "title": "Research CUI environment"
+  },
+  "review_by": "2027-06-30",
+  "control_sets": ["cmmc-l1"],
+  "placement": {
+    "target_ou": "ou-abcd-11111111"
+  },
+  "account": {
+    "email_pattern": "admin+{name}@example.edu"
+  },
+  "baseline": {
+    "config_recorder": {"enabled": true}
+  }
+}
+```
+
+Save it as `research-cui.json`. `{name}` in `email_pattern` is filled in from `--name`
+below — AWS requires a globally unique email per account, so a pattern rather than a
+literal address is what lets you vend more than one.
+
+**5. Vend an account.**
+
+```
+automat vend --environment-profile research-cui.json --name lab-alpha --dry-run
+automat vend --environment-profile research-cui.json --name lab-alpha
+```
+
+No `--yes` needed here — every step is create-or-verify, so running this again writes
+nothing on a second try, and it is not the one irreversible step `init`'s org-creation is.
+The command prints the new account id and where it wrote the evidence manifest.
+
+**6. Verify it landed the way the profile says.**
+
+```
+automat verify --account <the-account-id-vend-just-printed> --environment-profile research-cui.json
+```
+
+A clean run reports every policy `matches` and exits 0 — the same profile, recompiled fresh
+and checked against what is actually attached, is the whole claim `verify` makes.
+
+That is the loop: one profile, `vend` for each new account it describes, `verify` on a
+schedule to catch drift. Nothing above asked a human for anything not already in this
+page.
 
 ## Not in this version
 
