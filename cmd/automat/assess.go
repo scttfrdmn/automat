@@ -56,11 +56,12 @@ const (
 // package doc).
 func newAssessCmd(g *globals) *cobra.Command {
 	var (
-		accountID  string
-		profileID  string
-		scopeStmt  string
-		determPath string
-		outDir     string
+		accountID   string
+		profileID   string
+		scopeStmt   string
+		determPath  string
+		outDir      string
+		evidenceDir string
 	)
 
 	cmd := &cobra.Command{
@@ -181,7 +182,7 @@ func newAssessCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			manifestPath, werr := writeAssessEvidence(profile, det, result, accountID, callerARN, now)
+			manifestPath, werr := writeAssessEvidence(profile, det, result, accountID, callerARN, evidenceDir, now)
 			if werr != nil {
 				return werr
 			}
@@ -200,6 +201,13 @@ func newAssessCmd(g *globals) *cobra.Command {
 	f.StringVar(&determPath, "determinations", "",
 		"path to an operator-determinations file; omit to render every practice as NOT MET")
 	f.StringVar(&outDir, "out", "", "directory to write the assessment result and summary into (required)")
+	f.StringVar(&evidenceDir, "evidence-dir", envprofile.DefaultEvidenceDir,
+		"local directory the account's evidence manifest lives in, relative to the working "+
+			"directory — must match the value `vend`/`verify` used (baseline.evidence.local_dir in "+
+			"the environment profile), or this command appends to a second, disconnected manifest "+
+			"instead of the account's real chain. assess takes no --environment-profile (list's own "+
+			"reasoning, docs/cli-surface.md D5): the account was named directly, not resolved from a "+
+			"profile, so there is nothing here to read local_dir out of")
 	return cmd
 }
 
@@ -229,13 +237,27 @@ func writeAssessOutputFile(root *os.Root, name, shownDir string, data []byte) er
 // manifest, following the same OpenDir/LoadOrNew/Append/Write sequence
 // writeVerifyEvidence (verify.go) uses.
 //
+// evidenceDir defaults to envprofile.DefaultEvidenceDir but is a flag
+// (--evidence-dir), not a constant: `vend` and `verify` both resolve the
+// directory they write into from the environment profile's own
+// baseline.evidence.local_dir, and a profile that customizes it vends and
+// verifies into a directory other than "evidence". assess has no
+// --environment-profile to read that override from — the account is named
+// directly (AUDIT-5) — so without this flag every assess run would file its
+// OpAssess record into the default directory regardless of where the
+// account's real chain lives, starting a second, disconnected manifest for
+// the same account rather than appending to the one `vend`/`verify` built.
+//
 // Always evidence.OutcomeSuccess: rendering a summary — even one where every
 // practice is NOT MET — is the operation succeeding at telling the truth,
 // not the operation failing. Contrast writeVerifyEvidence, where a drifted
 // account IS the check failing; assess makes no claim of its own to fail.
 func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, result *assess.Result,
-	accountID, callerARN string, now time.Time) (string, error) {
-	dir, err := evidence.OpenDir(".", envprofile.DefaultEvidenceDir)
+	accountID, callerARN, evidenceDir string, now time.Time) (string, error) {
+	if evidenceDir == "" {
+		evidenceDir = envprofile.DefaultEvidenceDir
+	}
+	dir, err := evidence.OpenDir(".", evidenceDir)
 	if err != nil {
 		return "", err
 	}

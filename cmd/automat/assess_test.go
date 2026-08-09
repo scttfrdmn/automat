@@ -153,3 +153,38 @@ func TestAssessWritesAnOpAssessEvidenceRecord(t *testing.T) {
 // it just for a literal, matching writeAssessEvidence's own use of "." as
 // base.
 func evidenceDirForTest() string { return "evidence" }
+
+// TestAssessHonorsEvidenceDirFlag is AUDIT-5's fix: assess has no
+// --environment-profile to read baseline.evidence.local_dir out of (unlike
+// vend/verify), so without --evidence-dir every run wrote into the default
+// "evidence" directory regardless of where the account's real chain lives —
+// a second, disconnected manifest for an account vended under a profile
+// that customized the directory. This confirms --evidence-dir actually
+// routes the write, the same way list's own --evidence-dir does.
+func TestAssessHonorsEvidenceDirFlag(t *testing.T) {
+	g := assessWorld(t)
+	out := filepath.Join(t.TempDir(), "assess-out")
+	accountID := "111122223333"
+	customDir := "compliance-evidence"
+
+	if _, _, err := runCLI(t, g, assessArgs(accountID, "--out", out, "--evidence-dir", customDir)...); err != nil {
+		t.Fatalf("assess: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(evidenceDirForTest(), accountID+".json")); err == nil {
+		t.Error("assess wrote into the default evidence directory even though --evidence-dir named " +
+			"a different one")
+	}
+
+	manifestPath := filepath.Join(customDir, accountID+".json")
+	m, err := evidence.LoadOrNew(manifestPath, accountID, accountID, "", "", nil)
+	if err != nil {
+		t.Fatalf("load the evidence manifest at the custom directory: %v", err)
+	}
+	if len(m.Records) != 1 {
+		t.Fatalf("manifest has %d records, want 1", len(m.Records))
+	}
+	if m.Records[0].Operation != evidence.OpAssess {
+		t.Errorf("record operation = %q, want %q", m.Records[0].Operation, evidence.OpAssess)
+	}
+}

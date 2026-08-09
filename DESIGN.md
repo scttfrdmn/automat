@@ -335,7 +335,11 @@ automat list         # accounts and OUs under --ou (or the config `ou`, or the o
 automat assess       # docs/assessment-reporting.md, Stage 3 only: CMMC L1 MET/NOT MET
                       # summary against --profile cmmc-l1 and an optional
                       # --determinations file. Read-only beyond one
-                      # sts:GetCallerIdentity call; writes an OpAssess evidence record.
+                      # sts:GetCallerIdentity call; writes an OpAssess evidence record
+                      # under --evidence-dir (default "evidence" — must match the
+                      # environment profile's baseline.evidence.local_dir that vended
+                      # the account, since assess has no --environment-profile of its
+                      # own to read that override from; see docs/cli-surface.md D8).
                       # Stages 1-2 (800-171A worksheet, DFARS scoring) NOT YET
                       # IMPLEMENTED — see docs/cli-surface.md D7. This build contributes
                       # zero machine evidence for any CMMC L1 practice (no SCP fragments

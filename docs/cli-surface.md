@@ -362,6 +362,28 @@ all-`operator` table.
 **Resolved by amending §13's line**: DESIGN.md's `automat assess` line names the flag
 surface and the current scope limit, pointing here for the reasoning.
 
+### D8 — `automat assess` gains `--evidence-dir`, not named when it shipped. RESOLVED — §13 amended
+
+AUDIT-5 found `writeAssessEvidence` hardcoded `envprofile.DefaultEvidenceDir` ("evidence")
+with no way to override it. `vend` and `verify` both resolve the directory they write into
+from the environment profile's own `baseline.evidence.local_dir` — the field exists
+precisely so an operator can put evidence somewhere other than the default. `assess` takes
+no `--environment-profile` at all (the account is named directly by `--account`, the same
+reason `list` has no `--environment-profile` either, D5 above), so it had no way to learn a
+customized directory and would file its `OpAssess` record into the default one regardless —
+a second, disconnected manifest for an account whose real chain lives elsewhere, discovered
+only when a reviewer went looking for the assess record beside the vend and verify records
+and did not find it.
+
+**`--evidence-dir`, matching `list`'s own flag exactly**: same name, same default
+(`envprofile.DefaultEvidenceDir`), same reasoning — a command with no profile to read
+`local_dir` out of needs the directory named directly. An operator running `assess` against
+an account vended under a profile that customized `baseline.evidence.local_dir` must pass
+the same value here, or the OpAssess record lands in the wrong file.
+
+**Resolved by amending §13's line**: DESIGN.md's `automat assess` line now names
+`--evidence-dir` alongside its other flags, pointing here for the reasoning.
+
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 
 §13 listed `automat compile`, and ROADMAP Phase 0's accept criterion wrote it as
