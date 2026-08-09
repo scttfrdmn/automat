@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/scttfrdmn/automat/internal/awsfake"
+	"github.com/scttfrdmn/automat/internal/config"
+	"github.com/scttfrdmn/automat/internal/evidence"
+	"github.com/scttfrdmn/automat/internal/org"
 )
 
 // TestListShowsVendedAccountAndOU vends one account and confirms `list`
@@ -109,6 +112,45 @@ func TestListReportsParkedAccount(t *testing.T) {
 	}
 	if !strings.Contains(parkedSection, accounts[0]) {
 		t.Errorf("list's parked section does not name account %s: %s", accounts[0], parkedSection)
+	}
+}
+
+// TestListReportQuotesEveryVariableField is AUDIT-4 M2. None of these values is
+// automat's own: ids and emails are whatever AWS returned, and a parked entry's
+// id is whatever preceded ".json" in a filename (evidence.Dir.ListAccountIDs
+// deliberately does not validate it) while its message came out of a manifest on
+// disk. A newline in any of them forges a line of the inventory an operator reads
+// to decide which account to act on.
+//
+// Rendered directly rather than through runCLI: the fakes will not produce an
+// account whose email contains a newline, and the property under test is the
+// renderer's, not the walk's.
+func TestListReportQuotesEveryVariableField(t *testing.T) {
+	tree := &org.Tree{
+		OUs: []org.TreeOU{{ID: "ou-aaaa-11111111\n  ou-forged-11111111 \"forged\" (under r-aaaa)",
+			Name: "n", ParentID: "r-aaaa"}},
+		Accounts: []org.TreeAccount{{ID: "111122223333", Name: "n",
+			Email:      "a@example.edu\n  999988887777 \"forged\" <b@example.edu> (under r-aaaa)",
+			ParentOUID: "r-aaaa"}},
+	}
+	parked := []parkedAccount{{
+		AccountID: "444455556666\n  777788889999: verify at 2026-01-01T00:00:00Z — clean",
+		Record: evidence.Record{Operation: evidence.OpAccountCreate, Timestamp: "2026-01-01T00:00:00Z",
+			Err: &evidence.RecordError{Message: "stopped\n  and here is a forged line"}},
+	}}
+
+	var sb strings.Builder
+	if err := renderListReport(&sb, config.Context{}, tree, parked); err != nil {
+		t.Fatalf("renderListReport: %v", err)
+	}
+	for _, forged := range []string{"ou-forged-11111111", "999988887777", "777788889999",
+		"here is a forged line"} {
+		for _, line := range strings.Split(sb.String(), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), forged) {
+				t.Errorf("a hostile value began its own line of the report, so it can forge one:\n%s",
+					sb.String())
+			}
+		}
 	}
 }
 

@@ -55,7 +55,12 @@ func newListCmd(g *globals) *cobra.Command {
 			"root, if none is configured), and separately lists every account a local\n" +
 			"evidence manifest records as parked — left mid-vend, recoverable with\n" +
 			"`automat vend --resume <request-id>`.\n\n" +
-			"Read-only: this command holds no write grant on anything it inspects.\n\n" +
+			"This command makes no write CALL. It is not read-only by construction the\n" +
+			"way `automat verify` is: the tree walk travels the same client `vend` uses\n" +
+			"(awsapi.OrgVendAPI, brokered through the vendor role in the MEMBER state),\n" +
+			"which carries CreateAccount, MoveAccount, CreateOrganizationalUnit, and\n" +
+			"TagResource. Nothing here calls them, and in the MEMBER state this assumes\n" +
+			"the vendor role to make its reads.\n\n" +
 			"Tag-based filtering (DESIGN §13) is not available: the vendor role bundle\n" +
 			"grants no organizations:ListTagsForResource on account resources\n" +
 			"(docs/open-questions.md Q19), so an account's automat:* tags cannot be read\n" +
@@ -177,6 +182,20 @@ type parkedAccount struct {
 	Record    evidence.Record
 }
 
+// renderListReport prints the walked tree and the parked accounts.
+//
+// # Every variable field is quoted (AUDIT-4 M2)
+//
+// An OU name was already `%q`; an id, an email, and a parked record's error
+// message were not. None of the three is automat's own: ids and emails come
+// back from AWS, and a parked account's id here is *whatever preceded ".json"
+// in a filename* (evidence.Dir.ListAccountIDs, which deliberately does not
+// validate) while its message comes out of a manifest on disk. This is the
+// AUDIT-0 M1 discipline — a value that can carry a newline can forge a line of
+// a report, and this report is the inventory an operator reads to decide which
+// account to act on. `%q` rather than a helper because cmd/automat has no
+// safe(); the truncation the internal packages' safe() adds is not wanted here,
+// where an email or an id being long is not a reason to hide the rest of it.
 func renderListReport(w io.Writer, orgCtx config.Context, tree *org.Tree, parked []parkedAccount) error {
 	p := func(format string, args ...any) error {
 		_, err := fmt.Fprintf(w, format, args...)
@@ -193,7 +212,7 @@ func renderListReport(w io.Writer, orgCtx config.Context, tree *org.Tree, parked
 		}
 	}
 	for _, ou := range tree.OUs {
-		if err := p("  %s %q (under %s)\n", ou.ID, ou.Name, ou.ParentID); err != nil {
+		if err := p("  %q %q (under %q)\n", ou.ID, ou.Name, ou.ParentID); err != nil {
 			return err
 		}
 	}
@@ -208,7 +227,7 @@ func renderListReport(w io.Writer, orgCtx config.Context, tree *org.Tree, parked
 		}
 	}
 	for _, a := range tree.Accounts {
-		if err := p("  %s %q <%s> (under %s)\n", a.ID, a.Name, a.Email, a.ParentOUID); err != nil {
+		if err := p("  %q %q <%q> (under %q)\n", a.ID, a.Name, a.Email, a.ParentOUID); err != nil {
 			return err
 		}
 	}
@@ -226,7 +245,8 @@ func renderListReport(w io.Writer, orgCtx config.Context, tree *org.Tree, parked
 		if pa.Record.Err != nil {
 			detail = pa.Record.Err.Message
 		}
-		if err := p("  %s: %s at %s — %s\n", pa.AccountID, pa.Record.Operation, pa.Record.Timestamp, detail); err != nil {
+		if err := p("  %q: %s at %q — %q\n", pa.AccountID, pa.Record.Operation,
+			pa.Record.Timestamp, detail); err != nil {
 			return err
 		}
 	}
