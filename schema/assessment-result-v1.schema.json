@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "automat.dev/schema/assessment-result/v1",
+  "title": "automat assessment result",
+  "description": "The canonical output of `automat assess`: a claim, made at a point in time, about what can be said of one AWS account against one obligation profile's determination vocabulary. Human-facing forms (the CMMC L1 MET/NOT MET summary; later, the 800-171A worksheet and SPRS score) render FROM this document and are never authored independently — see docs/assessment-reporting.md, 'Outputs'. Hashed and canonicalized like every other document in schema/, and referenced from an evidence manifest record by id and content_sha256 the same way an environment profile or control artifact is.",
+  "$comment": "CONTENT HASH SCOPE: content_sha256 (recorded in the evidence manifest record that references this document, not inside the document itself — there is no self-referential hash field here, the same reason environment-profile/v1 and control-artifact/v1 keep their hash out-of-band) covers every field EXCEPT schema_version. rendered_at and tool_version are INCLUDED even though they look administrative, for the same reason obligation-profile/v1's $comment gives: this document makes a claim about a point in time, and a rendering timestamp that could be edited after the fact without moving the hash would let a stale claim be represented as current. schema_version is excluded because a major bump changes what the covered fields mean, and a reader that does not understand the version refuses the document before any hash is consulted.",
+  "type": "object",
+  "required": ["schema_version", "rendered_at", "tool_version", "account", "profile", "artifact", "objectives", "l1_summary", "policy_caveat"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "rendered_at": {
+      "description": "When this result was computed. Not the same as any determination's own date — a result can be re-rendered from the same determinations file against a later verify run, and a reader needs to know which is which.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+
+    "tool_version": {
+      "description": "The automat version that rendered this result, the same value evidence.Record.ToolVersion carries.",
+      "$ref": "#/$defs/prose"
+    },
+
+    "account": {
+      "description": "The AWS account this result is about, and the scope statement docs/assessment-reporting.md requires: whether the account equals the system boundary the assessment concerns is the operator's assertion, not automat's inference, and it is reproduced here so the claim travels with the document rather than living only in a conversation.",
+      "type": "object",
+      "required": ["id", "scope_statement"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/account_id" },
+        "scope_statement": {
+          "description": "The operator's own statement of what this account covers, reproduced verbatim in every rendered form. automat does not compute or infer this; see docs/assessment-reporting.md, 'Scope is an input, not an inference'.",
+          "$ref": "#/$defs/long_prose"
+        }
+      }
+    },
+
+    "profile": {
+      "description": "The obligation profile this result was assessed under.",
+      "type": "object",
+      "required": ["id", "content_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "artifact": {
+      "description": "The control artifact the objectives below were checked against.",
+      "type": "object",
+      "required": ["id", "content_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "determinations": {
+      "description": "The operator-determinations document this result drew from, by hash — absent when no determinations file was given at all, which is itself a fact worth an absent field rather than an empty-but-present one.",
+      "$ref": "#/$defs/doc_ref"
+    },
+
+    "objectives": {
+      "description": "One entry per control the profile's catalog names. 'Objective' rather than 'control' because Stage 2's 800-171A worksheet decomposes a requirement into several — 3.1.1 becomes 3.1.1[a] through 3.1.1[e] — and this array's shape must not need to change to carry that; Stage 3's CMMC L1 objectives are exactly its fifteen practices, one row each.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/objective_result" }
+    },
+
+    "l1_summary": {
+      "description": "The CMMC L1-specific rollup. Present because Stage 3 exists to produce it; a later profile's own summary shape (an SPRS score, say) gets its own sibling field rather than overloading this one, so a reader can tell from the document's own shape which regime it was rendered under.",
+      "type": "object",
+      "required": ["met_count", "not_met_count", "total", "affirmation_possible"],
+      "additionalProperties": false,
+      "properties": {
+        "met_count": { "type": "integer", "minimum": 0 },
+        "not_met_count": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 1 },
+        "affirmation_possible": {
+          "description": "False whenever not_met_count > 0 — CMMC L1 permits no partial credit and no POA&M, so a single NOT MET practice means there is nothing to affirm this year (docs/assessment-reporting.md, Invariant 3). Present as its own field rather than left for a reader to compute, because the whole point of Invariant 3 is that the consequence is stated, not inferred.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "policy_caveat": {
+      "description": "The policy caveat, in substance (docs/policy-caveat.md), reproduced on every rendered result for the same reason it is required on an obligation profile: this document is where automat's reading of policy meets a specific account, which is the most concentrated form the caveat needs to guard.",
+      "$ref": "#/$defs/long_prose"
+    }
+  },
+
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+
+    "account_id": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$"
+    },
+
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+
+    "prose": {
+      "description": "Single-line human text. Control characters are rejected because these strings are rendered into reports and tables, where a newline forges a row.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+
+    "long_prose": {
+      "description": "Multi-line human text. Newlines and tabs are permitted; other control characters are not.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$"
+    },
+
+    "doc_ref": {
+      "description": "A hashed reference to another document, the same id + content_sha256 shape evidence-manifest/v1 uses for an artifact or environment-profile reference.",
+      "type": "object",
+      "required": ["id", "content_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "objective_result": {
+      "description": "One control's resolved status. 'evidence_class' is the aws-mapping/curated split's sibling on the assessment side: it exists so a reader can audit automat's own observations separately from the operator's assertions (docs/assessment-reporting.md, Invariant 2's two-layer table).",
+      "type": "object",
+      "required": ["id", "evidence_class", "resolved"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The control id as the artifact names it, e.g. 'AC.L1-b.1.i'.",
+          "$ref": "#/$defs/prose"
+        },
+        "evidence_class": {
+          "description": "`machine` when automat's own observation (a verify finding, a Config rule evaluation) is what this row's resolved value came from; `operator` when it came from the determinations file or from nothing. An objective with `operator` and no determination behind it is exactly the silence Invariant 3 renders NOT MET.",
+          "enum": ["machine", "operator"]
+        },
+        "evidence_pointer": {
+          "description": "Where the machine evidence came from — an SCP ARN, a Config rule name, an attestation path — when evidence_class is `machine`. Absent when there is none to point to, which as of Stage 3 is every row: cmmc-l1's catalog carries no SCP fragments and no AWS Config read path exists yet, so evidence_class is `operator` for all fifteen practices in this build. That is a fact about this build's capability, not a defect in a specific assessment, and l1_summary's sibling text in the rendered form says so.",
+          "$ref": "#/$defs/prose"
+        },
+        "determination": {
+          "description": "The determination reference behind this row's resolved value, when one exists — the determination's own id within the operator-determinations document named at the top level.",
+          "$ref": "#/$defs/prose"
+        },
+        "resolved": {
+          "description": "The value from the profile's own determinations.values vocabulary. For cmmc-l1: MET or NOT MET, and automat itself may only ever write the profile's understatement_value (NOT MET) — MET comes from a determination or from nowhere.",
+          "$ref": "#/$defs/prose"
+        }
+      }
+    }
+  }
+}

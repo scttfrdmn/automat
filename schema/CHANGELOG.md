@@ -1414,3 +1414,102 @@ determinations file it read, following `evidence.DocRef`'s existing id +
 content-hashed into the chain "like a catalog"
 (`docs/assessment-reporting.md`, "Inputs"), and a catalog is already how
 `DocRef` is used.
+
+## assessment-result/v1 — 1.0.0 (unreleased, Phase 4 assess Stage 3)
+
+New schema. **Listed here for maintainer ratification** under rule 6: a new
+contract rather than a change to a published one, so nothing is bumped and
+nothing migrates, but a new file in `schema/` is a new promise and belongs in
+the changelog on the way in — the same footing `obligation-profile/v1` was
+ratified on.
+
+**Why it exists.** `docs/assessment-reporting.md`'s own requirement: "Every
+rendered form renders FROM [the canonical result], and none is authored
+independently." Without a canonical document, the CMMC L1 summary (Stage 3)
+and the later 800-171A worksheet and SPRS score (Stages 1-2) would each compute
+their own answer to "is this account compliant", which is exactly how two parts
+of one tool start disagreeing with each other.
+
+Notes on the choices that constrain future changes:
+
+- **`objectives[].evidence_class` mirrors `config_rule.provenance`'s
+  `aws-mapping`/`curated` split, on purpose.** That field exists so a reader can
+  audit automat's own judgment separately from AWS's; this one exists so a
+  reader can audit the operator's assertions separately from automat's
+  observations (`docs/assessment-reporting.md`, Invariant 2's two-layer table).
+  An assessment where every objective is `operator` is a spreadsheet with extra
+  steps, and the schema makes that visible rather than optional.
+- **As of Stage 3, `evidence_pointer` is absent on every objective this schema
+  will actually see.** `cmmc-l1`'s catalog carries no SCP fragments, and no AWS
+  Config read interface exists yet, so there is no machine evidence for any of
+  the fifteen L1 practices in this build. The field stays in the schema because
+  Stage 3's shape must not need to change once a Config-read path or
+  `internal/baseline` exist — they would only start populating it, not require
+  a new document version.
+- **`l1_summary` is a Stage-3-specific sibling field, not a polymorphic
+  "summary" object.** A later regime's own rollup (an SPRS score, say) gets its
+  own field rather than overloading this one, so a reader can tell from the
+  document's own shape which regime it was rendered under without inspecting
+  `profile.id` first.
+- **`account.scope_statement` is required and is the operator's own words,
+  never automat's inference.** `docs/assessment-reporting.md`, "Scope is an
+  input, not an inference": whether the AWS account equals the system boundary
+  the assessment concerns is the operator's assertion, and the schema requires
+  it be stated rather than left implicit in a cover note that does not survive
+  being forwarded.
+- **`determinations` is optional, not required-but-nullable.** A result
+  rendered with no determinations file at all (every objective silently
+  NOT MET) is a real, legitimate state — the honest "nothing has been
+  determined yet" case — and an absent field says that plainly, where an empty
+  reference object would read as "a determinations file existed and asserted
+  nothing," a different and false claim.
+- **Content hash is out-of-band**, the same convention `environment-profile/v1`
+  and `control-artifact/v1` use: no self-referential hash field inside the
+  document, recorded instead in the evidence manifest record that references it
+  and in `operator-determinations-v1`'s own `determinations` back-reference.
+
+## operator-determinations/v1 — 1.0.0 (unreleased, Phase 4 assess Stage 3)
+
+New schema, ratified alongside `assessment-result-v1` for the same reason.
+
+**Why it exists.** The mechanism that makes Invariant 2 enforceable at all:
+"automat's proposals may only ever understate compliance... `MET`/`SATISFIED`
+comes from the operator's determinations file or from nowhere"
+(`docs/assessment-reporting.md`). Without this file as a separate document, a
+satisfied value would have to be typed directly into a generated report, which
+is exactly the signable-artifact shape Invariant 1 forbids. As a file it is
+reviewable, diffable, and content-hashed into the evidence chain like a
+catalog, so a later reader can tell which human assertions were in force when
+a report was generated, and no assertion can be revised after the fact without
+the hash moving.
+
+Notes on the choices that constrain future changes:
+
+- **`determinations[].value` is validated against the named obligation
+  profile's `determinations.values` at load time, not against a hardcoded
+  enum in this schema.** Each regime spells its own vocabulary
+  (`MET`/`NOT MET` vs. `SATISFIED`/`OTHER THAN SATISFIED`), and a schema-level
+  enum here would either have to union every regime's spellings — letting a
+  CMMC determination carry an 800-171 value undetected — or be regime-specific,
+  which a shared document type cannot be. The profile is the source of truth
+  for its own vocabulary; this schema only requires *some* prose value be
+  given.
+- **`determinations[].id` is round-trip patterned (CLAUDE.md rule 8) as
+  `$defs/round_trip_id`**, not `$defs/prose`: `assessment-result-v1`'s
+  per-objective `determination` field points back to this id, so an operator
+  reviewing a rendered result may need to find this exact entry again by eye or
+  by search in the source file. A value carrying a space or a quote would
+  break both.
+- **`revision_determination` is a top-level, optional field — not nested under
+  a specific determination.** It answers a different question than the
+  per-objective determinations do (which revision of a control catalog applies
+  at all, not whether a specific practice is met) and it is required by
+  `assess`'s own refusal-to-run rule only when the named obligation profile
+  leaves its `control_catalogs[].revision_policy` as `operator-determined`
+  (`nih-cadr-dua` is the shipped case). The schema cannot express "required
+  only under a condition read from a different document," so that refusal is
+  enforced in Go, in `automat assess` itself, before this file is even fully
+  consulted — the schema states the shape the determination takes when it is
+  given, not when it must be.
+- **Content hash is out-of-band**, matching `assessment-result-v1` and every
+  other document in `schema/`.
