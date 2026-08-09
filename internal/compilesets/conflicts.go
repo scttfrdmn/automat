@@ -62,7 +62,16 @@ func (c *ConflictReport) Error() string {
 	fmt.Fprintf(&sb, " Resolve it explicitly in an override file naming %s and the value you intend; "+
 		"union must never guess which is stricter (DESIGN §9)", safe(c.Parameter))
 	if len(c.Origins) > 0 {
-		fmt.Fprintf(&sb, ". From: %s", strings.Join(c.Origins, ", "))
+		// Quoted, like every other catalog-supplied value in this message
+		// (AUDIT-0 M1, AUDIT-4 M1). An origin is artifactID + ":" + controlID,
+		// and a control id is checked only for being non-empty — no character
+		// class at either layer — so an id carrying a newline forges a line of
+		// this report, and a conflict report is read as a report.
+		quoted := make([]string, len(c.Origins))
+		for i, o := range c.Origins {
+			quoted[i] = safe(o)
+		}
+		fmt.Fprintf(&sb, ". From: %s", strings.Join(quoted, ", "))
 	}
 	return sb.String()
 }

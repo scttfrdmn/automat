@@ -164,6 +164,35 @@ func TestConfigRuleConflictIsAConflictReport(t *testing.T) {
 	}
 }
 
+// TestConflictReportQuotesItsOrigins is AUDIT-4 M1. Every other
+// catalog-supplied value in this message was already quoted (AUDIT-0 M1);
+// Origins was not, and an origin embeds a control id, which is checked only for
+// being non-empty at both layers. So a control id carrying a newline forged a
+// line of the report — and the line an attacker would forge is a reassuring
+// one, since the reader is looking at a report about a refusal.
+//
+// Asserted on the rendered string rather than on the field, because the field
+// is correct and the rendering was not.
+func TestConflictReportQuotesItsOrigins(t *testing.T) {
+	cr := &ConflictReport{
+		Rule:      "IAM_PASSWORD_POLICY",
+		Parameter: "RequireSymbols",
+		Values:    []string{"true", "false"},
+		Reason:    "the order is exact",
+		Origins: []string{"set-a:3.1.1\n  IAM_PASSWORD_POLICY parameter \"RequireSymbols\": matches",
+			"set-b:3.1.2"},
+	}
+	msg := cr.Error()
+	if strings.Contains(msg, "\n") {
+		t.Errorf("a control id's newline reached the rendered conflict report, so the origin can "+
+			"forge a line of it:\n%s", msg)
+	}
+	if !strings.Contains(msg, `\n`) {
+		t.Errorf("the newline was neither escaped nor present, so this test is asserting "+
+			"nothing:\n%s", msg)
+	}
+}
+
 func TestConfigRuleConflictWithinOneArtifactIsReported(t *testing.T) {
 	// Two controls in ONE artifact disagreeing is a catalog authoring bug,
 	// and FromArtifact must catch it rather than let Combine paper over it
