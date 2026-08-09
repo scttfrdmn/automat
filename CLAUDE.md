@@ -70,7 +70,7 @@ catalogs/               # vendored compiled artifacts: cmmc-l1, baseline-protect
                         # (uc-protection-levels, stanford-risk-classifications).
                         # 800-171r2/r3 remain Phase 0 scope, not yet compiled.
 gen/                    # maintainer tooling: OSCAL + conformance-pack → catalog compiler
-docs/                   # conventions.md is Phase 5 scope, not yet written; see
+docs/                   # conventions.md, reclaim-design.md now written (Phase 5); see
                         # docs/cli-surface.md, docs/audit-ritual.md, docs/open-questions.md,
                         # and the rest of docs/ for what exists today.
 test/integration/       # SEPARATE Go module (its own go.mod, go 1.26) — emulator-backed
