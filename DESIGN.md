@@ -332,8 +332,22 @@ automat verify       # §12: policy + freshness layers only (detective/procedura
 automat list         # accounts and OUs under --ou (or the config `ou`, or the org root),
                       # plus parked accounts from local evidence manifests under
                       # --evidence-dir. No tag-based filtering — see docs/cli-surface.md D5
+automat assess       # docs/assessment-reporting.md, Stage 3 only: CMMC L1 MET/NOT MET
+                      # summary against --profile cmmc-l1 and an optional
+                      # --determinations file. Read-only beyond one
+                      # sts:GetCallerIdentity call; writes an OpAssess evidence record.
+                      # Stages 1-2 (800-171A worksheet, DFARS scoring) NOT YET
+                      # IMPLEMENTED — see docs/cli-surface.md D7. This build contributes
+                      # zero machine evidence for any CMMC L1 practice (no SCP fragments
+                      # in the catalog, no AWS Config read path), and the rendered
+                      # summary discloses that rather than staying silent.
 automat reclaim      # LATER (Phase 5): close/park accounts; respect closure rate limits
 ```
+
+`automat assess` is an addition to this list, not a contradiction of it: per the Phase 1
+review's ratification condition, a command absent from an earlier revision of §13 could be
+added once its scope was approved (docs/assessment-reporting.md), and it now appears here as
+that approval's implementation lands.
 
 There is no `automat compile` subcommand. Union/compile control sets → artifact (§9) is
 maintainer tooling, `gen/catalog`, run against curated sources in `gen/sources` and vendored

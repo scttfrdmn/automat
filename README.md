@@ -39,6 +39,7 @@ everything else in the design is marked as not shipping yet, in this file and in
 | `automat setup` (no `--request`) | Applies the delegation policy and creates the vendor role directly, from the management account. Requires a real target OU (`--ou`) and an ExternalId reference (`--external-id-ref`) — no template parameter to defer either to, and automat does not generate an ExternalId. Ensure-semantics: a second run corrects drift | Phase 3 |
 | `automat verify` | Re-checks one account's attached service control policies against a fresh compile of the environment profile that vended it, and warns if the profile's `review_by` date has passed. Read-only; checks the policy and freshness layers only — the detective and procedural layers have nothing to check against until the in-child baseline exists (see below) | Phase 4 |
 | `automat list` | Inventories the organizational units and accounts under the configured OU (or the root), plus every account a local evidence manifest records as parked. Makes no write call, but is not read-only by construction the way `verify` is — the tree walk travels the same client `vend` uses and assumes the vendor role in the MEMBER state. Tag-based filtering is not available — see below | Phase 4 |
+| `automat assess` | Renders a CMMC Level 1 MET/NOT MET summary — the fifteen practices in `catalogs/cmmc-l1.json` against an optional operator-determinations file. Read-only beyond one `sts:GetCallerIdentity` call for evidence attribution. **This build contributes zero machine evidence**: the catalog carries no SCP fragments and no AWS Config read path exists yet, so every practice is an operator determination or, absent one, a NOT MET the renderer states rather than leaves silent — CMMC L1 permits no partial credit and no plan of action. The 800-171A worksheet and DFARS scoring (Stages 1–2) are not built; `--profile` accepts only `cmmc-l1` — see [`docs/assessment-reporting.md`](docs/assessment-reporting.md) | Phase 4 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
 
@@ -68,9 +69,10 @@ worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
   ([`docs/open-questions.md`](docs/open-questions.md) Q19), so an account's
   `automat:vended-by`/`automat:ou` tags cannot be read back through this client — `list`
   shows every account under the walked OU regardless of tag.
-- **`automat assess`** — assessment reporting: 800-171A objective worksheets, CMMC L1
-  MET/NOT MET summaries, DFARS score arithmetic. Phase 4, scope approved in
-  [`docs/assessment-reporting.md`](docs/assessment-reporting.md).
+- **Assessment reporting Stages 1 and 2** — the 800-171A objective worksheet and DFARS
+  score arithmetic. Both need a hand-transcribed-twice weight table
+  ([`docs/open-questions.md`](docs/open-questions.md) Q10), real off-computer work rather
+  than code. Stage 3, the CMMC L1 summary, ships today (see the table above).
 - **`automat reclaim`** — account closure. Phase 5.
 - **`automat compile`** — union of control sets. The compiler exists as maintainer tooling
   in `gen/catalog`, not as a subcommand; see [`docs/cli-surface.md`](docs/cli-surface.md).

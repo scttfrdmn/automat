@@ -330,6 +330,38 @@ drift report, not a missing feature.
 **Resolved by amending §13's line**: DESIGN.md's `vend` and `verify` lines both now name
 `--override`, pointing here for the reasoning.
 
+### D7 — `automat assess` is not in an earlier revision of §13. RESOLVED — §13 amended
+
+`docs/assessment-reporting.md` is the design authority for `assess`, approved as scope
+before any of it was built, and its own closing section names §13 as needing the addition
+"when it ships" — the same ratification condition the Phase 1 review already established
+for a command absent from an earlier revision of the list (D2, D3, D4, D5, D6 above all
+follow it). This is that addition landing.
+
+**Only Stage 3 ships**: `--profile` accepts only `cmmc-l1`. Stages 1 and 2 — the 800-171A
+objective worksheet and DFARS score arithmetic — need a weight table transcribed twice,
+independently, and diffed before commit (`docs/open-questions.md` Q10); that is real
+off-computer work, not a coding task, and is not attempted here.
+
+**Read-only beyond one `sts:GetCallerIdentity` call**, the same shape `verify` has: no
+`--yes`, because `assess` mutates nothing in AWS. It writes locally — the
+`assessment-result-v1` document and its rendered summary into `--out`, and an `OpAssess`
+evidence record — which is why it needs a client at all despite reading nothing else from
+the account.
+
+**This build's honest limit, stated in the command's own `--help` and in every rendered
+summary**: `catalogs/cmmc-l1.json` carries no SCP fragments, and no AWS Config read
+interface exists anywhere in `internal/awsapi`. So `assess` contributes zero machine
+evidence for any of the fifteen L1 practices today — every objective's evidence class is
+`operator`, and with no `--determinations` file, every practice renders NOT MET rather
+than staying silent (CMMC Level 1 permits no partial credit and no plan of action, so
+silence is a fail with a work list, not a pending state). The rendered summary states this
+disclosure once, at the document level, rather than leaving a reader to infer it from an
+all-`operator` table.
+
+**Resolved by amending §13's line**: DESIGN.md's `automat assess` line names the flag
+surface and the current scope limit, pointing here for the reasoning.
+
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 
 §13 listed `automat compile`, and ROADMAP Phase 0's accept criterion wrote it as

@@ -616,6 +616,10 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 		// would pass while asserting nothing — the exact vacuous-test failure this
 		// file's other comments are about.
 		profile bool
+		// assessOut marks a case that needs a real --out directory: assess
+		// refuses before building any client without one, same reasoning as
+		// profile above.
+		assessOut bool
 	}{
 		{args: []string{"preflight"}},
 		{args: []string{"version"}},
@@ -624,12 +628,17 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 		{args: []string{"init", "--dry-run"}},
 		{args: []string{"vend", "--name", "Genomics"}, profile: true},
 		{args: []string{"vend", "--name", "Genomics", "--dry-run"}, profile: true},
+		{args: []string{"assess", "--account", "111122223333", "--profile", "cmmc-l1",
+			"--scope-statement", "x"}, assessOut: true},
 	} {
 		args := tc.args
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			if tc.profile {
 				args = append(append([]string{}, args...),
 					"--environment-profile", vendProfileJSON(t, nil))
+			}
+			if tc.assessOut {
+				args = append(append([]string{}, args...), "--out", filepath.Join(t.TempDir(), "out"))
 			}
 			g := &globals{configPath: filepath.Join(t.TempDir(), "absent.toml")}
 			var built []string
