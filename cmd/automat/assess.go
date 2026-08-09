@@ -182,7 +182,12 @@ func newAssessCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			manifestPath, werr := writeAssessEvidence(profile, det, result, accountID, callerARN, evidenceDir, now)
+			signer, serr := evidenceSigner(ctx, g, orgCtx.Region, orgCtx.Profile, orgCtx)
+			if serr != nil {
+				return serr
+			}
+			manifestPath, werr := writeAssessEvidence(profile, det, result, accountID, callerARN,
+				evidenceDir, now, signer)
 			if werr != nil {
 				return werr
 			}
@@ -253,7 +258,7 @@ func writeAssessOutputFile(root *os.Root, name, shownDir string, data []byte) er
 // not the operation failing. Contrast writeVerifyEvidence, where a drifted
 // account IS the check failing; assess makes no claim of its own to fail.
 func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, result *assess.Result,
-	accountID, callerARN, evidenceDir string, now time.Time) (string, error) {
+	accountID, callerARN, evidenceDir string, now time.Time, signer evidence.Signer) (string, error) {
 	if evidenceDir == "" {
 		evidenceDir = envprofile.DefaultEvidenceDir
 	}
@@ -293,7 +298,7 @@ func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, re
 			ContentSHA256: result.Determinations.ContentSHA256,
 		}
 	}
-	if _, err := m.Append(rec, nil); err != nil {
+	if _, err := m.Append(rec, signer); err != nil {
 		return "", fmt.Errorf("cannot append the assess record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {

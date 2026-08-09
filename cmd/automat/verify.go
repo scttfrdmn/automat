@@ -155,7 +155,11 @@ func newVerifyCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			manifestPath, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport)
+			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
+			if serr != nil {
+				return serr
+			}
+			manifestPath, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer)
 			if werr != nil {
 				return werr
 			}
@@ -384,7 +388,7 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // that changes no exit code (DESIGN §11a, §12), and a record marked failure for
 // a date would say the account drifted when nothing about it moved.
 func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
-	policy *verify.PolicyReport) (string, error) {
+	policy *verify.PolicyReport, signer evidence.Signer) (string, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
@@ -420,7 +424,7 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 		},
 		ToolVersion: version.Version,
 	}
-	if _, err := m.Append(rec, nil); err != nil {
+	if _, err := m.Append(rec, signer); err != nil {
 		return "", fmt.Errorf("cannot append the verify record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {

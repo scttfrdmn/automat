@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
@@ -62,6 +63,7 @@ type globals struct {
 	newIAM        func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
 	newIAMRole    func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
 	newQuota      func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
+	newKMS        func(ctx context.Context, region, profile string) (awsapi.KMSAPI, error)
 	// newBrokeredOrgVend overrides brokeredOrgVendClient in tests, the same way
 	// every other constructor field does — a test substitutes internal/awsfake
 	// here too, never a live AssumeRole.
@@ -351,4 +353,19 @@ func (g *globals) quotaClient(ctx context.Context, region, profile string) (awsa
 		return nil, err
 	}
 	return servicequotas.NewFromConfig(cfg), nil
+}
+
+// kmsClient is evidence signing's client, native in every state: signing is
+// an operation on a key the operator's own identity is granted against,
+// never brokered through the vendor role (DESIGN §11's KMS drop-in has
+// nothing to do with the vend/policy credential split).
+func (g *globals) kmsClient(ctx context.Context, region, profile string) (awsapi.KMSAPI, error) {
+	if g.newKMS != nil {
+		return g.newKMS(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return kms.NewFromConfig(cfg), nil
 }

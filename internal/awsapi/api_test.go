@@ -53,6 +53,7 @@ func allInterfaces(t *testing.T) map[string]reflect.Type {
 		"IAMAPI":        reflect.TypeOf((*IAMAPI)(nil)).Elem(),
 		"IAMRoleAPI":    reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
 		"QuotaAPI":      reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
+		"KMSAPI":        reflect.TypeOf((*KMSAPI)(nil)).Elem(),
 		"SSOOIDCAPI":    reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
 	}
 }

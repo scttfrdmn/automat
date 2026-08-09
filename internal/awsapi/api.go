@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
@@ -293,6 +294,24 @@ type QuotaAPI interface {
 		optFns ...func(*servicequotas.Options)) (*servicequotas.GetServiceQuotaOutput, error)
 }
 
+// KMSAPI is the evidence-signing surface DESIGN §11 asks for as a drop-in
+// alongside the local ed25519 signer (internal/evidence.LocalSigner):
+// Sign, so evidence.KMSSigner can implement evidence.Signer, and Verify, for
+// the matching evidence.KMSVerifier. Nothing here reads or exports key
+// material — KMS signs a message it is handed and returns bytes, and it
+// cannot be asked to reveal a key, which is the whole reason
+// evidence.Signer was shaped this way from the start.
+//
+// GetPublicKey is deliberately absent: this project has no local-verification
+// path against a downloaded public key, only KMS's own Verify call, so there
+// is nothing here for it to feed.
+type KMSAPI interface {
+	Sign(ctx context.Context, in *kms.SignInput,
+		optFns ...func(*kms.Options)) (*kms.SignOutput, error)
+	Verify(ctx context.Context, in *kms.VerifyInput,
+		optFns ...func(*kms.Options)) (*kms.VerifyOutput, error)
+}
+
 // SSOOIDCAPI is the device authorization grant used by `automat login`.
 //
 // automat does not implement a credential store: a successful device flow
@@ -323,5 +342,6 @@ var (
 	_ IAMAPI        = (*iam.Client)(nil)
 	_ IAMRoleAPI    = (*iam.Client)(nil)
 	_ QuotaAPI      = (*servicequotas.Client)(nil)
+	_ KMSAPI        = (*kms.Client)(nil)
 	_ SSOOIDCAPI    = (*ssooidc.Client)(nil)
 )

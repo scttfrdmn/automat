@@ -146,8 +146,12 @@ func newReclaimCmd(g *globals) *cobra.Command {
 				return err
 			}
 
+			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
+			if serr != nil {
+				return serr
+			}
 			manifestPath, werr := writeReclaimEvidence(accountID, target, caller.ARN, time.Now(),
-				apply.Actions(), orgInfo, evidenceDir)
+				apply.Actions(), orgInfo, evidenceDir, signer)
 			if werr != nil {
 				return werr
 			}
@@ -258,7 +262,7 @@ func reclaimPartialError(r *org.Reclaimer, target string, cause error) error {
 // success/failure to disagree with the way verify's drift-vs-clean split
 // does.
 func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, actions []org.Action,
-	info reclaimOrgInfo, evidenceDir string) (string, error) {
+	info reclaimOrgInfo, evidenceDir string, signer evidence.Signer) (string, error) {
 	if evidenceDir == "" {
 		evidenceDir = envprofile.DefaultEvidenceDir
 	}
@@ -298,7 +302,7 @@ func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, ac
 		Enforcement: &evidence.Enforcement{SCPARNs: detached},
 		ToolVersion: version.Version,
 	}
-	if _, err := m.Append(rec, nil); err != nil {
+	if _, err := m.Append(rec, signer); err != nil {
 		return "", fmt.Errorf("cannot append the reclaim record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {

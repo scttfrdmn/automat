@@ -84,6 +84,21 @@ type Context struct {
 	// its SSO instance in us-east-1. Kept separate rather than reusing Region so
 	// that getting one wrong cannot silently mean the other.
 	SSORegion string `toml:"sso_region"`
+
+	// EvidenceKMSKeyID, when set, signs every evidence record this context
+	// writes with the named KMS key (internal/evidence.KMSSigner) instead of
+	// leaving records unsigned — DESIGN §11's "local key now, KMS later"
+	// drop-in. A KMS key ARN or alias, whichever the operator's kms:Sign
+	// grant is scoped to. Config-only rather than a per-command flag: which
+	// key signs an organization's evidence is operator infrastructure, the
+	// same standing as vendor_role_arn, not a choice made per invocation.
+	EvidenceKMSKeyID string `toml:"evidence_kms_key_id"`
+	// EvidenceKMSAlgorithm selects which of evidence's two committed KMS
+	// algorithms (aws-kms-rsassa-pss-sha-256, aws-kms-ecdsa-sha-256) to sign
+	// with, matching the key's own type. Required alongside
+	// EvidenceKMSKeyID: automat does not call DescribeKey to infer it, so a
+	// mismatch is a KMS-side refusal rather than a silent wrong answer.
+	EvidenceKMSAlgorithm string `toml:"evidence_kms_algorithm"`
 }
 
 // DefaultPath returns the config file path, honoring XDG_CONFIG_HOME.
@@ -179,6 +194,7 @@ var (
 		"org": true, "ou": true, "vendor_role_arn": true, "external_id_ref": true,
 		"email_pattern": true, "region": true, "profile": true,
 		"sso_start_url": true, "sso_region": true,
+		"evidence_kms_key_id": true, "evidence_kms_algorithm": true,
 	}
 )
 
@@ -237,7 +253,21 @@ var (
 	// resolver, and a region containing a dot or a slash is a value that has been
 	// mistaken for a hostname or a path somewhere upstream.
 	reRegion = regexp.MustCompile(`^[a-z]{2}(?:-[a-z]+)+-\d$`)
+	// reKMSKeyID admits every shape KMS's own Sign/Verify KeyId accepts (a
+	// bare key id, a key ARN, an alias name, or an alias ARN) while staying a
+	// round-trip value (CLAUDE.md rule 8): this string is written into every
+	// evidence record's signature block and is exactly what an operator later
+	// retypes to `automat verify`'s (future) --verify-kms-key or pastes into
+	// a KMS console search.
+	reKMSKeyID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/+=@-]{0,255}$`)
 )
+
+// evidenceKMSAlgorithms is the closed set config.go itself may name — the
+// same two values evidence.AlgKMSRSAPSS256/AlgKMSECDSA256 already commit to.
+// Not imported from internal/evidence: that package depends on nothing in
+// internal/config, and importing it here for two string literals would draw
+// a dependency edge purely for a constant this file can just as well state.
+var evidenceKMSAlgorithms = []string{"aws-kms-rsassa-pss-sha-256", "aws-kms-ecdsa-sha-256"}
 
 // validateSSOStartURL checks the start URL without resolving it. Kept here rather
 // than only in internal/login so that `automat preflight` on a bad config reports
@@ -318,6 +348,46 @@ func (c *Config) validate(path string) error {
 			return fmt.Errorf("%s: region %q is not a region name — use the us-east-1 form",
 				where, ctx.Region)
 		}
+		if err := validateEvidenceKMS(where, ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEvidenceKMS checks the two evidence-signing fields together: both
+// present or both absent (a key with no algorithm cannot sign, an algorithm
+// with no key names nothing to sign with), and the algorithm one of
+// evidence's own two committed KMS forms — this file cannot import
+// internal/evidence to compare against its Algorithm type, so the closed
+// set is restated as evidenceKMSAlgorithms above and kept in step with it
+// by TestEvidenceKMSAlgorithmsMatchTheEvidencePackage.
+func validateEvidenceKMS(where string, ctx Context) error {
+	switch {
+	case ctx.EvidenceKMSKeyID == "" && ctx.EvidenceKMSAlgorithm == "":
+		return nil
+	case ctx.EvidenceKMSKeyID == "":
+		return fmt.Errorf("%s: evidence_kms_algorithm is set but evidence_kms_key_id is not — "+
+			"an algorithm with no key names nothing to sign with", where)
+	case ctx.EvidenceKMSAlgorithm == "":
+		return fmt.Errorf("%s: evidence_kms_key_id is set but evidence_kms_algorithm is not — "+
+			"name one of %s, matching the key's own type", where, strings.Join(evidenceKMSAlgorithms, ", "))
+	}
+	if !reKMSKeyID.MatchString(ctx.EvidenceKMSKeyID) {
+		return fmt.Errorf("%s: evidence_kms_key_id %q is not a value this file will round-trip — "+
+			"it is written into every evidence record's signature block and later read back by a "+
+			"person or a script (CLAUDE.md rule 8)", where, ctx.EvidenceKMSKeyID)
+	}
+	valid := false
+	for _, a := range evidenceKMSAlgorithms {
+		if ctx.EvidenceKMSAlgorithm == a {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("%s: evidence_kms_algorithm %q is not one of %s",
+			where, ctx.EvidenceKMSAlgorithm, strings.Join(evidenceKMSAlgorithms, ", "))
 	}
 	return nil
 }

@@ -80,6 +80,7 @@ type fakeWorld struct {
 	IAMRole *awsfake.IAMRole
 	Verify  *awsfake.OrgVerify
 	Reclaim *awsfake.OrgReclaim
+	KMS     *awsfake.KMS
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -131,6 +132,7 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		IAMRole: awsfake.NewIAMRole(mgmt),
 		Verify:  awsfake.NewOrgVerify(state),
 		Reclaim: awsfake.NewOrgReclaim(state),
+		KMS:     awsfake.NewKMS(),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -194,6 +196,9 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		},
 		newQuota: func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 			return quotaFake, nil
+		},
+		newKMS: func(context.Context, string, string) (awsapi.KMSAPI, error) {
+			return f.KMS, nil
 		},
 		newSSOOIDC: func(context.Context, string) (awsapi.SSOOIDCAPI, error) {
 			t.Error("a test built an SSO OIDC client; only `login` should, and no test here runs it")

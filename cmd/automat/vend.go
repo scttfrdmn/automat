@@ -209,12 +209,20 @@ func newVendCmd(g *globals) *cobra.Command {
 			apply := newVendEnsurer(g, vendAPI, policyAPI, org.ModeApply, caller.ARN, credential)
 			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now)
 
+			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
+			if serr != nil {
+				if aerr != nil {
+					return fmt.Errorf("%w (and the evidence signer could not be built: %v)", aerr, serr)
+				}
+				return serr
+			}
+
 			// The manifest is written whether or not the vend succeeded, and before
 			// the error is returned. A run that created an account and then failed to
 			// attach a policy has produced the state that most needs recording, and
 			// an operator who is handed only the error has an account nobody wrote
 			// down.
-			manifestPath, werr := writeVendEvidence(in, applied)
+			manifestPath, werr := writeVendEvidence(in, applied, signer)
 			if werr != nil {
 				if aerr != nil {
 					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", aerr, werr)
@@ -1272,10 +1280,10 @@ func attestationIDs(in *vendInput) []string {
 // nothing: evidence.Manifest refuses an empty record list, and a chain that grew on
 // every no-op run would be a chain nobody reads.
 //
-// The signer is nil. An unsigned local manifest is a valid document, and there is
-// no signing-key setting in internal/config for this to read — automat ships no key
-// ceremony (DESIGN §11a).
-func writeVendEvidence(in *vendInput, st *vendState) (string, error) {
+// signer may be nil, in which case the manifest is unsigned — a valid
+// document, per Signer's own doc comment; whether the config file names a
+// KMS key is a policy decision this function does not make.
+func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, error) {
 	if st == nil || st.AccountID == "" || len(st.Records) == 0 {
 		return "", nil
 	}
@@ -1300,7 +1308,7 @@ func writeVendEvidence(in *vendInput, st *vendState) (string, error) {
 			"hash chain exists to make visible", st.AccountID, err)
 	}
 	for i := range st.Records {
-		if _, aerr := m.Append(st.Records[i], nil); aerr != nil {
+		if _, aerr := m.Append(st.Records[i], signer); aerr != nil {
 			return "", fmt.Errorf("cannot append the %s record for account %s: %w",
 				st.Records[i].Operation, st.AccountID, aerr)
 		}
