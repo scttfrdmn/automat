@@ -281,6 +281,18 @@ func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, re
 		Artifact:    &evidence.DocRef{ID: result.Artifact.ID, ContentSHA256: result.Artifact.ContentSHA256},
 		ToolVersion: version.Version,
 	}
+	if result.Determinations != nil {
+		// schema/CHANGELOG.md named this reference while `operation` gained
+		// `assess`, ahead of internal/assess existing to produce the hash:
+		// "a reference to the operator-determinations file it read,
+		// following evidence.DocRef's existing id + content_sha256 shape."
+		// Absent, matching Result.Determinations itself, when assess ran
+		// with no --determinations file.
+		rec.Determinations = &evidence.DocRef{
+			ID:            result.Determinations.ID,
+			ContentSHA256: result.Determinations.ContentSHA256,
+		}
+	}
 	if _, err := m.Append(rec, nil); err != nil {
 		return "", fmt.Errorf("cannot append the assess record for account %s: %w", accountID, err)
 	}

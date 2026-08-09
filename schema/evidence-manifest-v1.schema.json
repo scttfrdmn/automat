@@ -253,6 +253,17 @@
           "description": "The environment profile this operation ran under: its id, its content hash, and the attestations over it that verified (an empty set in v1). Optional at the schema level because not every record has one behind it — `init` predates it and a custody transfer enforces nothing — but every record a `vend` writes carries it. Inside the record hash, so the environment profile a chain claims to have been vended under cannot be changed after the fact.",
           "$ref": "#/$defs/environment_profile_reference"
         },
+        "determinations": {
+          "description": "The operator-determinations document an `assess` record's finding drew from, by id and content hash — the reference named while `operation` gained `assess` (this CHANGELOG's own \"Pre-publication change to evidence-manifest/v1: `operation` gains `assess`\" entry), landing now that internal/assess exists to produce the hash. Absent when assess ran with no --determinations file at all, the same absent-is-honest convention assessment-result/v1's own `determinations` field follows.",
+          "type": "object",
+          "required": ["id", "content_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$" },
+            "content_sha256": { "$ref": "#/$defs/sha256" },
+            "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+          }
+        },
         "enforcement": {
           "description": "What was actually attached or deployed.",
           "type": "object",

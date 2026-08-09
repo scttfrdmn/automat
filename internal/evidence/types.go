@@ -113,22 +113,34 @@ type Meta struct {
 // Field order matters only for MarshalIndented's readability; hashing goes
 // through canonical form, which sorts keys.
 type Record struct {
-	Sequence    int            `json:"sequence"`
-	Timestamp   string         `json:"timestamp"`
-	Operation   Operation      `json:"operation"`
-	Outcome     Outcome        `json:"outcome,omitempty"`
-	Operator    Operator       `json:"operator"`
-	RequestID   string         `json:"request_id,omitempty"`
-	Target      *Target        `json:"target,omitempty"`
-	Artifact    *DocRef        `json:"artifact,omitempty"`
-	EnvProfile  *EnvProfileRef `json:"environment_profile,omitempty"`
-	Enforcement *Enforcement   `json:"enforcement,omitempty"`
-	Err         *RecordError   `json:"error,omitempty"`
-	Custody     *Custody       `json:"custody_transfer,omitempty"`
-	ToolVersion string         `json:"tool_version"`
-	PreviousSHA string         `json:"previous_sha256"`
-	RecordSHA   string         `json:"record_sha256"`
-	Signature   *Signature     `json:"signature,omitempty"`
+	Sequence   int            `json:"sequence"`
+	Timestamp  string         `json:"timestamp"`
+	Operation  Operation      `json:"operation"`
+	Outcome    Outcome        `json:"outcome,omitempty"`
+	Operator   Operator       `json:"operator"`
+	RequestID  string         `json:"request_id,omitempty"`
+	Target     *Target        `json:"target,omitempty"`
+	Artifact   *DocRef        `json:"artifact,omitempty"`
+	EnvProfile *EnvProfileRef `json:"environment_profile,omitempty"`
+	// Determinations names the operator-determinations document an `assess`
+	// record's finding drew from, by id and content hash — the reference
+	// schema/CHANGELOG.md's "Pre-publication change to evidence-manifest/v1:
+	// `operation` gains `assess`" entry named while OpAssess was being
+	// scoped, ahead of internal/assess existing to produce the hash: "a
+	// reference to the operator-determinations file it read, following
+	// evidence.DocRef's existing id + content_sha256 shape". Absent when
+	// assess ran with no --determinations file (every practice silently NOT
+	// MET), the same absent-is-honest convention Result.Determinations
+	// itself follows (schema/assessment-result-v1.schema.json's own
+	// $comment on that field).
+	Determinations *DocRef      `json:"determinations,omitempty"`
+	Enforcement    *Enforcement `json:"enforcement,omitempty"`
+	Err            *RecordError `json:"error,omitempty"`
+	Custody        *Custody     `json:"custody_transfer,omitempty"`
+	ToolVersion    string       `json:"tool_version"`
+	PreviousSHA    string       `json:"previous_sha256"`
+	RecordSHA      string       `json:"record_sha256"`
+	Signature      *Signature   `json:"signature,omitempty"`
 }
 
 // Operator is the principal that performed the operation.

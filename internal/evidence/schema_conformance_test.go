@@ -259,6 +259,14 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			m.Records[1].EnvProfile.ContentSHA256 = ""
 			relink(t, m)
 		}},
+		{"a determinations reference with no content hash", func(t *testing.T, m *Manifest) {
+			m.Records[1].Determinations = &DocRef{ID: "operator-determinations"}
+			relink(t, m)
+		}},
+		{"a determinations reference id that is not an id", func(t *testing.T, m *Manifest) {
+			m.Records[1].Determinations = &DocRef{ID: "Operator Determinations", ContentSHA256: someHash}
+			relink(t, m)
+		}},
 		{"a profile review_by carrying a timestamp", func(t *testing.T, m *Manifest) {
 			m.Records[1].EnvProfile.ReviewBy = ts0
 			relink(t, m)
@@ -546,6 +554,11 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 				UserID:      "AROAEXAMPLEEXAMPLE:session",
 				AssumedRole: "automat-operator",
 			}
+			relink(t, m)
+		}},
+		{"an assess record carrying a determinations reference", func(t *testing.T, m *Manifest) {
+			m.Records[1].Operation = OpAssess
+			m.Records[1].Determinations = &DocRef{ID: "operator-determinations", ContentSHA256: someHash}
 			relink(t, m)
 		}},
 		{"a custody transfer closing the chain", func(t *testing.T, m *Manifest) {

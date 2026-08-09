@@ -1415,6 +1415,21 @@ content-hashed into the chain "like a catalog"
 (`docs/assessment-reporting.md`, "Inputs"), and a catalog is already how
 `DocRef` is used.
 
+**Landed (AUDIT-5).** `internal/assess` now exists, and `writeAssessEvidence`
+(`cmd/automat/assess.go`) writes exactly this reference: `record.determinations`
+(Go: `Record.Determinations`, a `*DocRef`), present when `--determinations`
+named a file and absent otherwise — the same absent-is-honest convention
+`Result.Determinations` follows. **Correction to this entry's own wording**:
+the paragraph above says "rather than a new field", which read literally
+would mean reusing `artifact` or `environment_profile` to carry the
+determinations hash — neither is the right subject, and doing that would
+make one field's meaning depend on which operation wrote the record. What
+shipped, and what this paragraph most likely meant, is a new field
+(`determinations`) built from the *existing* `DocRef` shape rather than a
+new bespoke object type — the same relationship `artifact` already has to
+that shape. Recorded here rather than silently reinterpreted, per CLAUDE.md's
+instruction to flag rather than reinterpret when design and code disagree.
+
 ## assessment-result/v1 — 1.0.0 (unreleased, Phase 4 assess Stage 3)
 
 New schema. **Listed here for maintainer ratification** under rule 6: a new

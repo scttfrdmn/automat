@@ -147,6 +147,62 @@ func TestAssessWritesAnOpAssessEvidenceRecord(t *testing.T) {
 		t.Errorf("record outcome = %q, want success — rendering a summary is not a failed operation "+
 			"even when every practice resolves NOT MET", rec.Outcome)
 	}
+	if rec.Determinations != nil {
+		t.Errorf("record.Determinations = %+v, want absent — no --determinations file was given",
+			rec.Determinations)
+	}
+}
+
+// TestAssessEvidenceRecordCarriesTheDeterminationsReference is AUDIT-5's
+// fix: schema/CHANGELOG.md's "Pre-publication change to evidence-manifest/
+// v1: `operation` gains `assess`" entry named this reference — "a reference
+// to the operator-determinations file it read, following evidence.DocRef's
+// existing id + content_sha256 shape" — while OpAssess was being scoped,
+// ahead of internal/assess existing to produce the hash. Confirms it is
+// actually written now that internal/assess does.
+func TestAssessEvidenceRecordCarriesTheDeterminationsReference(t *testing.T) {
+	g := assessWorld(t)
+	out := filepath.Join(t.TempDir(), "assess-out")
+	accountID := "111122223333"
+	determ := filepath.Join(t.TempDir(), "determinations.json")
+	if err := os.WriteFile(determ, []byte(`{
+		"schema_version": "1.0.0",
+		"determinations": [
+			{
+				"id": "media-disposal-2026",
+				"objectives": ["MP.L1-b.1.vii"],
+				"value": "MET",
+				"statement": "All removable media is degaussed before reuse per our written procedure.",
+				"date": "2026-08-01",
+				"responsible_party": "Jane Researcher, PI"
+			}
+		]
+	}`), 0o600); err != nil {
+		t.Fatalf("write determinations fixture: %v", err)
+	}
+
+	if _, _, err := runCLI(t, g, assessArgs(accountID, "--out", out, "--determinations", determ)...); err != nil {
+		t.Fatalf("assess: %v", err)
+	}
+
+	manifestPath := filepath.Join(evidenceDirForTest(), accountID+".json")
+	m, err := evidence.LoadOrNew(manifestPath, accountID, accountID, "", "", nil)
+	if err != nil {
+		t.Fatalf("load the evidence manifest: %v", err)
+	}
+	if len(m.Records) != 1 {
+		t.Fatalf("manifest has %d records, want 1", len(m.Records))
+	}
+	det := m.Records[0].Determinations
+	if det == nil {
+		t.Fatal("record.Determinations is absent, want a reference to the determinations file read")
+	}
+	if det.ID != "operator-determinations" {
+		t.Errorf("Determinations.ID = %q, want operator-determinations", det.ID)
+	}
+	if len(det.ContentSHA256) != 64 {
+		t.Errorf("Determinations.ContentSHA256 = %q, want a 64-character hex hash", det.ContentSHA256)
+	}
 }
 
 // evidenceDirForTest mirrors envprofile.DefaultEvidenceDir without importing

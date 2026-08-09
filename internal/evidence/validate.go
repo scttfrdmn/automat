@@ -221,6 +221,7 @@ func (r *Record) validate(path string, p *problems) {
 
 	r.Target.validate(path+".target", p)
 	r.Artifact.validate(path+".artifact", p)
+	r.Determinations.validate(path+".determinations", p)
 	r.EnvProfile.validate(path+".environment_profile", p)
 	r.Enforcement.validate(path+".enforcement", p)
 	r.Err.validate(path+".error", p)
