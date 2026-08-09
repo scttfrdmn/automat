@@ -272,6 +272,16 @@ the organization root if neither is set) and lists every account under it regard
 tag, plus every account a local evidence manifest under `--evidence-dir` records as
 parked.
 
+**`list` is not read-only by construction the way `verify` is (AUDIT-4 H3).** The tree walk
+travels `awsapi.OrgVendAPI` — `vend`'s own write-carrying client — brokered through the
+vendor role in the MEMBER state, because an inventory read through a different credential
+than `vend` uses would see a different view. `OrgVendAPI` carries `CreateAccount`,
+`MoveAccount`, `CreateOrganizationalUnit`, and `TagResource`; `list` calls none of them, but
+nothing in the type system stops it the way `OrgVerifyAPI`'s absence of a write method stops
+`verify`. A narrow read-only, MEMBER-brokered walk interface is the correct fix and is not
+yet built (AUDIT-4 H3's recommended follow-up); `list --help` states the gap honestly in the
+meantime.
+
 **Tag-based filtering is not available because the read grant does not exist.**
 `awsapi.OrgVendAPI` has no `ListTagsForResource` for account resources — the same
 absence `docs/open-questions.md` Q19 already documents, there for a different reason

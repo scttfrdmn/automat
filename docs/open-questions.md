@@ -867,3 +867,57 @@ than describing it, so the claim stays checkable rather than asserted.
 detect tampering; `vend`'s birth certificate and the external mirror are the load-bearing
 pieces DESIGN §11 already names. Recorded so the next audit does not re-discover the
 residual and re-file it as though the anchor were meant to close the whole finding.
+
+### Q22 — May an override widen a Config-rule parameter past what every input artifact permitted?
+
+Raised at AUDIT-4's L1. `internal/compilesets.Overrides.apply` returns an override's value
+verbatim, with no comparison against the conflicting values it is resolving — an override
+naming `ami-1,ami-2,ami-3,ami-4,ami-EVERYTHING` for a `set-intersect` conflict between
+`ami-1,ami-2` and `ami-3,ami-4` returns exactly that, a member neither input permitted.
+DESIGN §9's governing law is monotonicity: the resolved value must never permit behavior
+either input forbade. `artifact.RuleParameter.Permits` exists precisely so that law is a
+checkable predicate, and the override path bypasses it entirely.
+
+**What the code assumes now:** the override is trusted absolutely, on the reasoning
+`Override`'s own doc comment states — DESIGN §9 asks for "the value you intend", and an
+operator resolving a genuine three-way conflict may need a value none of the three inputs
+holds; clamping to the meet of the conflicting values would forbid exactly the case that
+reasoning was written for.
+
+**Why this is not decided yet.** It is a real design question with two defensible
+answers — trust the override completely (current behavior) or clamp it to what
+monotonicity would allow — and AUDIT-4 surfaced it under the ritual's own rule not to
+decide a design question mid-audit.
+
+**Why it is inert today and will not stay that way.** Nothing deployed reads the merged
+Config-rule map: `cmd/automat/vend.go`'s `configRuleNames` walks raw per-control
+`ConfigRules`, not the union, and no conformance pack is deployed because
+`internal/baseline` does not exist. An override's widened value reaches a disclosure
+sentence and nothing else. **The first change that deploys a conformance pack turns an
+unbounded operator-supplied value into a parameter of a live detective control** — decide
+this question as part of that work, not after it ships.
+
+### Q23 — `verify`'s evidence manifest has no rotation, and an hourly cron reaches the size ceiling in about a year
+
+Raised at AUDIT-4's M3. `writeVerifyEvidence` appends a record on every run, success or
+drift, with no pruning — the same unconditional-append shape `vend` uses, but `vend` runs
+once per account while `verify` is meant to run repeatedly against the same account
+(DESIGN §12's cron/CI framing). At roughly 935 bytes per record and `evidence
+.MaxManifestBytes`'s 8 MiB ceiling, an hourly cron reaches the ceiling in about a year, at
+which point every later run fails closed (`Write` refuses a manifest over the limit).
+
+**What the code assumes now:** the manifest grows forever and something else (an
+operator, a future command) prunes it before that matters.
+
+**Why this is not fixed rather than disclosed.** Every fix changes what the manifest means
+to a reader. Rotation (archiving old records elsewhere) breaks the hash chain's single
+linear history unless the archive is itself chained to the live manifest. Appending only
+on a change of finding (skip the write when this run's result matches the last one) would
+make "no record in the last N days" ambiguous between "checked and clean the whole time"
+and "not running" — exactly the silence DESIGN §11's evidence chain exists to prevent. A
+separate clean-run log alongside the manifest is a new document with its own review.
+
+**Not blocking anything today.** No deployment has run `verify` on a cron long enough to
+approach the ceiling. Recorded so the fix, whichever shape it takes, is chosen
+deliberately rather than discovered as a production incident when a manifest first
+refuses a write.
