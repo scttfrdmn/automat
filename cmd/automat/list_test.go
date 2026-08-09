@@ -88,15 +88,27 @@ func TestListReportsParkedAccount(t *testing.T) {
 	if lerr != nil {
 		t.Fatalf("list: %v", lerr)
 	}
-	if !strings.Contains(out, "parked") && !strings.Contains(out, "Parked accounts") {
-		t.Errorf("list did not report the parked account:\n%s", out)
-	}
 	accounts := f.State.AccountIDs()
 	if len(accounts) != 1 {
 		t.Fatalf("vend produced %d accounts, want exactly 1 parked account", len(accounts))
 	}
-	if !strings.Contains(out, accounts[0]) {
-		t.Errorf("list's parked section does not name account %s:\n%s", accounts[0], out)
+
+	// Assert against the "Parked accounts" section specifically, not the
+	// whole output: the account also appears in the OU walk's "Accounts:"
+	// section (it was created and moved before the policy step parked),
+	// so a naive substring check on the whole output would pass even if
+	// the parked-accounts inventory itself reported nothing.
+	idx := strings.Index(out, "Parked accounts")
+	if idx < 0 {
+		t.Fatalf("list did not print a parked-accounts section:\n%s", out)
+	}
+	parkedSection := out[idx:]
+	if strings.Contains(parkedSection, "none") {
+		t.Errorf("the parked-accounts section reports none, want account %s: %s",
+			accounts[0], parkedSection)
+	}
+	if !strings.Contains(parkedSection, accounts[0]) {
+		t.Errorf("list's parked section does not name account %s: %s", accounts[0], parkedSection)
 	}
 }
 
