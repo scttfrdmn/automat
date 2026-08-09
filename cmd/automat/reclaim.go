@@ -136,24 +136,48 @@ func newReclaimCmd(g *globals) *cobra.Command {
 
 			apply := &org.Reclaimer{Policy: policyAPI, Close: closeAPI, Mode: org.ModeApply,
 				Credential: credential, Principal: caller.ARN}
-			if _, err := apply.DetachOwnedPolicies(ctx, target, accountID); err != nil {
-				return reclaimPartialError(apply, target, err)
-			}
-			if _, err := apply.CloseAccount(ctx, accountID); err != nil {
-				return reclaimPartialError(apply, target, err)
-			}
-			if err := renderActions(out, "\nApplied:", apply.Actions()); err != nil {
-				return err
+			_, detachErr := apply.DetachOwnedPolicies(ctx, target, accountID)
+			var applyErr error
+			if detachErr != nil {
+				applyErr = detachErr
+			} else if _, closeErr := apply.CloseAccount(ctx, accountID); closeErr != nil {
+				applyErr = closeErr
 			}
 
+			// The manifest is written whether or not the apply succeeded, and
+			// before the error is returned — the same discipline
+			// writeVendEvidence's own comment states: a run that detached a real
+			// SCP and then failed to close has produced the state that most
+			// needs recording (AUDIT-6 H1). automat's own detach-then-close
+			// ordering (docs/reclaim-design.md) means a detach can genuinely
+			// have happened even though this whole command reports failure.
 			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
 			if serr != nil {
+				if applyErr != nil {
+					return fmt.Errorf("%w (and the evidence signer could not be built: %v)", applyErr, serr)
+				}
 				return serr
 			}
 			manifestPath, werr := writeReclaimEvidence(accountID, target, caller.ARN, time.Now(),
-				apply.Actions(), orgInfo, evidenceDir, signer)
+				apply.Actions(), orgInfo, evidenceDir, signer, applyErr)
 			if werr != nil {
+				if applyErr != nil {
+					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", applyErr, werr)
+				}
 				return werr
+			}
+
+			if applyErr != nil {
+				if rerr := renderActions(cmd.ErrOrStderr(), "Applied before the failure:",
+					apply.Actions()); rerr != nil {
+					return fmt.Errorf("%w (and the partial-progress report could not be written: %v)",
+						applyErr, rerr)
+				}
+				return reclaimPartialError(apply, target, applyErr, manifestPath)
+			}
+
+			if err := renderActions(out, "\nApplied:", apply.Actions()); err != nil {
+				return err
 			}
 			if _, perr := fmt.Fprintf(out, "\nEvidence: %s\n", manifestPath); perr != nil {
 				return fmt.Errorf("write the result: %w", perr)
@@ -234,11 +258,13 @@ func reclaimOrgClients(ctx context.Context, g *globals, read awsapi.OrgAPI, call
 }
 
 // reclaimPartialError reports a mid-apply failure with what already
-// happened, the same discipline vend.go's partialBundleError follows: an
-// operator reading this needs to know the account may already have had its
-// SCPs detached even though the close itself failed (or the reverse is
-// impossible by construction — detach runs first).
-func reclaimPartialError(r *org.Reclaimer, target string, cause error) error {
+// happened, the same discipline vend.go's vendFailure follows: an operator
+// reading this needs to know the account may already have had its SCPs
+// detached even though the close itself failed (or the reverse is
+// impossible by construction — detach runs first). manifestPath is named
+// here too (AUDIT-6 H1): the failure now always has a record beside it,
+// since writeReclaimEvidence runs before this function is ever called.
+func reclaimPartialError(r *org.Reclaimer, target string, cause error, manifestPath string) error {
 	actions := r.Actions()
 	if len(actions) == 0 {
 		return cause
@@ -249,6 +275,9 @@ func reclaimPartialError(r *org.Reclaimer, target string, cause error) error {
 			msg += "\n  " + a.String()
 		}
 	}
+	if manifestPath != "" {
+		msg += fmt.Sprintf("\n\nRecorded in %s.", manifestPath)
+	}
 	return fmt.Errorf("%s", msg)
 }
 
@@ -256,13 +285,20 @@ func reclaimPartialError(r *org.Reclaimer, target string, cause error) error {
 // OpenDir/LoadOrNew/Append/Write sequence writeVerifyEvidence
 // (verify.go) and writeAssessEvidence (assess.go) both use.
 //
-// Always evidence.OutcomeSuccess: docs/reclaim-design.md decided this
-// operation's own outcome is whether the closure request was accepted, not
-// a claim about the account's compliance — there is nothing here for
-// success/failure to disagree with the way verify's drift-vs-clean split
-// does.
+// Written unconditionally, whether or not applyErr is nil, and before the
+// caller returns any error (AUDIT-6 H1) — the same discipline
+// writeVendEvidence's own comment states: a run that detached a real SCP
+// and then failed to close has produced the state that most needs
+// recording, and an operator handed only the error has an account whose
+// guardrails changed with nothing written down. applyErr nil means the
+// closure request was accepted (evidence.OutcomeSuccess); non-nil means
+// either step failed, and the record carries what failed and why
+// (evidence.OutcomeFailure) — this is a claim about whether the request
+// this command made was accepted, never about the account's compliance,
+// matching docs/reclaim-design.md's own reasoning for using OutcomeSuccess
+// at all.
 func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, actions []org.Action,
-	info reclaimOrgInfo, evidenceDir string, signer evidence.Signer) (string, error) {
+	info reclaimOrgInfo, evidenceDir string, signer evidence.Signer, applyErr error) (string, error) {
 	if evidenceDir == "" {
 		evidenceDir = envprofile.DefaultEvidenceDir
 	}
@@ -293,13 +329,31 @@ func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, ac
 		}
 	}
 
+	outcome := evidence.OutcomeSuccess
+	var recErr *evidence.RecordError
+	if applyErr != nil {
+		outcome = evidence.OutcomeFailure
+		recErr = &evidence.RecordError{Message: onelineError(applyErr)}
+		if pe, ok := awsapi.AsPermissionError(applyErr); ok {
+			recErr.Action, recErr.Resource = pe.Action, pe.Resource
+			if pe.Grant != "" {
+				recErr.Remediation = onelineError(fmt.Errorf("%s", pe.Grant))
+			}
+		}
+		if recErr.Remediation == "" {
+			recErr.Remediation = "re-run `automat reclaim --account " + accountID + " --yes`; the plan " +
+				"it prints will show which of the two steps still needs to happen"
+		}
+	}
+
 	rec := evidence.Record{
 		Timestamp:   now.UTC().Format(time.RFC3339),
 		Operation:   evidence.OpReclaim,
-		Outcome:     evidence.OutcomeSuccess,
+		Outcome:     outcome,
 		Operator:    evidence.Operator{ARN: callerARN},
 		Target:      &evidence.Target{AccountID: accountID, OUID: target},
 		Enforcement: &evidence.Enforcement{SCPARNs: detached},
+		Err:         recErr,
 		ToolVersion: version.Version,
 	}
 	if _, err := m.Append(rec, signer); err != nil {

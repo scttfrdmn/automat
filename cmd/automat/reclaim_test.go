@@ -216,6 +216,59 @@ func TestReclaimWritesAnOpReclaimEvidenceRecord(t *testing.T) {
 	}
 }
 
+// TestReclaimWritesEvidenceForAPartialFailureToo is AUDIT-6 H1: a detach
+// that actually happened, followed by a close that failed (the closure
+// quota, say), must not vanish with zero record just because the whole
+// command reports an error — the same discipline writeVendEvidence's own
+// comment states ("the manifest is written whether or not the vend
+// succeeded"). Before the fix, reclaimPartialError returned straight from
+// RunE and writeReclaimEvidence was never reached on this path.
+func TestReclaimWritesEvidenceForAPartialFailureToo(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+	accountID := vendThenVerify(t, g, f, profile)
+	ou := f.State.ParentOf(accountID)
+	before := f.State.AttachedTo(ou)
+	if len(before) == 0 {
+		t.Fatal("fixture has no policy attached before reclaim")
+	}
+	f.Reclaim.CloseAccountQuotaExceeded = true
+
+	_, _, err := runCLI(t, g, reclaimArgs(accountID, "--yes")...)
+	if err == nil {
+		t.Fatal("expected the quota-exceeded close to fail")
+	}
+	if !strings.Contains(err.Error(), "Recorded in") {
+		t.Errorf("partial-failure error does not name where it was recorded: %v", err)
+	}
+
+	manifestPath := "evidence/" + accountID + ".json"
+	m, lerr := evidence.LoadOrNew(manifestPath, accountID, accountID, "", "", nil)
+	if lerr != nil {
+		t.Fatalf("no evidence manifest after the partial failure: %v", lerr)
+	}
+	var found bool
+	for _, rec := range m.Records {
+		if rec.Operation != evidence.OpReclaim {
+			continue
+		}
+		found = true
+		if rec.Outcome != evidence.OutcomeFailure {
+			t.Errorf("OpReclaim record outcome = %q, want failure", rec.Outcome)
+		}
+		if rec.Err == nil || rec.Err.Message == "" {
+			t.Errorf("OpReclaim failure record carries no error detail: %+v", rec.Err)
+		}
+		if rec.Enforcement == nil || len(rec.Enforcement.SCPARNs) == 0 {
+			t.Errorf("OpReclaim failure record does not name the SCP that was actually detached "+
+				"before the close failed: %+v", rec.Enforcement)
+		}
+	}
+	if !found {
+		t.Fatalf("manifest has no OpReclaim record after the partial failure: %+v", m.Records)
+	}
+}
+
 // TestReclaimHonorsEvidenceDirFlag mirrors assess's own AUDIT-5 fix
 // (TestAssessHonorsEvidenceDirFlag): reclaim has no --environment-profile to
 // read baseline.evidence.local_dir out of, so --evidence-dir must actually
