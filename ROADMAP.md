@@ -119,22 +119,30 @@ Recorded now so it is not lost, and gated deliberately: this is a new document t
 - `broker/` — **task 1 done.** `broker.Assume` assumes the vendor role via `awsapi.STSAPI`, resolving the ExternalId through `config.ResolveExternalID` (never a bare value), and returns an `aws.Config` that builds a working `awsapi.OrgVendAPI` client. Session lifetime is single-assumption-per-vend by design; re-assumption is deferred to whichever later task's wiring shows a real need for it (see the package doc). Failures produce rule-7 remediation matching `preflight.checkVendorRole`'s wording for the same failure. Pulled `github.com/aws/aws-sdk-go-v2/credentials` from indirect to direct in `go.mod` — no new version, already pre-approved (CLAUDE.md).
 - **Task 2 done.** `vend.go`'s `vendOrgClient` classifies STANDALONE/MANAGEMENT/MEMBER the same way `preflight.classify` does, and picks `globals.go`'s new `brokeredOrgVendClient` (built on `broker.Assume`) rather than the native `orgVendClient` when the caller is a member of the organization. `org.Brokered` is now genuinely produced, not only wired — a denial on an account/OU operation names the vendor role's file, and a denial on a policy operation (always delegated, never brokered) names the delegation policy, per `org.Ensurer.denied`'s existing branch. The create-lands-under-root-then-move race is unchanged: `park`/`vendResumeHint` already read from `awsapi.PermissionError` regardless of which credential produced it, so no separate handling was needed for the brokered path. One `aws.Config` is built per vend and shared across the plan and apply passes, matching task 1's single-assumption design — confirmed by test rather than assumed.
 - **Task 3 done.** `setup` (MANAGEMENT side) applies the delegation policy and creates the vendor role directly, via two new `awsapi` interfaces (`OrgSetupAPI`, `IAMRoleAPI`) and `internal/org.EnsureDelegationPolicy`/`EnsureVendorRole`. Decided against render-then-apply: `VendorRoleCFN`/`VendorRoleTF` produce CloudFormation/Terraform text, but `iam.CreateRole`/`PutRolePolicy`/`organizations.PutResourcePolicy` all take raw JSON policy content — no template-consuming path existed either way. `internal/bundle` gained `VendorRoleTrustPolicyJSON`/`VendorRolePermissionsPolicyJSON`, reusing `DelegationPolicy`'s struct-marshaled `policyDocument` shape rather than the templates. A sharper finding shaped the delegation-policy half: Organizations holds exactly ONE resource policy per organization — `PutResourcePolicy` replaces it wholesale, with no per-statement update and no owner tag on the document to check first. `EnsureDelegationPolicy` reads first and refuses (does not merge, does not overwrite) when a policy already exists that is not already automat's own rendering of the request. `setup` gained `--external-id-ref`, since apply has no template parameter to defer the ExternalId to and AUDIT-1 already ruled out automat generating one.
-- **Task 4, not started:** emulator integration for `broker`, per the subsection below — needs task 1 (done) but is otherwise independent of tasks 2–3.
+- **Task 4 done, with a finding.** `test/integration/broker_test.go` exercises `broker.Assume` against a real substrate server, in its own module (`test/integration/go.mod`) with its own `make integration` target, never in `make test`. The property this task was scoped to test — substrate's auth controller enforcing a vendor role's trust policy and `sts:ExternalId` condition on `AssumeRole` — turned out not to exist in substrate yet: `AssumeRole` there checks only that the role exists. Filed as substrate#593; docs/testing-strategy.md carries the full finding. What the module tests instead, honestly disclosed as the fallback: wire-format correctness (a real HTTP/XML round trip a fake cannot get wrong by construction) and the one trust-adjacent rejection substrate does implement (an unknown role).
 - Nested OU creation within depth limits — the native-path logic (`internal/org/ou.go`'s `MaxOUDepth`/`depthOf`) already exists; doing the same creates through a brokered credential is task 2's work, not new logic.
 - **Accept:** fake-backed MEMBER vend; failure modes (unassumable role, missing delegation) produce actionable remediation text naming the exact missing grant.
 
-### Emulator integration for `broker` — decided, scheduled here
+### Emulator integration for `broker` — done, and the plan's central assumption was wrong
 
-Approved in Phase 2 and deliberately **not built** then: `broker` is a Phase 3
-deliverable, and integration tests for a package that does not exist yet are
-speculation. Build this when `broker` is built.
+Approved in Phase 2 and deliberately **not built** then: `broker` was a Phase 3
+deliverable, and integration tests for a package that did not exist yet would have
+been speculation.
 
-`broker`'s surface is `sts:AssumeRole` and `sts:GetCallerIdentity`, which an emulator
-covers today, and it is the package where an emulator earns its place rather than
-duplicating a fake: the emulator's auth controller IAM-enforces calls made with STS
-session credentials, so the test exercises the **trust policy and the ExternalId
-condition** instead of a fake that returns credentials because it was written to.
-A hand-rolled `STSAPI` fake cannot refuse an assumption for the right reason.
+The plan's premise, as written when this section was drafted: `broker`'s surface is
+`sts:AssumeRole` and `sts:GetCallerIdentity`, and the emulator was expected to be the
+package where it "earns its place" rather than duplicating a fake, because its auth
+controller was believed to IAM-enforce a role's trust policy and its `ExternalId`
+condition on assumption — the one thing a hand-rolled `STSAPI` fake cannot refuse for
+the right reason. **That premise does not hold.** Reading substrate's own
+`AssumeRole` implementation shows it checks only that the named role exists; the
+trust policy and any `ExternalId` condition are stored and never evaluated. Filed as
+[substrate#593](https://github.com/scttfrdmn/substrate/issues/593). Built anyway,
+scoped honestly to what IS true today: `test/integration/broker_test.go` proves
+`broker.Assume`'s wire-format correctness against a real STS-shaped server (a class
+of bug a fake cannot have, since it never parses a response off the wire) and the one
+trust-adjacent rejection substrate does implement (an unknown role). See
+`docs/testing-strategy.md` for the full finding.
 
 Constraints, both non-negotiable and both from CLAUDE.md's testing section:
 
@@ -157,9 +165,13 @@ policy lifecycle, placement, tagging — 17 operations plus the nine behaviors t
 ensure layer depends on), [#579](https://github.com/scttfrdmn/substrate/issues/579)
 (`SimulatePrincipalPolicy`, which `preflight` is built on),
 [#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: no plugin, so
-`baseline` has nothing to run against). Keep the behavior-first framing on any
-further filings. `preflight`, `org`, and `baseline` are blocked on these and are not
-migration candidates until they land.
+`baseline` has nothing to run against), and
+[#593](https://github.com/scttfrdmn/substrate/issues/593) (`AssumeRole` does not
+evaluate a role's trust policy or an `sts:ExternalId` condition — found while
+building this section, above). Keep the behavior-first framing on any further
+filings. `preflight`, `org`, and `baseline` are blocked on #578–580 and are not
+migration candidates until they land; `broker` migrated on #593's residual (see
+above) rather than waiting on it.
 
 ## Phase 4 — Verify + union hardening
 - `verify` per DESIGN §12 (policy/detective/procedural layers, findings vs drift distinction, enforcement-class breakdown, cron-friendly exit codes).

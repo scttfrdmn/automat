@@ -26,8 +26,34 @@ moved tests were testing.
 
 ## Emulator integration lives in a SEPARATE GO MODULE
 
-`test/integration/go.mod`, run from its own make target and never from the default
-`make test` gate. Not a style preference: a dependency's `go` directive floor propagates to
-everyone who runs `go install` on the main module, regardless of which files import it — so
-test-only *in intent* is not test-only *in effect* within one module. automat's floor stays
-at 1.24 and the emulator stays out of automat's dependency graph.
+`test/integration/go.mod`, run from its own make target (`make integration`) and never from
+the default `make test` gate. Not a style preference: a dependency's `go` directive floor
+propagates to everyone who runs `go install` on the main module, regardless of which files
+import it — so test-only *in intent* is not test-only *in effect* within one module.
+automat's floor stays at 1.24 and the emulator ([`scttfrdmn/substrate`](https://github.com/scttfrdmn/substrate))
+stays out of automat's dependency graph.
+
+## `internal/broker` is the first (and so far only) package that migrated
+
+`test/integration/broker_test.go` exercises `broker.Assume` against a real running
+substrate server (`emulator.StartTestServer`) rather than `awsfake.STS` — the wire-format
+correctness (HTTP, XML marshaling, response parsing) a hand-rolled fake cannot get wrong
+by construction, because it never parses anything off a wire.
+
+**It does not test the property Task 4 was scoped to test.** ROADMAP.md's justification for
+reaching for an emulator here was that substrate's auth controller enforces a role's trust
+policy — including the `sts:ExternalId` condition — on `AssumeRole`. Reading substrate's own
+`emulator/sts_plugin.go` (checked against the version this module pins) shows `AssumeRole`
+verifies only that the named role exists; it never reads `AssumeRolePolicyDocument` and
+never evaluates an `ExternalId` against it. A call made *with* an assumed session is
+authorized against the role's *permissions* policy (substrate#411, closed) — that half
+works — but the assumption itself is unconditional today. Filed as
+[substrate#593](https://github.com/scttfrdmn/substrate/issues/593).
+
+`TestBrokerAssumeAgainstARealSTSServer`'s own doc comment carries this disclosure, and
+asserts the current (unenforced) behavior explicitly with a comment naming the issue, so a
+substrate upgrade that closes #593 turns the assertion red instead of leaving a silent false
+negative. `TestBrokerAssumeIsRejectedForAnUnknownRole` is the one trust-adjacent rejection
+substrate does implement today — a role absent from state refuses with
+`NoSuchEntityException` — and is the whole ExternalId-adjacent coverage this module can
+honestly claim until #593 lands.

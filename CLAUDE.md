@@ -73,6 +73,9 @@ gen/                    # maintainer tooling: OSCAL + conformance-pack → catal
 docs/                   # conventions.md is Phase 5 scope, not yet written; see
                         # docs/cli-surface.md, docs/audit-ritual.md, docs/open-questions.md,
                         # and the rest of docs/ for what exists today.
+test/integration/       # SEPARATE Go module (its own go.mod, go 1.26) — emulator-backed
+                        # tests, run only via `make integration`, never `make test`. See
+                        # docs/testing-strategy.md.
 ```
 
 ## Working style

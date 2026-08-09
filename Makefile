@@ -10,7 +10,7 @@ export CGO_ENABLED := 0
 
 GOFLAGS_BUILD := -trimpath -ldflags "-s -w -X $(PKG)/internal/version.Version=$(VERSION)"
 
-.PHONY: all build test lint fmt vet tidy clean catalogs catalogs-check golden smoke help
+.PHONY: all build test lint fmt vet tidy clean catalogs catalogs-check golden smoke integration help
 
 all: build test lint
 
@@ -60,6 +60,15 @@ endif
 	@echo "No test in this tree carries the smoke build tag yet -- this will run zero tests."
 	@echo "The manual checklist is docs/smoke.md; it has not been automated."
 	go test -tags=smoke -count=1 ./internal/... -run 'Smoke'
+
+
+# Emulator-backed tests, in a separate Go module (docs/testing-strategy.md,
+# CLAUDE.md). The module's go directive is ahead of this one's; a dependency's
+# floor propagates to `go install` for everyone in the same module regardless of
+# which files import it, so the emulator stays out of automat's own go.mod.
+# Never part of the default `make test` gate.
+integration: ## Run the emulator-backed integration tests (separate module, own go.mod)
+	cd test/integration && go test ./...
 
 help: ## List targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-10s %s\n", $$1, $$2}'
