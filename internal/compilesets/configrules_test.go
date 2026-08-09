@@ -98,13 +98,17 @@ func TestConfigRuleDedupedAcrossArtifacts(t *testing.T) {
 	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
 		Identifier: "IAM_PASSWORD_POLICY",
 		Parameters: map[string]artifact.RuleParameter{
-			"MinimumPasswordLength": {Value: "14", Order: artifact.OrderMax},
+			"MinimumPasswordLength": {Value: "20", Order: artifact.OrderMax},
 		},
 	})
 	b := artifactWithConfigRule(t, "set-b", artifact.ConfigRule{
 		Identifier: "IAM_PASSWORD_POLICY",
 		Parameters: map[string]artifact.RuleParameter{
-			"MinimumPasswordLength": {Value: "20", Order: artifact.OrderMax},
+			// Deliberately LOWER than a's value: if combineConfigRules ever
+			// stopped calling Resolve and just took whichever side arrived
+			// second (or first), this would go undetected by a fixture where
+			// the second side happens to already hold the stricter value.
+			"MinimumPasswordLength": {Value: "8", Order: artifact.OrderMax},
 			"RequireNumbers":        {Value: "true", Order: artifact.OrderExact},
 		},
 	})
@@ -115,7 +119,8 @@ func TestConfigRuleDedupedAcrossArtifacts(t *testing.T) {
 	}
 	rule := m.ConfigRules["IAM_PASSWORD_POLICY"]
 	if got := rule.Parameters["MinimumPasswordLength"].Value; got != "20" {
-		t.Errorf("MinimumPasswordLength = %q, want %q", got, "20")
+		t.Errorf("MinimumPasswordLength = %q, want %q (max order must keep set-a's stricter, higher "+
+			"floor even though set-b arrived second with a weaker value)", got, "20")
 	}
 	if got := rule.Parameters["RequireNumbers"].Value; got != "true" {
 		t.Errorf("RequireNumbers = %q, want %q (present on only one side, kept as-is)", got, "true")
