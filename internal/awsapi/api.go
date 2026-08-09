@@ -208,6 +208,16 @@ type OrgVerifyAPI interface {
 // carrying automat's own owner tag, the identical ownership check
 // EnsurePolicyAttachment already performs before ever attaching one.
 //
+// ListAccountsForParent is a second, later-added read (AUDIT-6 C1):
+// DetachPolicy's target is the account's parent OU, and an SCP is attached
+// at the OU rather than the account (DESIGN §5, §8) — so an OU can hold more
+// than one account, the same fact `docs/cli-surface.md` D5's tree walk
+// already depends on. Detaching the OU's automat-owned policy while another
+// ACTIVE account still sits under that OU strips that sibling's guardrails
+// as a side effect of reclaiming a DIFFERENT account entirely. This method
+// is what DetachOwnedPolicies checks before detaching anything, the same
+// read OrgVendAPI already grants `list` for the identical tree-walk reason.
+//
 // DeletePolicy is deliberately ABSENT even though the onboarding bundle
 // currently requests it: docs/reclaim-design.md decided reclaim detaches but
 // does not delete, so this interface stays narrower than the grant it could
@@ -223,6 +233,8 @@ type OrgReclaimAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.ListPoliciesForTargetOutput, error)
 	ListTagsForResource(ctx context.Context, in *organizations.ListTagsForResourceInput,
 		optFns ...func(*organizations.Options)) (*organizations.ListTagsForResourceOutput, error)
+	ListAccountsForParent(ctx context.Context, in *organizations.ListAccountsForParentInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListAccountsForParentOutput, error)
 }
 
 // # What is deliberately absent from all four

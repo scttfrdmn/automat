@@ -134,6 +134,58 @@ func TestReclaimLeavesACentralPolicyAttached(t *testing.T) {
 	}
 }
 
+// TestReclaimLeavesASharedOUPolicyAttachedWhenALiveSiblingExists is AUDIT-6
+// C1's CLI-level security assertion: two accounts vended under the same
+// environment profile land under the same target OU and share one
+// automat-owned SCP (attached at the OU, DESIGN §5/§8). Reclaiming ONE of
+// them must not strip that SCP out from under the other, which is still
+// ACTIVE and was never named on the command line.
+func TestReclaimLeavesASharedOUPolicyAttachedWhenALiveSiblingExists(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile, "--name", "LabA")...); err != nil {
+		t.Fatalf("vend A: %v", err)
+	}
+	if _, _, err := runCLI(t, g, vendArgs(profile, "--name", "LabB")...); err != nil {
+		t.Fatalf("vend B: %v", err)
+	}
+	accounts := f.State.AccountIDs()
+	if len(accounts) != 2 {
+		t.Fatalf("want 2 vended accounts, got %d: %v", len(accounts), accounts)
+	}
+	accountA, accountB := accounts[0], accounts[1]
+	ou := f.State.ParentOf(accountA)
+	if f.State.ParentOf(accountB) != ou {
+		t.Fatalf("accounts landed under different OUs; this test needs them to share one")
+	}
+	before := f.State.AttachedTo(ou)
+	if len(before) == 0 {
+		t.Fatalf("shared OU %s has no policies attached before reclaim; the fixture is wrong", ou)
+	}
+
+	out, _, err := runCLI(t, g, reclaimArgs(accountA, "--yes")...)
+	if err != nil {
+		t.Fatalf("reclaim A: %v", err)
+	}
+	if !strings.Contains(out, accountB) {
+		t.Errorf("reclaim's plan/apply output does not name the live sibling %s:\n%s", accountB, out)
+	}
+
+	after := f.State.AttachedTo(ou)
+	if len(after) == 0 {
+		t.Errorf("SECURITY: reclaiming %s detached the shared OU %s's automat-owned SCP, stripping "+
+			"guardrails from still-ACTIVE sibling account %s", accountA, ou, accountB)
+	}
+	if got := f.State.AccountStatus(accountA); got != orgtypes.AccountStatusSuspended {
+		t.Errorf("account %s status = %q, want SUSPENDED — the sibling guard must not block closure "+
+			"of the account actually named", accountA, got)
+	}
+	if got := f.State.AccountStatus(accountB); got != orgtypes.AccountStatusActive {
+		t.Errorf("sibling account %s status = %q, want ACTIVE (untouched)", accountB, got)
+	}
+}
+
 // TestReclaimWritesAnOpReclaimEvidenceRecord follows vend/verify/assess's
 // own evidence-assertion pattern.
 func TestReclaimWritesAnOpReclaimEvidenceRecord(t *testing.T) {

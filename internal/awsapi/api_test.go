@@ -123,13 +123,19 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 
 // TestOrgReclaimAPICarriesExactlyItsDesignedSurface is DetachPolicy's and
 // CloseAccount's replacement guard, now that reclaim has a gate to check
-// against: exactly the four methods docs/reclaim-design.md specifies, no
-// more (a DeletePolicy added here would silently widen the destructive
-// surface reclaim uses without a corresponding design decision) and no
-// fewer (a method quietly dropped would break reclaim's own detach-then-close
-// sequencing without any test noticing why).
+// against: exactly the five methods this interface's own doc comment
+// specifies, no more (a DeletePolicy added here would silently widen the
+// destructive surface reclaim uses without a corresponding design decision)
+// and no fewer (a method quietly dropped would break reclaim's own
+// detach-then-close sequencing without any test noticing why).
+// ListAccountsForParent joined the original four at AUDIT-6 C1: without it,
+// DetachOwnedPolicies cannot tell whether the OU it is about to strip a
+// policy from still holds another ACTIVE account.
 func TestOrgReclaimAPICarriesExactlyItsDesignedSurface(t *testing.T) {
-	want := []string{"CloseAccount", "DetachPolicy", "ListPoliciesForTarget", "ListTagsForResource"}
+	want := []string{
+		"CloseAccount", "DetachPolicy", "ListAccountsForParent",
+		"ListPoliciesForTarget", "ListTagsForResource",
+	}
 	sort.Strings(want)
 	got := interfaceMethods(t, reflect.TypeOf((*OrgReclaimAPI)(nil)).Elem())
 	if !reflect.DeepEqual(got, want) {

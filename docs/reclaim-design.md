@@ -51,6 +51,23 @@ of "close succeeded, detach failed" cannot happen, because `CloseAccount` does n
 a way that leaves an ambiguous account state — either it accepts the request or it refuses
 outright.
 
+**A policy is attached at the OU, not the account (DESIGN §5, §8) — so step 1 checks for a
+live sibling before detaching anything (AUDIT-6 C1).** An OU can hold more than one account:
+two vends against the same `target_ou` land two accounts under one OU sharing one
+automat-owned SCP, the ordinary shape `docs/cli-surface.md` D5's `list` tree walk already
+depends on existing. `DetachOwnedPolicies` resolves the account being reclaimed's parent OU
+(`target`, from `ListParents`, same as `verify`) and would, without a check, detach that
+policy from `target` regardless of what else sits under it — stripping a still-ACTIVE
+sibling's guardrails as an unannounced side effect of reclaiming a *different* account.
+Fixed by a read before the detach: `ListAccountsForParent` against `target`, excluding the
+account being reclaimed itself, refusing to detach an automat-owned policy while any other
+account under `target` reports `ACTIVE`. The policy is reported `unchanged` with the
+sibling's account id named, not silently skipped — the same "report what nothing here may
+touch" discipline the not-automat's-policy branch already follows. `ListAccountsForParent`
+is already in the delegation policy's `readActions` (`internal/bundle/policy.go`), scoped to
+the same OU ARNs the attach/detach statement already names, so no bundle change was needed —
+the read this fix needs was already granted, just never called from this path.
+
 ## The rate limit
 
 AWS's own `CloseAccount` doc comment (verified directly against the SDK source, not

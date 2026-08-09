@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -99,7 +100,17 @@ func (r *Reclaimer) denied(err error, action, resource string) error {
 // per candidate. Detach-then-close is docs/reclaim-design.md's own ordering
 // decision: a failed close afterward leaves a known, resumable state (no
 // automat SCPs, account otherwise intact) rather than an ambiguous one.
-func (r *Reclaimer) DetachOwnedPolicies(ctx context.Context, target string) ([]*Action, error) {
+//
+// accountID is the account reclaim is closing, and it is what makes the
+// sibling check below possible to state correctly: target is the account's
+// parent OU, not the account itself, and an SCP is attached at the OU
+// (DESIGN §5, §8) — so it can be shared by more than one account under the
+// same OU. Detaching it while another account under target is still ACTIVE
+// would strip that account's guardrails as an unannounced side effect of
+// reclaiming a different one (AUDIT-6 C1). accountID is excluded from that
+// check because it is the very account being closed, and its own status is
+// irrelevant to whether the OU's policy still protects anyone else.
+func (r *Reclaimer) DetachOwnedPolicies(ctx context.Context, target, accountID string) ([]*Action, error) {
 	if target == "" {
 		return nil, fmt.Errorf("cannot detach policies from an empty target")
 	}
@@ -109,6 +120,8 @@ func (r *Reclaimer) DetachOwnedPolicies(ctx context.Context, target string) ([]*
 	}
 
 	var out []*Action
+	var siblingsChecked bool
+	var siblings []string
 	for _, p := range attached {
 		owned, _, oerr := r.policyOwnership(ctx, p.id)
 		if oerr != nil {
@@ -126,6 +139,31 @@ func (r *Reclaimer) DetachOwnedPolicies(ctx context.Context, target string) ([]*
 			}))
 			continue
 		}
+
+		// The sibling check runs once, lazily, only once an automat-owned policy
+		// is actually found — a target with nothing of automat's to detach never
+		// pays for a read it has no use for.
+		if !siblingsChecked {
+			siblings, err = r.activeSiblings(ctx, target, accountID)
+			if err != nil {
+				return out, err
+			}
+			siblingsChecked = true
+		}
+		if len(siblings) > 0 {
+			out = append(out, r.record(Action{
+				Verb: VerbUnchanged, Kind: "service control policy", Name: label, ID: p.id, Target: target,
+				Detail: fmt.Sprintf("automat's, but left attached: %s also sits under %s and is still "+
+					"ACTIVE. This policy is attached at the OU, not the account (DESIGN §5, §8), so "+
+					"detaching it here would strip %s's guardrails as a side effect of reclaiming a "+
+					"different account. Reclaim %s (or every other account under %s) first, or move it "+
+					"out of %s, before this policy can be detached",
+					strings.Join(siblings, ", "), target, strings.Join(siblings, ", "),
+					strings.Join(siblings, ", "), target, target),
+			}))
+			continue
+		}
+
 		if r.planning() {
 			out = append(out, r.record(Action{
 				Verb: VerbDetach, Kind: "service control policy", Name: label, ID: p.id, Target: target,
@@ -153,6 +191,49 @@ func (r *Reclaimer) DetachOwnedPolicies(ctx context.Context, target string) ([]*
 		}
 	}
 	return out, nil
+}
+
+// activeSiblings lists the ids of every ACTIVE account under target other
+// than accountID — the accounts an OU-level detach would affect besides the
+// one reclaim is actually closing.
+func (r *Reclaimer) activeSiblings(ctx context.Context, target, accountID string) ([]string, error) {
+	var out []string
+	var token *string
+	seen := map[string]bool{}
+	for i := 0; i < listPageCap; i++ {
+		page, err := r.Policy.ListAccountsForParent(ctx, &organizations.ListAccountsForParentInput{
+			ParentId: aws.String(target), NextToken: token,
+		})
+		if err != nil {
+			if isCode(err, "ParentNotFoundException") {
+				// target is not (or is no longer) an OU with account children —
+				// a root, or an OU AWS reports differently than expected. Nothing
+				// to protect, so this is not a sibling-check failure.
+				return nil, nil
+			}
+			return nil, r.denied(err, "organizations:ListAccountsForParent", target)
+		}
+		for _, a := range page.Accounts {
+			id := aws.ToString(a.Id)
+			if id == accountID {
+				continue
+			}
+			if a.Status == orgtypes.AccountStatusActive {
+				out = append(out, id)
+			}
+		}
+		if page.NextToken == nil || aws.ToString(page.NextToken) == "" {
+			return out, nil
+		}
+		if seen[aws.ToString(page.NextToken)] {
+			return nil, fmt.Errorf("listing accounts under %s: the same pagination token came back "+
+				"twice, so the list does not terminate; automat stopped rather than looping", target)
+		}
+		seen[aws.ToString(page.NextToken)] = true
+		token = page.NextToken
+	}
+	return nil, fmt.Errorf("listing accounts under %s: stopped after %d pages without reaching the "+
+		"end of the list", target, listPageCap)
 }
 
 // CloseAccount closes accountID, or reports that it would.

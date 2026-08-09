@@ -45,7 +45,7 @@ func TestDetachOwnedPoliciesDetachesOnlyAutomatsOwn(t *testing.T) {
 	f.State.SeedAttachment(owned, ou)
 	f.State.SeedAttachment(central, ou)
 
-	actions, err := f.R.DetachOwnedPolicies(ctx(), ou)
+	actions, err := f.R.DetachOwnedPolicies(ctx(), ou, "")
 	if err != nil {
 		t.Fatalf("DetachOwnedPolicies: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestDetachOwnedPoliciesPlanModeWritesNothing(t *testing.T) {
 	owned := f.seedOwnedPolicy("automat-x-1", scpDoc)
 	f.State.SeedAttachment(owned, ou)
 
-	actions, err := f.R.DetachOwnedPolicies(ctx(), ou)
+	actions, err := f.R.DetachOwnedPolicies(ctx(), ou, "")
 	if err != nil {
 		t.Fatalf("DetachOwnedPolicies: %v", err)
 	}
@@ -160,8 +160,100 @@ func TestCloseAccountReportsTheQuotaByName(t *testing.T) {
 // TestDetachOwnedPoliciesRefusesAnEmptyTarget.
 func TestDetachOwnedPoliciesRefusesAnEmptyTarget(t *testing.T) {
 	f := newReclaimFixture(t)
-	if _, err := f.R.DetachOwnedPolicies(ctx(), ""); err == nil {
+	if _, err := f.R.DetachOwnedPolicies(ctx(), "", ""); err == nil {
 		t.Fatal("DetachOwnedPolicies accepted an empty target, want a refusal")
+	}
+}
+
+// TestDetachOwnedPoliciesLeavesAPolicyAttachedWhenALiveSiblingSharesTheOU is
+// AUDIT-6 C1's security assertion: an SCP is attached at the OU, not the
+// account (DESIGN §5, §8), so an OU can hold more than one account. Detaching
+// the account being reclaimed's OWN account id must not be enough to detach
+// its OU's shared policy while another account under that same OU is still
+// ACTIVE — doing so would strip that sibling's guardrails as a side effect
+// of reclaiming a completely different account.
+func TestDetachOwnedPoliciesLeavesAPolicyAttachedWhenALiveSiblingSharesTheOU(t *testing.T) {
+	f := newReclaimFixture(t)
+	ou := f.State.SeedOU("Research", testRoot)
+	owned := f.seedOwnedPolicy("automat-x-1", scpDoc)
+	f.State.SeedAttachment(owned, ou)
+
+	reclaiming := f.State.SeedAccount("lab-a", "lab-a@example.edu", ou)
+	sibling := f.State.SeedAccount("lab-b", "lab-b@example.edu", ou)
+
+	actions, err := f.R.DetachOwnedPolicies(ctx(), ou, reclaiming)
+	if err != nil {
+		t.Fatalf("DetachOwnedPolicies: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("got %d actions, want 1", len(actions))
+	}
+	if actions[0].Verb != VerbUnchanged || actions[0].Applied {
+		t.Errorf("action = %+v, want an unapplied unchanged", actions[0])
+	}
+	if !strings.Contains(actions[0].Detail, sibling) {
+		t.Errorf("detail = %q, want it to name the live sibling %s", actions[0].Detail, sibling)
+	}
+
+	// The security assertion: the shared policy must still be attached.
+	remaining := f.State.AttachedTo(ou)
+	if len(remaining) != 1 || remaining[0] != owned {
+		t.Errorf("policies remaining attached to %s = %v, want %s still attached (sibling %s is still "+
+			"ACTIVE)", ou, remaining, owned, sibling)
+	}
+	for _, call := range f.Reclaim.Calls() {
+		if call == "DetachPolicy" {
+			t.Fatal("DetachPolicy was called despite a live sibling sharing the OU")
+		}
+	}
+}
+
+// TestDetachOwnedPoliciesDetachesWhenTheOnlyOtherAccountUnderTheOUIsNotActive
+// is the other half: a sibling that is SUSPENDED (already reclaimed, or
+// otherwise not ACTIVE) does not block the detach, because it has no
+// guardrails left to strip.
+func TestDetachOwnedPoliciesDetachesWhenTheOnlyOtherAccountUnderTheOUIsNotActive(t *testing.T) {
+	f := newReclaimFixture(t)
+	ou := f.State.SeedOU("Research", testRoot)
+	owned := f.seedOwnedPolicy("automat-x-1", scpDoc)
+	f.State.SeedAttachment(owned, ou)
+
+	reclaiming := f.State.SeedAccount("lab-a", "lab-a@example.edu", ou)
+	alreadyClosed := f.State.SeedAccount("lab-b", "lab-b@example.edu", ou)
+	if _, err := f.R.CloseAccount(ctx(), alreadyClosed); err != nil {
+		t.Fatalf("seed close of the sibling: %v", err)
+	}
+
+	actions, err := f.R.DetachOwnedPolicies(ctx(), ou, reclaiming)
+	if err != nil {
+		t.Fatalf("DetachOwnedPolicies: %v", err)
+	}
+	if len(actions) != 1 || actions[0].Verb != VerbDetach || !actions[0].Applied {
+		t.Fatalf("actions = %+v, want one applied detach (the only other account under the OU is not "+
+			"ACTIVE)", actions)
+	}
+	remaining := f.State.AttachedTo(ou)
+	if len(remaining) != 0 {
+		t.Errorf("policies remaining attached to %s = %v, want none", ou, remaining)
+	}
+}
+
+// TestDetachOwnedPoliciesDetachesWhenNoSiblingSharesTheOU is the ordinary
+// case's own regression guard: the common shape, one account per OU, must
+// keep working exactly as it did before the sibling check was added.
+func TestDetachOwnedPoliciesDetachesWhenNoSiblingSharesTheOU(t *testing.T) {
+	f := newReclaimFixture(t)
+	ou := f.State.SeedOU("Research", testRoot)
+	owned := f.seedOwnedPolicy("automat-x-1", scpDoc)
+	f.State.SeedAttachment(owned, ou)
+	reclaiming := f.State.SeedAccount("lab-a", "lab-a@example.edu", ou)
+
+	actions, err := f.R.DetachOwnedPolicies(ctx(), ou, reclaiming)
+	if err != nil {
+		t.Fatalf("DetachOwnedPolicies: %v", err)
+	}
+	if len(actions) != 1 || actions[0].Verb != VerbDetach || !actions[0].Applied {
+		t.Fatalf("actions = %+v, want one applied detach", actions)
 	}
 }
 

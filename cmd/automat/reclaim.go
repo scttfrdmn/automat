@@ -112,7 +112,7 @@ func newReclaimCmd(g *globals) *cobra.Command {
 			// in ModePlan, so the plan cannot drift from the apply that follows it.
 			plan := &org.Reclaimer{Policy: policyAPI, Close: closeAPI, Mode: org.ModePlan,
 				Credential: credential, Principal: caller.ARN}
-			if _, err := plan.DetachOwnedPolicies(ctx, target); err != nil {
+			if _, err := plan.DetachOwnedPolicies(ctx, target, accountID); err != nil {
 				return err
 			}
 			if _, err := plan.CloseAccount(ctx, accountID); err != nil {
@@ -136,7 +136,7 @@ func newReclaimCmd(g *globals) *cobra.Command {
 
 			apply := &org.Reclaimer{Policy: policyAPI, Close: closeAPI, Mode: org.ModeApply,
 				Credential: credential, Principal: caller.ARN}
-			if _, err := apply.DetachOwnedPolicies(ctx, target); err != nil {
+			if _, err := apply.DetachOwnedPolicies(ctx, target, accountID); err != nil {
 				return reclaimPartialError(apply, target, err)
 			}
 			if _, err := apply.CloseAccount(ctx, accountID); err != nil {

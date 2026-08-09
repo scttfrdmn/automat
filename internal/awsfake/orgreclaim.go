@@ -192,4 +192,49 @@ func (f *OrgReclaim) ListTagsForResource(_ context.Context,
 	return &organizations.ListTagsForResourceOutput{Tags: out, NextToken: next}, nil
 }
 
+// ListAccountsForParent implements awsapi.OrgReclaimAPI (AUDIT-6 C1):
+// DetachOwnedPolicies calls this before detaching anything, to see whether
+// another account still sits under the same OU. Reports each account's REAL
+// status rather than hardcoding ACTIVE the way OrgVend.DescribeAccount does
+// for a different, narrower reason (its own comment: "a vend against
+// [a suspended account] must fail rather than half-succeed") — here the
+// point is exactly the opposite: a caller checking for a live sibling needs
+// to see a SUSPENDED one as not blocking the detach, or this fake would
+// hide the bug it exists to catch.
+func (f *OrgReclaim) ListAccountsForParent(_ context.Context,
+	in *organizations.ListAccountsForParentInput,
+	_ ...func(*organizations.Options)) (*organizations.ListAccountsForParentOutput, error) {
+	f.Record("ListAccountsForParent")
+	s := f.State
+	if err := s.err("ListAccountsForParent"); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	parent := aws.ToString(in.ParentId)
+	var ids []string
+	for id, p := range s.parents {
+		if p == parent {
+			if _, ok := s.accounts[id]; ok {
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Strings(ids)
+	ids, next := page(s, ids, in.NextToken, in.MaxResults)
+	out := make([]orgtypes.Account, 0, len(ids))
+	for _, id := range ids {
+		a := s.accounts[id]
+		status := a.Status
+		if status == "" {
+			status = orgtypes.AccountStatusActive
+		}
+		out = append(out, orgtypes.Account{
+			Id: aws.String(a.ID), Arn: aws.String(s.accountARN(a.ID)),
+			Name: aws.String(a.Name), Email: aws.String(a.Email), Status: status,
+		})
+	}
+	return &organizations.ListAccountsForParentOutput{Accounts: out, NextToken: next}, nil
+}
+
 var _ awsapi.OrgReclaimAPI = (*OrgReclaim)(nil)
