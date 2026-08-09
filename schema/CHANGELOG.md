@@ -1389,3 +1389,28 @@ to protect.
 schema's own top-level property list, so a future field addition that forgets to
 update the comment fails loudly rather than leaving a scope note that quietly
 stops matching what it describes.
+
+## Pre-publication change to evidence-manifest/v1: `operation` gains `assess`
+
+Landed while scoping Phase 4's `assess` (Stage 3, the CMMC L1 MET/NOT MET
+summary). No version bump: `evidence-manifest/v1` remains unreleased, and this
+is the same shape as the `custody-transfer` addition above — a value added to
+the closed `operation` enum before any consumer of the 1.0.0 shape exists.
+
+**What it is.** `operation` gains `"assess"`, alongside the Go
+`evidence.OpAssess` constant. `assess` writes nothing to AWS — it is read-only,
+the same as `verify` — but a self-assessment is a claim made at a point in time
+against a specific artifact hash and a specific set of operator determinations,
+and the manifest chain is what lets a later reader tell whether a report
+predates a baseline change (`docs/assessment-reporting.md`, "Outputs"). So it
+gets the same treatment `verify` already has: worth recording that it ran, not
+worth a dedicated object the way `custody-transfer` needed one.
+
+No new record fields: an `assess` record uses the existing `artifact` and
+`environment_profile` reference shapes for the same purpose `verify` puts them
+to, plus (once `internal/assess` exists) a reference to the operator-
+determinations file it read, following `evidence.DocRef`'s existing id +
+`content_sha256` shape rather than a new field — the determinations file is
+content-hashed into the chain "like a catalog"
+(`docs/assessment-reporting.md`, "Inputs"), and a catalog is already how
+`DocRef` is used.

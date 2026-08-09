@@ -20,9 +20,9 @@ const ZeroHash = "00000000000000000000000000000000000000000000000000000000000000
 // the schema's enum.
 type Operation string
 
-// The operations a record may name. One per mutating command plus verify, which
-// writes nothing to AWS but is worth recording that it ran, and
-// custody-transfer, which ends the chain.
+// The operations a record may name. One per mutating command plus verify and
+// assess, neither of which writes anything to AWS but are worth recording as
+// having run, and custody-transfer, which ends the chain.
 const (
 	OpInit             Operation = "init"
 	OpSetup            Operation = "setup"
@@ -33,6 +33,7 @@ const (
 	OpBaselineApply    Operation = "baseline-apply"
 	OpAttestationWrite Operation = "attestation-write"
 	OpVerify           Operation = "verify"
+	OpAssess           Operation = "assess"
 	OpReclaim          Operation = "reclaim"
 	OpCustodyTransfer  Operation = "custody-transfer"
 )
@@ -40,7 +41,7 @@ const (
 // AllOperations is the closed set, in the schema's order.
 var AllOperations = []Operation{
 	OpInit, OpSetup, OpAccountCreate, OpAccountMove, OpOUEnsure, OpSCPEnsure,
-	OpBaselineApply, OpAttestationWrite, OpVerify, OpReclaim, OpCustodyTransfer,
+	OpBaselineApply, OpAttestationWrite, OpVerify, OpAssess, OpReclaim, OpCustodyTransfer,
 }
 
 // Outcome is how an operation ended.

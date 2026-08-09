@@ -196,6 +196,7 @@
             "baseline-apply",
             "attestation-write",
             "verify",
+            "assess",
             "reclaim",
             "custody-transfer"
           ]
