@@ -36,6 +36,7 @@ everything else in the design is marked as not shipping yet, in this file and in
 | `automat init` | Prepares an organization to vend into: creates one with all features if this account is not in one, enables the service control policy type on the root, and ensures an OU below it. Prints a plan first; every step is create-or-verify, so a second run writes nothing | Phase 2 |
 | `automat vend` | Creates one member account from an environment profile, moves it into the target OU, and ensures the OU's service control policies from the compiled control sets — controls attached before the account is handed to anyone. Writes a hash-chained evidence manifest and prints a birth certificate. **Preventive controls only:** it performs no in-child baseline work, and says so in every plan and every manifest (see below) | Phase 2 |
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
+| `automat setup` (no `--request`) | Applies the delegation policy and creates the vendor role directly, from the management account. Requires a real target OU (`--ou`) and an ExternalId reference (`--external-id-ref`) — no template parameter to defer either to, and automat does not generate an ExternalId. Ensure-semantics: a second run corrects drift | Phase 3 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
 
@@ -59,8 +60,6 @@ worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
   so the plan reports the step as not performed, and the evidence manifest carries a
   **parked** `baseline-apply` record. That record is what stops a manifest which is merely
   silent about the baseline from reading as a baseline that succeeded.
-- **`automat setup` without `--request`** — applying the delegation directly from a
-  management account. Phase 3. The command refuses and names the phase.
 - **`automat verify`** — re-reading what is actually attached to an account. Phase 4. Worth
   singling out: the delegation automat asks for includes `organizations:DetachPolicy` on
   automat's own policies, so the controls a vended account is born with are **not

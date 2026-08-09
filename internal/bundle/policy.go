@@ -240,14 +240,22 @@ func DelegationPolicy(r *Request) ([]byte, error) {
 		},
 	}
 
+	return marshalPolicyDocument(doc)
+}
+
+// marshalPolicyDocument renders a policyDocument the same way every JSON policy
+// in this package does, so the escaping rule below has exactly one definition.
+func marshalPolicyDocument(doc policyDocument) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
-	// The policy is read by a human before it is applied; escaping < > & into
-	// < would make it look like it contains something it does not.
+	// The policy is read by a human before it is applied, or applied directly by
+	// EnsureVendorRole/EnsureDelegationPolicy with no human in the loop at all —
+	// either way, escaping < > & into < would make it look like it contains
+	// something it does not.
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(doc); err != nil {
-		return nil, fmt.Errorf("render delegation policy: %w", err)
+		return nil, fmt.Errorf("render policy document: %w", err)
 	}
 	return buf.Bytes(), nil
 }

@@ -291,6 +291,148 @@ func VendorRoleCFN(r *Request) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+// VendorRoleTrustPolicyJSON and VendorRolePermissionsPolicyJSON render the same
+// grant as VendorRoleCFN and VendorRoleTF, as the JSON policy documents
+// iam.CreateRole and iam.PutRolePolicy take directly — for `automat setup`'s
+// MANAGEMENT-side apply (internal/org.EnsureVendorRole), which calls AWS rather
+// than emitting a file for a human to deploy.
+//
+// Two renderers, not one document, because IAM asks for them separately:
+// AssumeRolePolicyDocument is a CreateRole/UpdateAssumeRolePolicy parameter,
+// while the permissions policy is PutRolePolicy's, and the two calls are made at
+// different points in EnsureVendorRole's ensure logic (a role that exists with
+// the wrong trust policy needs UpdateAssumeRolePolicy; PutRolePolicy is
+// unconditional either way, since IAM's inline-policy write is already
+// create-or-replace).
+//
+// Built from Go structs via policyDocument, the same reason DelegationPolicy is:
+// this document is applied directly by EnsureVendorRole, with no human reading
+// text before it runs, which makes the structural guarantee against a value
+// closing a string early MORE load-bearing than in the human-reviewed templates,
+// not less.
+//
+// externalID is the resolved value, not a reference — the caller (setup's apply
+// path) already resolved config.ResolveExternalID before this is called, and
+// this package never stores it. arn:aws: is hardcoded rather than parameterized
+// by partition, matching DelegationPolicy's own precedent; a non-default
+// partition is not supported by either renderer today.
+func VendorRoleTrustPolicyJSON(r *Request, externalID string) ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	doc := policyDocument{
+		Version: "2012-10-17",
+		Statement: []policyStatement{
+			{
+				Sid:       "AutomatMemberAccountMayAssumeWithExternalId",
+				Effect:    "Allow",
+				Principal: &policyPrincipal{AWS: r.trustPrincipal()},
+				Action:    []string{"sts:AssumeRole"},
+				Resource:  nil,
+				Condition: map[string]any{
+					"StringEquals": map[string]any{"sts:ExternalId": externalID},
+				},
+			},
+		},
+	}
+	return marshalPolicyDocument(doc)
+}
+
+// VendorRolePermissionsPolicyJSON renders the vendor role's inline permissions
+// policy — the same six statements VendorRoleCFN's `automat-vend` policy
+// carries, translated from CloudFormation's `!Sub ${AWS::Partition}` ARNs to
+// literal ones. See VendorRoleTrustPolicyJSON for why this is a Go struct
+// rather than a template.
+func VendorRolePermissionsPolicyJSON(r *Request) ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	ou := r.ouScope()
+	mgmt := r.ManagementAccountID
+	accountARN := fmt.Sprintf("arn:aws:organizations::%s:account/%s/*", mgmt, r.OrgID)
+	ouARN := fmt.Sprintf("arn:aws:organizations::%s:ou/%s/%s", mgmt, r.OrgID, ou)
+	subOUARN := ouARN + "/*"
+
+	roleReadActions := make([]string, 0, len(vendorRoleActions))
+	for _, a := range vendorRoleActions {
+		switch a.action {
+		case "organizations:CreateAccount", "organizations:MoveAccount",
+			"organizations:CreateOrganizationalUnit", "organizations:TagResource":
+			continue // granted below, each with its own condition
+		}
+		roleReadActions = append(roleReadActions, a.action)
+	}
+
+	doc := policyDocument{
+		Version: "2012-10-17",
+		Statement: []policyStatement{
+			{
+				Sid:      "CreateTaggedAccounts",
+				Effect:   "Allow",
+				Action:   []string{"organizations:CreateAccount"},
+				Resource: []string{"*"},
+				Condition: map[string]any{
+					"StringEquals": map[string]any{
+						"aws:RequestTag/automat:vended-by": r.MemberAccountID,
+						"aws:RequestTag/automat:ou":        ou,
+					},
+				},
+			},
+			{
+				Sid:      "MoveAccountsIntoTheDelegatedSubtreeOnly",
+				Effect:   "Allow",
+				Action:   []string{"organizations:MoveAccount"},
+				Resource: []string{accountARN, ouARN, subOUARN},
+				Condition: map[string]any{
+					"StringEquals": map[string]any{"aws:ResourceTag/automat:vended-by": r.MemberAccountID},
+				},
+			},
+			{
+				Sid:      "CreateOrganizationalUnitsInsideTheSubtreeOnly",
+				Effect:   "Allow",
+				Action:   []string{"organizations:CreateOrganizationalUnit"},
+				Resource: []string{ouARN, subOUARN},
+			},
+			{
+				Sid:      "TagAccountsThisRoleVended",
+				Effect:   "Allow",
+				Action:   []string{"organizations:TagResource"},
+				Resource: []string{accountARN},
+				Condition: map[string]any{
+					"StringEquals":              map[string]any{"aws:ResourceTag/automat:vended-by": r.MemberAccountID},
+					"ForAllValues:StringEquals": map[string]any{"aws:TagKeys": mutableTagKeys},
+				},
+			},
+			{
+				Sid:      "TagOrganizationalUnitsInTheSubtree",
+				Effect:   "Allow",
+				Action:   []string{"organizations:TagResource"},
+				Resource: []string{ouARN, subOUARN},
+				Condition: map[string]any{
+					"ForAllValues:StringEquals": map[string]any{"aws:TagKeys": mutableTagKeys},
+				},
+			},
+			{
+				Sid:      "ReadTheOrganization",
+				Effect:   "Allow",
+				Action:   roleReadActions,
+				Resource: []string{"*"},
+			},
+		},
+	}
+	return marshalPolicyDocument(doc)
+}
+
+// VendorRoleTags is the tags internal/org.EnsureVendorRole applies to the role
+// itself, matching VendorRoleCFN's Tags block.
+func VendorRoleTags(r *Request) map[string]string {
+	return map[string]string{
+		"automat:managed-by": "automat",
+		"automat:vended-by":  r.MemberAccountID,
+		"automat:ou":         r.ouScope(),
+	}
+}
+
 // VendorRoleTF renders vendor-role.tf, the same role for a management account run
 // by Terraform.
 //

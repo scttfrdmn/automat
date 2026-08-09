@@ -406,6 +406,71 @@ func TestCFNAndTFGrantTheSameThing(t *testing.T) {
 	}
 }
 
+// TestVendorRoleJSONGrantsTheSameThingAsTheTemplates is TestCFNAndTFGrantTheSameThing's
+// sibling for internal/org.EnsureVendorRole's JSON renderers (Phase 3 task 3): the
+// grant applied directly to AWS must match what a human reviewing the bundle
+// approved, not a hand-transcribed approximation of it.
+func TestVendorRoleJSONGrantsTheSameThingAsTheTemplates(t *testing.T) {
+	r := validRequest()
+	cfn, err := VendorRoleCFN(r)
+	if err != nil {
+		t.Fatalf("VendorRoleCFN: %v", err)
+	}
+	perms, err := VendorRolePermissionsPolicyJSON(r)
+	if err != nil {
+		t.Fatalf("VendorRolePermissionsPolicyJSON: %v", err)
+	}
+
+	gotCFN := roleActions(t, string(cfn))
+	// The trust statement is part of the ROLE, not the permissions policy —
+	// VendorRolePermissionsPolicyJSON only renders the automat-vend inline
+	// policy, which is the half comparable here.
+	delete(gotCFN, "AutomatMemberAccountMayAssumeWithExternalId")
+	gotJSON := jsonPolicyActions(t, perms)
+	if !reflect.DeepEqual(gotCFN, gotJSON) {
+		t.Errorf("the template and the JSON policy grant different things.\ncfn:  %v\njson: %v",
+			gotCFN, gotJSON)
+	}
+
+	const wantExternalID = "k7Rq2mZx9Tp4Wc8v"
+	trust, err := VendorRoleTrustPolicyJSON(r, wantExternalID)
+	if err != nil {
+		t.Fatalf("VendorRoleTrustPolicyJSON: %v", err)
+	}
+	if !strings.Contains(string(trust), "sts:ExternalId") {
+		t.Error("the JSON trust policy has no sts:ExternalId condition")
+	}
+	if !strings.Contains(string(trust), wantExternalID) {
+		t.Error("the JSON trust policy does not carry the resolved ExternalId")
+	}
+	if !strings.Contains(string(trust), r.trustPrincipal()) {
+		t.Error("the JSON trust policy does not name the trust principal")
+	}
+}
+
+// jsonPolicyActions parses a policyDocument-shaped JSON policy into the same
+// Sid -> actions shape roleActions extracts from CFN/TF text, so the two can be
+// compared with reflect.DeepEqual.
+func jsonPolicyActions(t *testing.T, data []byte) map[string][]string {
+	t.Helper()
+	var doc struct {
+		Statement []struct {
+			Sid    string
+			Action []string
+		}
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse JSON policy: %v", err)
+	}
+	out := make(map[string][]string, len(doc.Statement))
+	for _, st := range doc.Statement {
+		actions := append([]string(nil), st.Action...)
+		sort.Strings(actions)
+		out[st.Sid] = actions
+	}
+	return out
+}
+
 // TestTemplatesCarryNoGoFormatVerb catches the class of bug where a literal `%s`
 // meant for Terraform's format() is written through a printf path, or a printf
 // call loses its argument. Either produces a template with `%!s(MISSING)` or a

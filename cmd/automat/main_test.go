@@ -70,12 +70,14 @@ func fakes(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (*g
 // creates an account through OrgVend and attaches policies to it through OrgPolicy,
 // and those two are the same organization or the attachment targets nothing.
 type fakeWorld struct {
-	STS    *awsfake.STS
-	Org    *awsfake.Org
-	State  *awsfake.OrgState
-	Init   *awsfake.OrgInit
-	Vend   *awsfake.OrgVend
-	Policy *awsfake.OrgPolicy
+	STS     *awsfake.STS
+	Org     *awsfake.Org
+	State   *awsfake.OrgState
+	Init    *awsfake.OrgInit
+	Vend    *awsfake.OrgVend
+	Policy  *awsfake.OrgPolicy
+	Setup   *awsfake.OrgSetup
+	IAMRole *awsfake.IAMRole
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -111,12 +113,14 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		state.SCPEnabled = false
 	}
 	f := &fakeWorld{
-		STS:    stsFake,
-		Org:    orgFake,
-		State:  state,
-		Init:   awsfake.NewOrgInit(state).Observing(orgFake),
-		Vend:   awsfake.NewOrgVend(state),
-		Policy: awsfake.NewOrgPolicy(state),
+		STS:     stsFake,
+		Org:     orgFake,
+		State:   state,
+		Init:    awsfake.NewOrgInit(state).Observing(orgFake),
+		Vend:    awsfake.NewOrgVend(state),
+		Policy:  awsfake.NewOrgPolicy(state),
+		Setup:   awsfake.NewOrgSetup(state).Observing(orgFake),
+		IAMRole: awsfake.NewIAMRole(mgmt),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -152,8 +156,14 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		newOrgPolicy: func(context.Context, string, string) (awsapi.OrgPolicyAPI, error) {
 			return f.Policy, nil
 		},
+		newOrgSetup: func(context.Context, string, string) (awsapi.OrgSetupAPI, error) {
+			return f.Setup, nil
+		},
 		newIAM: func(context.Context, string, string) (awsapi.IAMAPI, error) {
 			return iamFake, nil
+		},
+		newIAMRole: func(context.Context, string, string) (awsapi.IAMRoleAPI, error) {
+			return f.IAMRole, nil
 		},
 		newQuota: func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 			return quotaFake, nil
@@ -361,19 +371,43 @@ external_id_ref = "env:AUTOMAT_TEST_EXTERNAL_ID"
 // which half of
 // the tool they are waiting on and what to do meanwhile, rather than reading as a
 // broken command — CLAUDE.md rule 7 applied to an unimplemented path.
-func TestSetupWithoutRequestSaysWhichHalfIsMissing(t *testing.T) {
-	g, _, _ := fakes(t, testOrg, testManagement, testMember)
-	_, _, err := runCLI(t, g, "setup")
-	if err == nil {
-		t.Fatal("`setup` without --request succeeded; the management half is not implemented")
+// TestSetupWithoutRequestRequiresARealOUAndAnExternalIdRef.
+//
+// Phase 3 task 3 replaced the "not implemented yet" refusal with a real apply
+// path, and this is its own pair of preconditions: --ou-name names a
+// placeholder the bundle path can fix up later (ou.md) but apply cannot, since
+// the OU id is baked into a role and a policy the moment they reach AWS: and
+// --external-id-ref is required because automat does not generate the value
+// (AUDIT-1). Both refusals must arrive before any AWS client is built, which
+// this checks by using a globals with every constructor set to fail the test.
+func TestSetupWithoutRequestRequiresARealOUAndAnExternalIdRef(t *testing.T) {
+	g := &globals{configPath: filepath.Join(t.TempDir(), "absent.toml")}
+	refuse := func(what string) error {
+		t.Errorf("setup built %s before checking its own preconditions", what)
+		return errors.New("unexpected")
 	}
-	// The phase number is asserted, not just the word "Phase": this error tells an
-	// operator which release to wait for, and it named Phase 2 while ROADMAP.md
-	// scheduled the MANAGEMENT half for Phase 3.
-	for _, want := range []string{"--request", "Phase 3"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error does not mention %q: %v", want, err)
-		}
+	g.newSTS = func(context.Context, string, string) (awsapi.STSAPI, error) { return nil, refuse("STS") }
+	g.newOrgSetup = func(context.Context, string, string) (awsapi.OrgSetupAPI, error) {
+		return nil, refuse("OrgSetup")
+	}
+	g.newIAMRole = func(context.Context, string, string) (awsapi.IAMRoleAPI, error) {
+		return nil, refuse("IAMRole")
+	}
+
+	_, _, err := runCLI(t, g, "setup", "--member-account", testMember, "--ou-name", "Research Computing")
+	if err == nil {
+		t.Fatal("`setup` without --request and with --ou-name (a placeholder) succeeded")
+	}
+	if !strings.Contains(err.Error(), "--ou") {
+		t.Errorf("the error does not explain the --ou-name refusal: %v", err)
+	}
+
+	_, _, err = runCLI(t, g, "setup", "--member-account", testMember, "--ou", testOU)
+	if err == nil {
+		t.Fatal("`setup` without --request and with no --external-id-ref succeeded")
+	}
+	if !strings.Contains(err.Error(), "--external-id-ref") {
+		t.Errorf("the error does not name the missing flag: %v", err)
 	}
 }
 

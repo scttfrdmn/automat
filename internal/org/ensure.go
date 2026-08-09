@@ -180,6 +180,11 @@ type Ensurer struct {
 	Policy awsapi.OrgPolicyAPI
 	// Init carries `automat init`, and is nil for every other command.
 	Init awsapi.OrgInitAPI
+	// Setup carries the organization's resource (delegation) policy, and Role
+	// carries the vendor role in IAM. Both are nil for every command but
+	// `automat setup`'s MANAGEMENT-side apply.
+	Setup awsapi.OrgSetupAPI
+	Role  awsapi.IAMRoleAPI
 
 	// Mode is plan or apply. The zero value is ModePlan, deliberately: a
 	// forgotten field must not mutate an organization.

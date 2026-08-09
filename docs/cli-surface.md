@@ -20,7 +20,7 @@ adds `init` and `vend`.
 | `automat login` | **Shipped** | `cmd/automat/login.go` |
 | `automat preflight` | **Shipped** | `cmd/automat/preflight.go` |
 | `automat setup --request` | **Shipped** | `cmd/automat/setup.go` |
-| `automat setup` (MANAGEMENT) | Not yet — Phase 3 | Refuses with the phase named |
+| `automat setup` (MANAGEMENT) | **Shipped** | `cmd/automat/setup.go`'s `runSetupApply` |
 | `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
 | `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
 | `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |

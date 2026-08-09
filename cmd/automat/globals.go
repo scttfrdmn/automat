@@ -55,8 +55,10 @@ type globals struct {
 	newOrgInit   func(ctx context.Context, region, profile string) (awsapi.OrgInitAPI, error)
 	newOrgVend   func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
 	newOrgPolicy func(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error)
+	newOrgSetup  func(ctx context.Context, region, profile string) (awsapi.OrgSetupAPI, error)
 	newSTS       func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
 	newIAM       func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
+	newIAMRole   func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
 	newQuota     func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
 	// newBrokeredOrgVend overrides brokeredOrgVendClient in tests, the same way
 	// every other constructor field does — a test substitutes internal/awsfake
@@ -244,6 +246,33 @@ func (g *globals) stsClient(ctx context.Context, region, profile string) (awsapi
 func (g *globals) iamClient(ctx context.Context, region, profile string) (awsapi.IAMAPI, error) {
 	if g.newIAM != nil {
 		return g.newIAM(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return iam.NewFromConfig(cfg), nil
+}
+
+// orgSetupClient is the resource-policy client `automat setup`'s MANAGEMENT-side
+// apply uses, and no other command calls it — DESIGN §5's "policy half" is
+// applied once, by the same operator who runs `setup`.
+func (g *globals) orgSetupClient(ctx context.Context, region, profile string) (awsapi.OrgSetupAPI, error) {
+	if g.newOrgSetup != nil {
+		return g.newOrgSetup(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
+}
+
+// iamRoleClient is the vendor-role client `automat setup`'s MANAGEMENT-side
+// apply uses to create and ensure the role DESIGN §5's "vending half" needs.
+func (g *globals) iamRoleClient(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error) {
+	if g.newIAMRole != nil {
+		return g.newIAMRole(ctx, region, profile)
 	}
 	cfg, err := g.awsConfig(ctx, region, profile)
 	if err != nil {
