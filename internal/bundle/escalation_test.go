@@ -445,6 +445,19 @@ func TestREADMEDisclosesWhatTheDelegateCanDoToAutomatsOwnControls(t *testing.T) 
 			t.Error("the README says the controls can be detached without naming the answer " +
 				"(`automat verify`), which leaves the reader with a problem and no remedy")
 		}
+		// AUDIT-4 M4, and it replaces the "not in this version" assertion this
+		// test carried until `verify` shipped. The remedy is offered to a CISO
+		// as the thing that converts a detachable control into a standing
+		// assurance, so the bound on what it actually re-reads has to travel
+		// with the offer: `verify` checks the policy layer and nothing in the
+		// account (DESIGN §12, docs/cli-surface.md D4). A reader who takes a
+		// clean `verify` for a checked baseline has been told less than the
+		// tool knows about itself, which is the same failure the retired
+		// assertion existed to prevent.
+		if !strings.Contains(s, "policy layer") {
+			t.Error("the README offers `automat verify` as the standing assurance without saying " +
+				"it checks only the policy layer, so a clean run reads as a checked account")
+		}
 	}
 	if granted["organizations:AttachPolicy"] && !strings.Contains(s, "five service control policies") {
 		t.Error("the delegation grants organizations:AttachPolicy on the OU with no cap on " +

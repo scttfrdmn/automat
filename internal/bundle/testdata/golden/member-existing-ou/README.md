@@ -119,7 +119,10 @@ knowing before you approve.
   <id>` to re-read what is actually attached and report drift, rather than
   trusting that a past run's controls are still in place. Treat "automat attached
   a control once" as a claim with no standing evidence behind it until you have
-  run it.
+  run it. **What it checks is the policy layer** — which of automat's service
+  control policies are attached to the OU and whether their contents still match
+  a fresh compile. It does not check anything inside the account, so a clean
+  `verify` is evidence about the restrictions on the OU and about nothing else.
 - **It can use up the policy slots on OU ou-exam-research1.** AWS allows five service control
   policies directly attached to any one target, and AWS's own `FullAWSAccess`
   occupies one of them by default. Nothing in these files stops the delegate
