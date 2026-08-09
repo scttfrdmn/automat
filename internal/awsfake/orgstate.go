@@ -209,9 +209,10 @@ func page[T any](s *OrgState, items []T, token *string, max *int32) ([]T, *strin
 }
 
 type fakeAccount struct {
-	ID    string
-	Name  string
-	Email string
+	ID     string
+	Name   string
+	Email  string
+	Status orgtypes.AccountStatus
 }
 
 type fakeOU struct {
@@ -310,7 +311,7 @@ func (s *OrgState) SeedAccount(name, email, parent string) string {
 	defer s.mu.Unlock()
 	s.nextAccount++
 	id := fmt.Sprintf("%012d", 200000000000+s.nextAccount)
-	s.accounts[id] = &fakeAccount{ID: id, Name: name, Email: email}
+	s.accounts[id] = &fakeAccount{ID: id, Name: name, Email: email, Status: orgtypes.AccountStatusActive}
 	s.parents[id] = parent
 	s.emails[email] = id
 	return id

@@ -45,6 +45,9 @@ const (
 	VerbMove Verb = "move"
 	// VerbAttach means a policy was attached to a target.
 	VerbAttach Verb = "attach"
+	// VerbDetach means a policy was detached from a target, or would be.
+	// Only Reclaimer produces it (docs/reclaim-design.md).
+	VerbDetach Verb = "detach"
 	// VerbTag means tags were written.
 	VerbTag Verb = "tag"
 	// VerbEnable means an organization-level setting was turned on.
@@ -57,6 +60,10 @@ const (
 	// Reported rather than guessed — a plan that invents an id is a plan an
 	// operator will compare against reality and disbelieve.
 	VerbUnknown Verb = "unknown"
+	// VerbClose means an account was closed, or would be. Only Reclaimer
+	// produces it (docs/reclaim-design.md); no other operation in this
+	// package is destructive in this way.
+	VerbClose Verb = "close"
 )
 
 // Action is one operation's outcome, in plan or apply.

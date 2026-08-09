@@ -185,7 +185,7 @@ func (f *OrgVend) DescribeCreateAccountStatus(_ context.Context,
 		} else {
 			s.nextAccount++
 			id := fmt.Sprintf("%012d", 100000000000+s.nextAccount)
-			s.accounts[id] = &fakeAccount{ID: id, Name: req.AccountName, Email: req.Email}
+			s.accounts[id] = &fakeAccount{ID: id, Name: req.AccountName, Email: req.Email, Status: orgtypes.AccountStatusActive}
 			// Under the root. This is the whole reason MoveAccount exists in the flow.
 			s.parents[id] = s.RootID
 			s.emails[req.Email] = id
