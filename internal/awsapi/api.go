@@ -160,6 +160,28 @@ type OrgSetupAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.PutResourcePolicyOutput, error)
 }
 
+// OrgVerifyAPI is `automat verify`'s read-only view of attached policies.
+//
+// A sibling of OrgPolicyAPI carrying none of its write methods, on purpose:
+// verify reads what is attached and compares it against a fresh compile
+// (internal/compilesets.Pack + the same sameDocument comparator
+// internal/org already uses for drift detection during vend's own re-runs) —
+// it has no reason to hold CreatePolicy, UpdatePolicy, or AttachPolicy, and
+// giving it none means a bug in verify cannot mutate an organization no
+// matter what it does. DescribePolicy plus ListPoliciesForTarget is the read
+// pair OrgPolicyAPI already carries for the same purpose; ListTagsForResource
+// is here because a policy's automat:managed-by tag is part of what a verify
+// report distinguishes ("automat's, drifted" vs. "not automat's, present
+// anyway").
+type OrgVerifyAPI interface {
+	DescribePolicy(ctx context.Context, in *organizations.DescribePolicyInput,
+		optFns ...func(*organizations.Options)) (*organizations.DescribePolicyOutput, error)
+	ListPoliciesForTarget(ctx context.Context, in *organizations.ListPoliciesForTargetInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListPoliciesForTargetOutput, error)
+	ListTagsForResource(ctx context.Context, in *organizations.ListTagsForResourceInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListTagsForResourceOutput, error)
+}
+
 // # What is deliberately absent from all three
 //
 // DetachPolicy, DeletePolicy, DeleteOrganizationalUnit, CloseAccount,
@@ -255,6 +277,7 @@ var (
 	_ OrgPolicyAPI = (*organizations.Client)(nil)
 	_ OrgInitAPI   = (*organizations.Client)(nil)
 	_ OrgSetupAPI  = (*organizations.Client)(nil)
+	_ OrgVerifyAPI = (*organizations.Client)(nil)
 	_ IAMAPI       = (*iam.Client)(nil)
 	_ IAMRoleAPI   = (*iam.Client)(nil)
 	_ QuotaAPI     = (*servicequotas.Client)(nil)

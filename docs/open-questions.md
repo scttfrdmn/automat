@@ -672,6 +672,17 @@ Q15 — both are "what does this hash cover", and answering them together is lik
 than answering either alone. Wanted before Phase 4's `verify`, which has to decide what it
 is verifying an account *against*.
 
+**Still open after `verify` shipped, because `verify` worked around it rather than
+needing an answer.** `cmd/automat/verify.go` takes the same environment profile path
+`vend` did — reload it, recompile via `compilesets.Pack` — and compares the fresh
+compile against what is attached, rather than reading a prior evidence record's
+`artifact` field to learn what to check against. Its own written `OpVerify` record
+leaves `Artifact` unset entirely — it names the environment profile checked
+(`EnvProfile`, which is unambiguous) but not any of the resolved control sets, which
+is a narrower answer than `vend`'s "fill it when the union is unambiguous" and avoids
+the question rather than answering it. It stays open for a reader of an existing
+manifest who wants to know what a past record's `artifact` field means for a union.
+
 ### Q18 — `classification-profile/v1` has no way to record a citation it could not retrieve. DECIDED
 
 **Resolved by the maintainer: option 1, a fourth `date_basis` value.** `not-retrieved` is

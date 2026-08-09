@@ -57,6 +57,17 @@ type Org struct {
 
 	// Errs overrides the result of a named operation, e.g. "ListRoots".
 	Errs map[string]error
+
+	// Accounts, when set, is consulted by ListParents for a child id this fake
+	// does not itself track — an account's placement, which only the write
+	// fakes (OrgVend, sharing *OrgState) ever learn about via CreateAccount
+	// and MoveAccount. Every prior caller of ListParents through this
+	// read-only fake asked about an OU, seeded here via AddOU; `automat
+	// verify` is the first to ask where an ACCOUNT sits, and without this a
+	// vended account would report as sitting under the root regardless of
+	// where MoveAccount actually placed it. fakeSet wires this to the same
+	// *OrgState the write fakes share.
+	Accounts *OrgState
 }
 
 // OU is one organizational unit in the fake org.
@@ -163,6 +174,21 @@ func (f *Org) ListParents(_ context.Context, in *organizations.ListParentsInput,
 		return &organizations.ListParentsOutput{Parents: []orgtypes.Parent{{
 			Id: aws.String(ou.Parent), Type: kind,
 		}}}, nil
+	}
+	if f.Accounts != nil {
+		if parent, ok := f.Accounts.LookupParent(child); ok {
+			kind := orgtypes.ParentTypeOrganizationalUnit
+			if parent == f.RootID {
+				kind = orgtypes.ParentTypeRoot
+			}
+			return &organizations.ListParentsOutput{Parents: []orgtypes.Parent{{
+				Id: aws.String(parent), Type: kind,
+			}}}, nil
+		}
+		return nil, &APIError{
+			Code:    "ChildNotFoundException",
+			Message: "We can't find an organizational unit (OU) or Amazon Web Services account with the ChildId that you specified.",
+		}
 	}
 	// An unknown child sits under the root: a member account whose own placement
 	// automat has not been told about.

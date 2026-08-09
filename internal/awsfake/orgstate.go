@@ -384,6 +384,19 @@ func (s *OrgState) ParentOf(childID string) string {
 	return s.parents[childID]
 }
 
+// LookupParent is ParentOf plus existence, for a caller that must distinguish
+// "this child has no recorded parent" from "this child does not exist at
+// all" — Org.ListParents needs exactly that distinction, since an unknown
+// child normally means "an account whose placement this read-only fake was
+// never told about, default to the root" while a genuinely absent child
+// must fail with ChildNotFoundException the way real Organizations does.
+func (s *OrgState) LookupParent(childID string) (parent string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	parent, ok = s.parents[childID]
+	return parent, ok
+}
+
 // AccountIDs returns every account in the org, sorted by creation order.
 func (s *OrgState) AccountIDs() []string {
 	s.mu.Lock()
@@ -404,6 +417,19 @@ func (s *OrgState) PolicyContent(policyID string) string {
 		return p.Content
 	}
 	return ""
+}
+
+// SetPolicyContent overwrites a policy's document without going through the
+// API — for a test simulating drift: an operator or another tool edits an
+// SCP's content directly in the console, which is exactly the change
+// `automat verify` exists to notice. UpdatePolicy would go through
+// EnsurePolicy's own drift-correction path instead of producing the drift.
+func (s *OrgState) SetPolicyContent(policyID, content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.policies[policyID]; ok {
+		p.Content = content
+	}
 }
 
 // PolicyIDByName returns the id of the policy with the given name, or "".

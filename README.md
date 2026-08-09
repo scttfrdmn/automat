@@ -37,6 +37,7 @@ everything else in the design is marked as not shipping yet, in this file and in
 | `automat vend` | Creates one member account from an environment profile, moves it into the target OU, and ensures the OU's service control policies from the compiled control sets — controls attached before the account is handed to anyone. Writes a hash-chained evidence manifest and prints a birth certificate. **Preventive controls only:** it performs no in-child baseline work, and says so in every plan and every manifest (see below) | Phase 2 |
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
 | `automat setup` (no `--request`) | Applies the delegation policy and creates the vendor role directly, from the management account. Requires a real target OU (`--ou`) and an ExternalId reference (`--external-id-ref`) — no template parameter to defer either to, and automat does not generate an ExternalId. Ensure-semantics: a second run corrects drift | Phase 3 |
+| `automat verify` | Re-checks one account's attached service control policies against a fresh compile of the environment profile that vended it, and warns if the profile's `review_by` date has passed. Read-only; checks the policy and freshness layers only — the detective and procedural layers have nothing to check against until the in-child baseline exists (see below) | Phase 4 |
 | `automat login` | Signs in through AWS SSO and caches the token where every AWS tool reads it | Phase 1 |
 | `automat version` | Prints the version stamped into generated artifacts | Phase 1 |
 
@@ -60,11 +61,6 @@ worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
   so the plan reports the step as not performed, and the evidence manifest carries a
   **parked** `baseline-apply` record. That record is what stops a manifest which is merely
   silent about the baseline from reading as a baseline that succeeded.
-- **`automat verify`** — re-reading what is actually attached to an account. Phase 4. Worth
-  singling out: the delegation automat asks for includes `organizations:DetachPolicy` on
-  automat's own policies, so the controls a vended account is born with are **not
-  permanent** against the account that vended it, and `verify` is the answer to that. The
-  onboarding bundle's cover note says so, including that `verify` does not ship yet.
 - **`automat list`** — tag-driven inventory. Phase 4.
 - **`automat assess`** — assessment reporting: 800-171A objective worksheets, CMMC L1
   MET/NOT MET summaries, DFARS score arithmetic. Phase 4, scope approved in

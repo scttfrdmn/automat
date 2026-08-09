@@ -373,7 +373,7 @@ func Parkable(err error) bool {
 // isCode reports whether err is the named AWS error code.
 func isCode(err error, code string) bool { return awsapi.APIErrorCode(err) == code }
 
-// sameDocument compares two policy documents for equal meaning.
+// SameDocument compares two policy documents for equal meaning.
 //
 // Not a byte comparison, and the difference decides whether automat is
 // idempotent. The packer emits canonical bytes, but nothing documents that
@@ -394,16 +394,24 @@ func isCode(err error, code string) bool { return awsapi.APIErrorCode(err) == co
 // is the right direction: a policy under automat's name that is not valid JSON
 // is not enforcing anything, and leaving it in place because it could not be
 // read would be the quiet failure.
-func sameDocument(a, b string) bool {
-	ca, aok := canonicalizeDocument(a)
-	cb, bok := canonicalizeDocument(b)
+//
+// Exported because `automat verify`'s policy layer needs the exact same
+// comparison: it is deciding the same question — does an attached document
+// mean what a fresh compile says it should — that vend's own re-runs decide
+// when checking for drift. A second implementation would be a second place to
+// keep synchronized with IAM's actual normalization behavior.
+func SameDocument(a, b string) bool {
+	ca, aok := CanonicalizeDocument(a)
+	cb, bok := CanonicalizeDocument(b)
 	if !aok || !bok {
 		return false
 	}
 	return ca == cb
 }
 
-func canonicalizeDocument(s string) (string, bool) {
+// CanonicalizeDocument re-marshals a policy document into a stable form so
+// two JSON-equal-but-not-byte-equal documents compare equal. See SameDocument.
+func CanonicalizeDocument(s string) (string, bool) {
 	var v any
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber() // 1 and 1.0 are not the same policy document

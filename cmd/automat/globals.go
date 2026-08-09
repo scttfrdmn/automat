@@ -56,6 +56,7 @@ type globals struct {
 	newOrgVend   func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
 	newOrgPolicy func(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error)
 	newOrgSetup  func(ctx context.Context, region, profile string) (awsapi.OrgSetupAPI, error)
+	newOrgVerify func(ctx context.Context, region, profile string) (awsapi.OrgVerifyAPI, error)
 	newSTS       func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
 	newIAM       func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
 	newIAMRole   func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
@@ -279,6 +280,23 @@ func (g *globals) iamRoleClient(ctx context.Context, region, profile string) (aw
 		return nil, err
 	}
 	return iam.NewFromConfig(cfg), nil
+}
+
+// orgVerifyClient is the read-only Organizations-policy client `automat
+// verify` uses to read what is attached, in every state. Read-only by
+// construction (internal/awsapi.OrgVerifyAPI carries no write method), so a
+// bug in verify's comparison logic cannot mutate an organization no matter
+// what it does — the same discipline preflight's OrgAPI enforces for reads
+// during classification.
+func (g *globals) orgVerifyClient(ctx context.Context, region, profile string) (awsapi.OrgVerifyAPI, error) {
+	if g.newOrgVerify != nil {
+		return g.newOrgVerify(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
 }
 
 func (g *globals) quotaClient(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error) {

@@ -78,6 +78,7 @@ type fakeWorld struct {
 	Policy  *awsfake.OrgPolicy
 	Setup   *awsfake.OrgSetup
 	IAMRole *awsfake.IAMRole
+	Verify  *awsfake.OrgVerify
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -112,6 +113,12 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		// has it off.
 		state.SCPEnabled = false
 	}
+	// Links the read-only Org fake to the same state the write fakes share, so
+	// ListParents through g.orgClient (preflight's and verify's client) sees
+	// an account placement CreateAccount/MoveAccount produced through OrgVend
+	// — the same real-AWS fact the Init/Setup linkage above holds for OU and
+	// resource-policy state.
+	orgFake.Accounts = state
 	f := &fakeWorld{
 		STS:     stsFake,
 		Org:     orgFake,
@@ -121,6 +128,7 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		Policy:  awsfake.NewOrgPolicy(state),
 		Setup:   awsfake.NewOrgSetup(state).Observing(orgFake),
 		IAMRole: awsfake.NewIAMRole(mgmt),
+		Verify:  awsfake.NewOrgVerify(state),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -158,6 +166,9 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		},
 		newOrgSetup: func(context.Context, string, string) (awsapi.OrgSetupAPI, error) {
 			return f.Setup, nil
+		},
+		newOrgVerify: func(context.Context, string, string) (awsapi.OrgVerifyAPI, error) {
+			return f.Verify, nil
 		},
 		newIAM: func(context.Context, string, string) (awsapi.IAMAPI, error) {
 			return iamFake, nil

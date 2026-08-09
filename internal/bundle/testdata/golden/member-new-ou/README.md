@@ -115,12 +115,11 @@ knowing before you approve.
   tag-conditioned bullet above, and it is why your floor still holds — but if you
   are relying on automat's controls as *your* assurance rather than the requester's,
   that is the wrong place to put the reliance. Assurance here comes from
-  re-checking, not from the grant being narrow: `automat verify` is the command
-  meant to re-read what is actually attached and report drift, rather than trusting
-  that a past run's controls are still in place. **It is not in this version.**
-  Until it ships, treat "automat attached a control once" as a claim with no
-  standing evidence behind it, and check the OU's attached policies yourself if
-  you need to know what is on it right now.
+  re-checking, not from the grant being narrow: run `automat verify --account
+  <id>` to re-read what is actually attached and report drift, rather than
+  trusting that a past run's controls are still in place. Treat "automat attached
+  a control once" as a claim with no standing evidence behind it until you have
+  run it.
 - **It can use up the policy slots on OU ou-REPLACE-WITH-THE-NEW-OU-ID.** AWS allows five service control
   policies directly attached to any one target, and AWS's own `FullAWSAccess`
   occupies one of them by default. Nothing in these files stops the delegate

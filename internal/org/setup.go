@@ -56,7 +56,7 @@ func (e *Ensurer) EnsureDelegationPolicy(ctx context.Context, req *bundle.Reques
 	}
 
 	current := aws.ToString(out.ResourcePolicy.Content)
-	if sameDocument(current, string(want)) {
+	if SameDocument(current, string(want)) {
 		return e.record(Action{
 			Verb: VerbUnchanged, Kind: "delegation policy",
 			Detail: "already matches this request",
@@ -181,7 +181,7 @@ func (e *Ensurer) createVendorRole(ctx context.Context, req *bundle.Request,
 func (e *Ensurer) updateVendorRole(ctx context.Context, req *bundle.Request, out *iam.GetRoleOutput,
 	trust, perms []byte, tags map[string]string) (*Action, error) {
 	current := aws.ToString(out.Role.AssumeRolePolicyDocument)
-	trustChanged := !sameDocument(current, string(trust))
+	trustChanged := !SameDocument(current, string(trust))
 
 	if e.planning() {
 		detail := "trust and permissions policies already match this request"

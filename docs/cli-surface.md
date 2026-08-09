@@ -24,7 +24,7 @@ adds `init` and `vend`.
 | `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
 | `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
 | `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |
-| `automat verify` | Not yet — Phase 4 | ROADMAP Phase 4 |
+| `automat verify` | **Shipped** — policy and freshness layers only, `--account` not `--account \| --ou`; see D4 | `cmd/automat/verify.go` |
 | `automat list` | Not yet — Phase 4 | ROADMAP Phase 4 |
 | `automat reclaim` | Not yet — Phase 5 | ROADMAP Phase 5, `LATER` in §13 |
 
@@ -46,6 +46,7 @@ shipped command is absent from §13.**
 | `setup` | `--request`, `--dry-run`, `--force`, `--out`, `--org`, `--ou`, `--ou-name`, `--management-account`, `--member-account`, `--member-role-arn`, `--vendor-role-name`, `--contact` | §13 names none of these |
 | `init` | `--ou-name`, `--dry-run`, `--yes` | §13 names none of these |
 | `vend` | `--environment-profile`, `--name`, `--email`, `--ou`, `--resume`, `--dry-run` | §13 line 100 names `--profile`; see the naming note below |
+| `verify` | `--account`, `--environment-profile` | §13 names `--account \| --ou`; see D4 |
 
 §13 specifies commands, not flags, so a flag cannot contradict it by existing. The two
 with security semantics remain the ones AUDIT-1 flagged: `--force` (discards a hand
@@ -232,6 +233,35 @@ honors is the one AUDIT-2 wrote — step 5 not shipping must not quietly become 
 *definition* of vending, so the amendment says "not yet implemented," not "vend does not
 include this." Everything above about how the shortfall is disclosed and the two smaller
 ones alongside it is unchanged by the resolution.
+
+### D4 — `automat verify` takes `--account`, not `--account | --ou`, and checks two layers not four. RESOLVED — §13 amended
+
+§12 and §13 both write the flag as `--account <id> | --ou <id>` and describe four
+verification layers: policy, detective, procedural, freshness. As built, `verify`
+accepts only `--account <id>` and checks only the policy and freshness layers.
+
+**The flag cannot be built as written.** Baseline-protection — compiled into every
+vend, never optional — exempts automat's in-account automation role from its Deny
+statements, and that exemption is rendered as the role's ARN
+(`internal/compilesets`'s `renderCondition`), which embeds the account id. An OU with
+no account in hand has no ARN to render, so `compilesets.Pack` cannot produce the
+expected policy set for an OU-only check. `--account` resolves its own parent OU via
+`ListParents` and checks the policies attached there; a bare `--ou` flag is not offered
+rather than offered and silently wrong.
+
+**The two missing layers are the same capability gap D3 already discloses.** The
+detective layer (Config recorder, conformance pack) and the procedural layer
+(attestation stubs) both check something DESIGN §7 step 5 — `internal/baseline` — was
+meant to install, and that package does not exist. There is nothing in a vended account
+for either layer to check against. `verify`'s own output says so in every run rather than
+staying silent about it, the same discipline `vend`'s plan and evidence manifest follow
+for the identical gap.
+
+**Resolved by amending §13's line**, not by building `internal/baseline` or an OU-only
+code path first: DESIGN.md's `verify` line now states `--account <id>` only and names
+the policy and freshness layers as what is checked, pointing here for the reasoning. When
+`internal/baseline` exists, the detective and procedural layers become checkable and this
+page is where that closes; nothing about resolving it now blocks that later.
 
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 

@@ -288,13 +288,22 @@ answer rather than an absent question.
 
 ## 12. `verify`
 
-`automat verify --account <id> | --ou <id>`: re-walk the artifact against reality.
+`automat verify --account <id>`: re-walk the artifact against reality.
 
-- Policy layer: attached SCPs still match the artifact (by name + content hash tag).
-- Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift).
-- Procedural layer: attestation stubs present; staleness vs. declared frequency.
+**Implemented (Phase 4): the policy and freshness layers only** — see
+`docs/cli-surface.md` D4 for why `--ou` is not a separate accepted form (baseline-
+protection's automation-role exemption embeds the account id, so the expected policy
+set cannot be compiled for an OU with no account in hand) and why the detective and
+procedural layers are not checked (both check what DESIGN §7 step 5 —
+`internal/baseline` — would install, and that package does not exist yet).
+
+- Policy layer: attached SCPs compared against a fresh compile of the same environment
+  profile, by structural document comparison (`org.SameDocument`) — not by a content-hash
+  tag, since automat writes no such tag on any SCP today (also D4).
+- Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift). **Not yet checkable — see D4.**
+- Procedural layer: attestation stubs present; staleness vs. declared frequency. **Not yet checkable — see D4.**
 - Freshness layer: **warn** when the environment profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
-- Structural honesty: for each control set, print the enforcement-class breakdown ("X of Y controls enforced/monitored by this tool; N require documented process; M require continuous evidence collection outside this tool's scope"). Computed from the artifact — this is also how the tool states its limits for L2+ catalogs without ever pitching anything.
+- Structural honesty: for each control set, print the enforcement-class breakdown ("X of Y controls enforced/monitored by this tool; N require documented process; M require continuous evidence collection outside this tool's scope"). Computed from the artifact — this is also how the tool states its limits for L2+ catalogs without ever pitching anything. **Not yet implemented**; the shipped report lists the control sets compiled rather than a per-control breakdown.
 
 Exit codes suitable for cron/CI.
 
@@ -315,7 +324,8 @@ automat vend         # §7 steps 1-4 and 6 (compile control set, create account,
                       # controls are real; nothing in it is being watched yet, and `vend` says so in
                       # its plan, its evidence manifest, and its birth certificate rather than staying
                       # silent about the gap.
-automat verify       # §12
+automat verify       # §12: policy + freshness layers only (detective/procedural NOT YET
+                      # IMPLEMENTED — see docs/cli-surface.md D4)
 automat list         # vended accounts (by tags), parked accounts, OUs
 automat reclaim      # LATER (Phase 5): close/park accounts; respect closure rate limits
 ```

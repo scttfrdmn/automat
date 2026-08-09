@@ -48,6 +48,7 @@ func allInterfaces(t *testing.T) map[string]reflect.Type {
 		"OrgPolicyAPI": reflect.TypeOf((*OrgPolicyAPI)(nil)).Elem(),
 		"OrgInitAPI":   reflect.TypeOf((*OrgInitAPI)(nil)).Elem(),
 		"OrgSetupAPI":  reflect.TypeOf((*OrgSetupAPI)(nil)).Elem(),
+		"OrgVerifyAPI": reflect.TypeOf((*OrgVerifyAPI)(nil)).Elem(),
 		"IAMAPI":       reflect.TypeOf((*IAMAPI)(nil)).Elem(),
 		"IAMRoleAPI":   reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
 		"QuotaAPI":     reflect.TypeOf((*QuotaAPI)(nil)).Elem(),

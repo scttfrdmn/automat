@@ -95,7 +95,7 @@ func (e *Ensurer) EnsurePolicy(ctx context.Context, spec PolicySpec) (string, *A
 	if err != nil {
 		return "", nil, err
 	}
-	if sameDocument(current, spec.Document) {
+	if SameDocument(current, spec.Document) {
 		act, terr := e.ensurePolicyTags(ctx, id, spec, tags)
 		if terr != nil {
 			return "", nil, terr
@@ -653,7 +653,7 @@ func (spec PolicySpec) validate() error {
 	case spec.Document == "":
 		return fmt.Errorf("cannot ensure service control policy %q with an empty document", spec.Name)
 	}
-	if _, ok := canonicalizeDocument(spec.Document); !ok {
+	if _, ok := CanonicalizeDocument(spec.Document); !ok {
 		return fmt.Errorf("cannot ensure service control policy %q: the document is not valid JSON. It "+
 			"comes from the compiled artifact, so this is a bug in automat's packer rather than "+
 			"something a catalog can cause; report it rather than editing the policy by hand", spec.Name)

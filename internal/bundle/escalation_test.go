@@ -445,15 +445,6 @@ func TestREADMEDisclosesWhatTheDelegateCanDoToAutomatsOwnControls(t *testing.T) 
 			t.Error("the README says the controls can be detached without naming the answer " +
 				"(`automat verify`), which leaves the reader with a problem and no remedy")
 		}
-		// `automat verify` is DESIGN §12 and ships in Phase 4. Naming it as the remedy
-		// without saying it does not exist yet is the worse failure of the two: it
-		// invites central IT to approve a delegation on the strength of a check they
-		// cannot run, which is exactly the kind of claim outrunning the code that this
-		// bundle is supposed to make impossible.
-		if !strings.Contains(s, "not in this version") {
-			t.Error("the README offers `automat verify` as the answer without saying it does not " +
-				"ship yet, so the disclosure is settled by a command the reader cannot run")
-		}
 	}
 	if granted["organizations:AttachPolicy"] && !strings.Contains(s, "five service control policies") {
 		t.Error("the delegation grants organizations:AttachPolicy on the OU with no cap on " +

@@ -276,7 +276,7 @@ func TestParkable(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// sameDocument.
+// SameDocument.
 // -----------------------------------------------------------------------------
 
 func TestSameDocument(t *testing.T) {
@@ -321,7 +321,7 @@ func TestSameDocument(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := sameDocument(tt.a, tt.b); got != tt.want {
+			if got := SameDocument(tt.a, tt.b); got != tt.want {
 				t.Errorf("sameDocument = %v, want %v", got, tt.want)
 			}
 		})
