@@ -100,10 +100,9 @@
 //
 // # What this package does not do
 //
-// Crosswalk dedupe — merging procedural-control attestations across
-// frameworks via Control.Crosswalk so one practice is attested once rather
-// than once per framework id (DESIGN §9) — is not built. Config-rule dedupe,
-// parameter resolution (configrules.go, built on artifact.RuleParameter.
-// Resolve), conflict reports (conflicts.go), and override files
-// (overrides.go) are.
+// Crosswalk dedupe (crosswalk.go's DedupeAttestations) groups procedural
+// controls into practices via Control.Crosswalk, but renders no attestation
+// stub — no stub generator exists anywhere in this binary. Stub rendering is
+// part of DESIGN §7 step 5's in-child baseline work (internal/baseline,
+// absent — docs/cli-surface.md D3). This package's job stops at the grouping.
 package compilesets
