@@ -79,6 +79,7 @@ type fakeWorld struct {
 	Setup   *awsfake.OrgSetup
 	IAMRole *awsfake.IAMRole
 	Verify  *awsfake.OrgVerify
+	Reclaim *awsfake.OrgReclaim
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -129,6 +130,7 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		Setup:   awsfake.NewOrgSetup(state).Observing(orgFake),
 		IAMRole: awsfake.NewIAMRole(mgmt),
 		Verify:  awsfake.NewOrgVerify(state),
+		Reclaim: awsfake.NewOrgReclaim(state),
 	}
 	iamFake := awsfake.NewIAM(allowActions...)
 	quotaFake := awsfake.NewQuota()
@@ -169,6 +171,20 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		},
 		newOrgVerify: func(context.Context, string, string) (awsapi.OrgVerifyAPI, error) {
 			return f.Verify, nil
+		},
+		newOrgReclaim: func(context.Context, string, string) (awsapi.OrgReclaimAPI, error) {
+			return f.Reclaim, nil
+		},
+		// Mirrors newBrokeredOrgVend's own reasoning exactly: the brokered
+		// constructor still calls broker.Assume against the fake STS, so a
+		// MEMBER-state test sees the real ExternalId resolution and AssumeRole
+		// call, but returns the SAME fake OrgReclaim the native constructor
+		// does rather than a real SDK client built from fake credentials.
+		newBrokeredOrgReclaim: func(ctx context.Context, region, _, roleARN, ref string) (awsapi.OrgReclaimAPI, error) {
+			if _, err := broker.Assume(ctx, stsFake, roleARN, ref, region); err != nil {
+				return nil, err
+			}
+			return f.Reclaim, nil
 		},
 		newIAM: func(context.Context, string, string) (awsapi.IAMAPI, error) {
 			return iamFake, nil
@@ -630,6 +646,7 @@ func TestNoCommandReachesAWSWithoutAFake(t *testing.T) {
 		{args: []string{"vend", "--name", "Genomics", "--dry-run"}, profile: true},
 		{args: []string{"assess", "--account", "111122223333", "--profile", "cmmc-l1",
 			"--scope-statement", "x"}, assessOut: true},
+		{args: []string{"reclaim", "--account", "111122223333", "--dry-run"}},
 	} {
 		args := tc.args
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

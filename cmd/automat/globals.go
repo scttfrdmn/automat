@@ -50,21 +50,26 @@ type globals struct {
 	// halves genuinely run on different credentials (DESIGN §5), so they cannot
 	// share one. `automat init` is the only caller of newOrgInit, and `automat
 	// vend` is the only caller of newOrgPolicy.
-	newSSOOIDC   func(ctx context.Context, region string) (awsapi.SSOOIDCAPI, error)
-	newOrg       func(ctx context.Context, region, profile string) (awsapi.OrgAPI, error)
-	newOrgInit   func(ctx context.Context, region, profile string) (awsapi.OrgInitAPI, error)
-	newOrgVend   func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
-	newOrgPolicy func(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error)
-	newOrgSetup  func(ctx context.Context, region, profile string) (awsapi.OrgSetupAPI, error)
-	newOrgVerify func(ctx context.Context, region, profile string) (awsapi.OrgVerifyAPI, error)
-	newSTS       func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
-	newIAM       func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
-	newIAMRole   func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
-	newQuota     func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
+	newSSOOIDC    func(ctx context.Context, region string) (awsapi.SSOOIDCAPI, error)
+	newOrg        func(ctx context.Context, region, profile string) (awsapi.OrgAPI, error)
+	newOrgInit    func(ctx context.Context, region, profile string) (awsapi.OrgInitAPI, error)
+	newOrgVend    func(ctx context.Context, region, profile string) (awsapi.OrgVendAPI, error)
+	newOrgPolicy  func(ctx context.Context, region, profile string) (awsapi.OrgPolicyAPI, error)
+	newOrgSetup   func(ctx context.Context, region, profile string) (awsapi.OrgSetupAPI, error)
+	newOrgVerify  func(ctx context.Context, region, profile string) (awsapi.OrgVerifyAPI, error)
+	newOrgReclaim func(ctx context.Context, region, profile string) (awsapi.OrgReclaimAPI, error)
+	newSTS        func(ctx context.Context, region, profile string) (awsapi.STSAPI, error)
+	newIAM        func(ctx context.Context, region, profile string) (awsapi.IAMAPI, error)
+	newIAMRole    func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
+	newQuota      func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
 	// newBrokeredOrgVend overrides brokeredOrgVendClient in tests, the same way
 	// every other constructor field does — a test substitutes internal/awsfake
 	// here too, never a live AssumeRole.
 	newBrokeredOrgVend func(ctx context.Context, region, profile, roleARN, externalIDRef string) (awsapi.OrgVendAPI, error)
+	// newBrokeredOrgReclaim is brokeredOrgReclaimClient's test seam — reclaim's
+	// CloseAccount half needs the vendor role in MEMBER, the same shape
+	// newBrokeredOrgVend gives CreateAccount (docs/reclaim-design.md).
+	newBrokeredOrgReclaim func(ctx context.Context, region, profile, roleARN, externalIDRef string) (awsapi.OrgReclaimAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -293,6 +298,44 @@ func (g *globals) orgVerifyClient(ctx context.Context, region, profile string) (
 		return g.newOrgVerify(ctx, region, profile)
 	}
 	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
+}
+
+// orgReclaimClient is the caller's own credentials for `automat reclaim`'s
+// DetachPolicy half — delegable at the Organizations level (DESIGN §3 fact
+// 3), the same credential shape orgPolicyClient already uses for every other
+// policy operation. Never brokered: DetachPolicy runs as whatever identity
+// is calling, native in MANAGEMENT or the caller's own delegated identity in
+// MEMBER.
+func (g *globals) orgReclaimClient(ctx context.Context, region, profile string) (awsapi.OrgReclaimAPI, error) {
+	if g.newOrgReclaim != nil {
+		return g.newOrgReclaim(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return organizations.NewFromConfig(cfg), nil
+}
+
+// brokeredOrgReclaimClient is CloseAccount's client for the MEMBER state:
+// account closure cannot be delegated to a member account at all (same class
+// as CreateAccount, DESIGN §3 facts 1-2), so this borrows an identity in the
+// management account through the assumed vendor role — the same shape
+// brokeredOrgVendClient already gives CreateAccount (docs/reclaim-design.md).
+func (g *globals) brokeredOrgReclaimClient(ctx context.Context, region, profile, roleARN,
+	externalIDRef string) (awsapi.OrgReclaimAPI, error) {
+	if g.newBrokeredOrgReclaim != nil {
+		return g.newBrokeredOrgReclaim(ctx, region, profile, roleARN, externalIDRef)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, externalIDRef, region)
 	if err != nil {
 		return nil, err
 	}

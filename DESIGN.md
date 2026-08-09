@@ -345,7 +345,15 @@ automat assess       # docs/assessment-reporting.md, Stage 3 only: CMMC L1 MET/N
                       # zero machine evidence for any CMMC L1 practice (no SCP fragments
                       # in the catalog, no AWS Config read path), and the rendered
                       # summary discloses that rather than staying silent.
-automat reclaim      # LATER (Phase 5): close/park accounts; respect closure rate limits
+automat reclaim      # docs/reclaim-design.md: --account <id> [--dry-run] --yes
+                      # [--evidence-dir <dir>]. Detaches automat's own service
+                      # control policies from the account's OU placement, then
+                      # calls CloseAccount. Durable by default: --yes is required
+                      # UNCONDITIONALLY to apply, not gated on one step the way
+                      # init's org-creation gate is. No programmatic pre-check
+                      # against AWS's closure rate limit (the higher of 250 or 20%
+                      # of member accounts per rolling 30 days, up to 1,000) — a
+                      # rejection is reported with that limit named.
 ```
 
 `automat assess` is an addition to this list, not a contradiction of it: per the Phase 1

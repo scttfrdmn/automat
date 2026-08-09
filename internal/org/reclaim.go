@@ -28,9 +28,19 @@ import (
 // several other things — mirroring the interface-level separation
 // internal/awsapi.OrgReclaimAPI already draws.
 type Reclaimer struct {
-	// Policy carries DetachPolicy, CloseAccount, and the two read methods
-	// docs/reclaim-design.md specifies.
+	// Policy carries DetachPolicy and the two read methods, on whichever
+	// credential is delegated to make policy calls in this state — native
+	// in MANAGEMENT, the caller's own delegated identity in MEMBER. Never
+	// brokered: DetachPolicy is delegable at the Organizations level
+	// (DESIGN §3 fact 3), the same shape OrgPolicyAPI already uses.
 	Policy awsapi.OrgReclaimAPI
+	// Close carries CloseAccount, on whichever credential can make it —
+	// native in MANAGEMENT, the brokered vendor role in MEMBER, because
+	// CloseAccount is NOT delegable (same class as CreateAccount, DESIGN §3
+	// facts 1-2). Deliberately a second field rather than reusing Policy:
+	// in MEMBER state the two are two different clients on two different
+	// credentials, exactly the reason Ensurer keeps Vend and Policy apart.
+	Close awsapi.OrgReclaimAPI
 
 	// Mode is plan or apply. The zero value is ModePlan, deliberately: a
 	// forgotten field must not close an account.
@@ -163,7 +173,7 @@ func (r *Reclaimer) CloseAccount(ctx context.Context, accountID string) (*Action
 		}), nil
 	}
 
-	_, err := r.Policy.CloseAccount(ctx, &organizations.CloseAccountInput{
+	_, err := r.Close.CloseAccount(ctx, &organizations.CloseAccountInput{
 		AccountId: aws.String(accountID),
 	})
 	if err == nil {

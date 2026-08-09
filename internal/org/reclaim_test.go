@@ -24,7 +24,7 @@ func newReclaimFixture(t *testing.T) *reclaimFixture {
 		State:   st,
 		Reclaim: awsfake.NewOrgReclaim(st),
 	}
-	f.R = &Reclaimer{Policy: f.Reclaim, Mode: ModeApply}
+	f.R = &Reclaimer{Policy: f.Reclaim, Close: f.Reclaim, Mode: ModeApply}
 	return f
 }
 

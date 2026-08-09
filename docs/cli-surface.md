@@ -26,7 +26,7 @@ adds `init` and `vend`.
 | `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |
 | `automat verify` | **Shipped** — policy and freshness layers only, `--account` not `--account \| --ou`; see D4 | `cmd/automat/verify.go` |
 | `automat list` | **Shipped** — no tag-based filtering; see D5 | `cmd/automat/list.go` |
-| `automat reclaim` | Not yet — Phase 5 | ROADMAP Phase 5, `LATER` in §13 |
+| `automat reclaim` | **Shipped** — `--account`/`--dry-run`/`--yes`, unconditional `--yes`; see D9 | `cmd/automat/reclaim.go` |
 
 Also present and not in §13: `version`, `help`, `completion`. `version` is a
 deliberate addition (a tool that stamps its version into generated artifacts must be
@@ -383,6 +383,27 @@ the same value here, or the OpAssess record lands in the wrong file.
 
 **Resolved by amending §13's line**: DESIGN.md's `automat assess` line now names
 `--evidence-dir` alongside its other flags, pointing here for the reasoning.
+
+### D9 — `automat reclaim` is not in an earlier revision of §13, and needs `--evidence-dir` from day one. RESOLVED — §13 amended
+
+`docs/reclaim-design.md` is the design authority, settled before any code was written the
+same way `docs/assessment-reporting.md` settled `assess`'s scope, and its own closing
+section named §13 as needing the addition when it shipped — the same ratification
+condition D2 through D8 above all follow.
+
+**`--account`, `--dry-run`, `--yes`, `--evidence-dir`.** `--evidence-dir` is present from
+the first commit rather than added after an audit found it missing the way D8 had to for
+`assess`: `reclaim` takes no `--environment-profile` either (the account is named directly,
+same reasoning D5 gives for `list`), so it has no way to learn a customized
+`baseline.evidence.local_dir` and needs the flag to avoid filing its `OpReclaim` record into
+a manifest disconnected from the one `vend` and `verify` already wrote to.
+
+**`--yes` is unconditional**, not gated on one step within the plan the way `init`'s
+org-creation gate is (`plansOrgCreation`). Every `reclaim` apply closes an account; there is
+no non-destructive half of this command to distinguish.
+
+**Resolved by amending §13's line**: DESIGN.md's `automat reclaim` line now names all four
+flags and the unconditional-`--yes` decision, pointing here for the reasoning.
 
 ### `automat compile`. RESOLVED — §13 and ROADMAP amended, `gen/catalog` is not a deviation
 

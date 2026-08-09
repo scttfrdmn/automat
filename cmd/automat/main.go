@@ -89,6 +89,7 @@ func newRootCmdWith(g *globals) *cobra.Command {
 		newVerifyCmd(g),
 		newListCmd(g),
 		newAssessCmd(g),
+		newReclaimCmd(g),
 	)
 	return cmd
 }

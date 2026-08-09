@@ -410,6 +410,17 @@ func (s *OrgState) AccountIDs() []string {
 	return out
 }
 
+// AccountStatus returns an account's current status, or "" if unknown.
+func (s *OrgState) AccountStatus(accountID string) orgtypes.AccountStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	acct, ok := s.accounts[accountID]
+	if !ok {
+		return ""
+	}
+	return acct.Status
+}
+
 // PolicyContent returns a policy's document, or "" if there is no such policy.
 func (s *OrgState) PolicyContent(policyID string) string {
 	s.mu.Lock()
