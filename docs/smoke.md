@@ -10,25 +10,62 @@ the Phase 1 review made one acceptance conditional on it (item 4: *"Tie it to th
 5 smoke runbook explicitly: first sandbox run answers Q9 empirically"*). An acceptance
 whose remedy lives in a document nobody has written is an acceptance with no remedy.
 
-**Status: the runbook is specified, not yet runnable.** `make smoke` currently runs
-`go test -tags=smoke ./internal/... -run 'Smoke'`, and no test carries that tag. The
-checklist below is what must exist by Phase 5, in the order the first live run should
-take it.
+**Status: runnable.** `internal/smoke` (package `smoke`, every file tagged `//go:build
+smoke`) automates this checklist as `TestSmokeChecklist`, with one subtest per question
+below, sharing the accounts earlier subtests vend the same way the manual checklist
+always required. `make smoke` runs it. This section used to say the runbook was
+specified but not automated — `TestMakefileSmokeClaimIsStillTrue`
+(`internal/artifact/smoke_claim_test.go`) is what keeps this claim from silently going
+stale again in either direction.
+
+**This automation has never run against real AWS.** It was written and typechecked
+against the tag, but no agent building it has AWS credentials — the first real run is
+what will tell you whether the call shapes actually hold. Expect the first attempt to
+surface a small fix (an SDK field name, a pagination edge, a missing permission) rather
+than a clean pass, the same as any code meeting its real target for the first time.
+
+## Running it
+
+```
+export AUTOMAT_SMOKE_PROFILE=my-sandbox-profile   # AWS credential profile
+export AUTOMAT_SMOKE_ORG=o-xxxxxxxxxx              # the sandbox org id, verified at runtime
+export AUTOMAT_SMOKE_OU=ou-xxxx-xxxxxxxx           # where throwaway accounts land
+export AUTOMAT_SMOKE_EMAIL_DOMAIN=sandbox.example.edu  # root-email domain for vended accounts
+export AUTOMAT_SMOKE_FINDINGS=/path/to/findings.jsonl  # optional; defaults under the OS temp dir
+export AUTOMAT_SMOKE_REGION=us-east-1              # optional
+make smoke
+```
+
+`AUTOMAT_SMOKE_PROFILE` and `AUTOMAT_SMOKE_ORG` are both required and checked in that
+order; `AUTOMAT_SMOKE_ORG` is verified against a real `DescribeOrganization` call before
+anything else runs — a mismatch refuses the whole suite rather than running the wrong
+account's questions.
+
+**The findings file is not the deliverable.** It is JSON lines, one `smoke.Finding` per
+observation (a latency, an exception's exact text, which of several already-handled
+outcomes occurred) — read it after the run, and use it to edit `docs/open-questions.md`
+by hand: narrow or delete the entry a finding answers. The test itself never touches that
+file. Rule 4 below still governs; automation changed how the observation is captured, not
+who acts on it.
 
 ## Rules
 
-These are not negotiable and the target enforces the first one:
+These are not negotiable and the target enforces the first two:
 
 1. **`AUTOMAT_SMOKE_PROFILE` must be set explicitly.** No default, no fallback to the
    ambient credential chain. A smoke target that runs against whatever profile happens
    to be active is one that eventually runs against production.
 2. **Read-only except in an explicitly named sandbox organization.** Anything mutating
    is gated on the sandbox org id, checked at run time against the org the credentials
-   actually resolve to — not against a flag saying it is the sandbox.
+   actually resolve to — not against a flag saying it is the sandbox. `AUTOMAT_SMOKE_ORG`
+   plus `internal/smoke.newHarness`'s own `DescribeOrganization` check is what enforces
+   this now, in code rather than only in this paragraph.
 3. **Never in CI.** The tag exists so `go test ./...` cannot reach these.
 4. **Record what you observed, not what passed.** The output of a smoke run is an edit
    to `docs/open-questions.md`: an entry deleted, or an entry narrowed. A run that only
-   reports pass/fail has wasted the one thing a live org provides.
+   reports pass/fail has wasted the one thing a live org provides. `internal/smoke`'s
+   `Finding`s are what make this possible without hand-transcribing terminal output —
+   see "Running it," above.
 
 ## Q9 is the first thing the first vend tests
 
@@ -86,6 +123,18 @@ restatement.
 | 6 | **Q6** — SCP quota edges under real union output | Now largely answered offline against `catalogs/baseline-protection.json`: the shipped set plus a profile's allowlists packs into **one** policy at 46% of the limit. What a live run still adds is what a *campus* baseline in the reserved institutional slot looks like, and whether the three usable slots survive contact with one |
 | 7 | **Q13** — `BP.IAM-1` denies re-permissioning the baseline roles, automat included | Whether the protection SCP governs automat's own `PutRolePolicy` on `automat-automation` once attached, and how long after `AttachPolicy` that becomes true. Attempt the write from the automation role and record the result, then re-run the full vend and confirm it is a no-op rather than a denied write |
 | 8 | **Q24** — does `reclaim`'s detach-then-close sequence behave the way `docs/reclaim-design.md` assumes | Vend a throwaway account, `reclaim --yes` it, and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `DetachPolicy` on a just-attached SCP succeeded immediately, and — only if the sandbox org's own history permits reaching it safely — the exact shape of a closure-quota rejection |
+
+**`TestSmokeChecklist`'s Q8 subtest is a partial answer.** It runs under this suite's own
+native credentials, which carry no resource-tag restriction at all — so a real run of it
+is expected to succeed regardless of whether the *vendor role's* condition would bind.
+The subtest still records what it observed as a `Finding`, but answering Q8 for real
+means running the same untagged-account move under the *brokered* vendor role, which
+requires the onboarding bundle already deployed into the sandbox — not something this
+suite does on your behalf. Likewise `TestSmokeChecklist`'s Q13 subtest can only reach
+`GetRole` against its own account; the actual live question (whether the protection SCP
+denies `PutRolePolicy` to every principal in the *child* account, `automat-automation`
+included) needs `internal/baseline` to exist so a suite can assume into the child and
+test it — recorded as a disclosed gap in the Finding, not fabricated.
 
 Q8 deserves the emphasis it has above: it is the one on this list whose bad case is
 silent. Q9 fails visibly, Q7 fails visibly, Q5 and Q6 are questions about capability

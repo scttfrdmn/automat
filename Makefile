@@ -45,21 +45,22 @@ golden: ## Regenerate golden files (review the diff before committing)
 clean:
 	rm -rf bin dist
 
-# Live AWS testing. Never run from CI. Requires an explicit profile and is
-# read-only unless pointed at an explicitly named sandbox org (CLAUDE.md rule 1).
+# Live AWS testing. Never run from CI. Requires two explicit variables and is
+# read-only except against the sandbox organization AUTOMAT_SMOKE_ORG names,
+# checked at runtime against what the credentials actually resolve to
+# (CLAUDE.md rule 1; docs/smoke.md rule 2).
 #
-# No file in this tree carries a `smoke` build tag yet (AUDIT-2 carry-forward
-# item 3), so this currently runs zero tests and exits 0. That is not a pass --
-# it means the manual checklist in docs/smoke.md has not been automated at all.
-# TestMakefileSmokeClaimIsStillTrue fails the day a smoke-tagged test is added
-# and this comment is not updated to match.
-smoke: ## Manual live smoke test (requires AUTOMAT_SMOKE_PROFILE); see docs/smoke.md -- no automated test carries the smoke tag yet
+# internal/smoke automates docs/smoke.md's checklist (TestSmokeChecklist).
+# TestMakefileSmokeClaimIsStillTrue fails the day this comment stops matching
+# what carries the tag -- keep the two in step.
+smoke: ## Live smoke test against a sandbox org (requires AUTOMAT_SMOKE_PROFILE, AUTOMAT_SMOKE_ORG); see docs/smoke.md
 ifndef AUTOMAT_SMOKE_PROFILE
 	$(error AUTOMAT_SMOKE_PROFILE must be set explicitly; see docs/smoke.md)
 endif
-	@echo "No test in this tree carries the smoke build tag yet -- this will run zero tests."
-	@echo "The manual checklist is docs/smoke.md; it has not been automated."
-	go test -tags=smoke -count=1 ./internal/... -run 'Smoke'
+ifndef AUTOMAT_SMOKE_ORG
+	$(error AUTOMAT_SMOKE_ORG must be set explicitly; see docs/smoke.md)
+endif
+	go test -tags=smoke -count=1 ./internal/... -run 'Smoke' -v
 
 
 # Emulator-backed tests, in a separate Go module (docs/testing-strategy.md,

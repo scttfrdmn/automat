@@ -1,8 +1,8 @@
-# Testing against AWS: two tools, neither replacing the other
+# Testing against AWS: three tools, none replacing the others
 
-Referenced by `CLAUDE.md`. `internal/awsfake` and an AWS emulator test different things,
-and a package moves to the emulator only when the emulator can express what that package's
-tests actually assert.
+Referenced by `CLAUDE.md`. `internal/awsfake`, an AWS emulator, and `internal/smoke`'s
+live-AWS suite each test a different thing, and a package moves to a heavier tier only
+when that tier can express what the package's tests actually assert.
 
 ## The fakes test automat's REACTION to adversarial state transitions
 
@@ -18,11 +18,26 @@ Against a real authorization path — that a policy document is accepted, that a
 key actually gates the call, that a trust policy admits the principal automat assumes.
 Hand-rolled fakes say yes because they were written to say yes.
 
-## Keep both
+## `internal/smoke` tests what neither a fake nor the emulator can: undocumented real-AWS behavior
 
-Do not migrate a package to the emulator because the emulator exists; migrate when its
-tests' subject is expressible there, and say in the commit which of the two things the
-moved tests were testing.
+`docs/smoke.md`'s checklist — `MoveAccount`'s source-parent authorization, the timing
+between `CreateAccount` and a move that can follow it, whether an `aws:ResourceTag`
+condition actually binds — are not questions about automat's own code, and not questions
+about IAM enforcement an emulator's auth controller can answer either, because the
+emulator's own behavior on these points is itself an assumption, not a fact borrowed from
+AWS. Only a real organization settles them. `internal/smoke` (every file `//go:build
+smoke`) is gated identically to CLAUDE.md rule 1's carve-out: never in CI, never on
+ambient credentials, read-only except against a sandbox verified at runtime. See
+`docs/smoke.md` for how to run it and what it can and cannot yet answer on its own
+(a few of the checklist's questions need `internal/baseline` or a deployed onboarding
+bundle to answer for real, and the corresponding subtests say so rather than guessing).
+
+## Keep all three
+
+Do not migrate a package to the emulator because the emulator exists, and do not reach
+for `internal/smoke` for something a fake or the emulator can already express. Migrate
+when a tier's tests' subject is expressible there, and say in the commit which of the
+three things the moved or added tests were testing.
 
 ## Emulator integration lives in a SEPARATE GO MODULE
 
