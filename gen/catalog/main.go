@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/scttfrdmn/automat/internal/artifact"
+	"github.com/scttfrdmn/automat/internal/assess"
 )
 
 func main() {
@@ -44,7 +45,63 @@ func run() error {
 			return err
 		}
 	}
+
+	// The objectives catalog is a different document type (internal/assess's
+	// ObjectivesCatalog, not artifact.Artifact — see compileobjectives.go's
+	// header comment for why), so it cannot share the targets slice above or
+	// emit's signature. Run and emitted separately, but still every time this
+	// tool runs, for the same reason `make catalogs-check` needs to be
+	// meaningful over ALL compiled catalogs at once.
+	oc, err := compileFromObjectives(*src)
+	if err != nil {
+		return err
+	}
+	return emitObjectives(oc, *out, *src, *check)
+}
+
+// emitObjectives writes the compiled objectives catalog, or compares it
+// against the vendored copy. Mirrors emit's shape for artifact.Artifact,
+// duplicated rather than made generic over both types: the two document
+// types' Write/Validate/hash methods have different signatures, and a
+// shared emit would need an interface neither type is designed to satisfy
+// for its own sake.
+func emitObjectives(oc *assess.ObjectivesCatalog, out, src string, check bool) error {
+	data, err := oc.MarshalIndented()
+	if err != nil {
+		return err
+	}
+	// objectives/ subdirectory, not the top level: the top level is reserved
+	// for control-artifact-v1 documents (catalogs/embed.go's own comment on
+	// why), and this is a different schema.
+	path := filepath.Join(out, "objectives", oc.Catalog.ID+".json")
+
+	if check {
+		have, err := os.ReadFile(path) //nolint:gosec // maintainer tool reading its own output
+		if err != nil {
+			return fmt.Errorf("read vendored catalog %s: %w", path, err)
+		}
+		if string(have) != string(data) {
+			return fmt.Errorf("%s is stale: recompiling %s from %s produces different bytes; run `make catalogs`",
+				path, oc.Catalog.ID, src)
+		}
+		fmt.Printf("%s up to date (%s)\n", path, oc.Catalog.ContentHash)
+		return nil
+	}
+
+	if err := oc.Write(path); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s\n  content_sha256 %s\n  %d requirements, %d objectives\n",
+		path, oc.Catalog.ContentHash, len(oc.Requirements), countObjectives(oc))
 	return nil
+}
+
+func countObjectives(oc *assess.ObjectivesCatalog) int {
+	n := 0
+	for _, r := range oc.Requirements {
+		n += len(r.Objectives)
+	}
+	return n
 }
 
 // emit writes a compiled catalog, or compares it against the vendored copy.

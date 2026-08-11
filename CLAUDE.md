@@ -68,9 +68,11 @@ schema/                 # JSON Schemas + CHANGELOG (versioned contracts)
 catalogs/               # vendored compiled artifacts: cmmc-l1, baseline-protection, 800-171r2
                         # (110 requirements, all procedural — no AWS mapping joined yet, see
                         # docs/open-questions.md Q4), plus obligations/ (dfars-7012,
-                        # nih-cadr-dua) and classification/ (uc-protection-levels,
-                        # stanford-risk-classifications). 800-171r3 remains Phase 0 scope,
-                        # not yet compiled.
+                        # nih-cadr-dua), classification/ (uc-protection-levels,
+                        # stanford-risk-classifications), and objectives/ (800-171a-objectives —
+                        # a DIFFERENT, DRAFT schema, schema/objectives-catalog-v1.schema.json, not
+                        # yet ratified per rule 6; see schema/CHANGELOG.md's objectives-catalog/v1
+                        # entry). 800-171r3 remains Phase 0 scope, not yet compiled.
 gen/                    # maintainer tooling: OSCAL + conformance-pack → catalog compiler
 docs/                   # conventions.md, reclaim-design.md now written (Phase 5); see
                         # docs/cli-surface.md, docs/audit-ritual.md, docs/open-questions.md,

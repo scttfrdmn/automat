@@ -117,7 +117,17 @@ refresh cycle.
 Adjacent CPRT datasets found while checking, potentially useful later:
 `SP-800-171-Rev-2-to-SP-800-171-Rev-3`, `NIST SP 800-171 r2 to CMMC L1`,
 `NIST SP 800-171 r2 to CMMC L2`, `NIST SP 800-171 R2 to NIST SP 800-53 R5`, and
-`SP_800_171A` (1.0.0 and 3.0.0).
+`SP_800_171A` (1.0.0 and 3.0.0). **`SP_800_171A` version 1.0.0 retrieved (2026-08-11).** Unlike
+`800-171r2`'s own retrieval, the documented endpoint shape worked on the first attempt —
+substituting `sp_800_171a_1_0_0` for the working `sp_800_171_2_0_0` reused the same URL shape with
+no third-party reference-implementation lookup needed. 320 assessment-objective determination
+statements across the same 110 requirements, vendored as `gen/sources/800-171a-objectives.json`
+and compiled to `catalogs/objectives/800-171a-objectives.json` via a new, standalone
+`schema/objectives-catalog-v1.schema.json` (DRAFT, not yet ratified — see that schema's own
+`$comment_draft_status` and `schema/CHANGELOG.md`'s `objectives-catalog/v1` entry) and
+`internal/assess.ObjectivesCatalog`. Cross-referenced against `catalogs/800-171r2.json`'s
+requirement id set at compile time: exact equality, no orphan either direction. Version 3.0.0
+(pairs with Rev 3) remains unretrieved and out of scope.
 
 ---
 

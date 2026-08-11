@@ -1528,3 +1528,67 @@ Notes on the choices that constrain future changes:
   given, not when it must be.
 - **Content hash is out-of-band**, matching `assessment-result-v1` and every
   other document in `schema/`.
+
+## objectives-catalog/v1 — 1.0.0 (DRAFT, NOT RATIFIED)
+
+New schema file, added while retrieving the NIST SP 800-171A objectives catalog
+(ROADMAP.md, "Backlog — research complete" › "Assessment Stages 1-2", item 3).
+**Explicitly NOT the same footing as `obligation-profile/v1`, `classification-profile/v1`, or
+`assessment-result-v1` above** — those three were each ratified at the maintainer's review before
+being listed here as accepted. This one is not: ROADMAP.md's own "Assessment Stages 1-2" section
+states plainly that "two new schema files for the objectives catalog and weight-table documents"
+are "needs pre-approval per rule 6, not yet asked" — identified as needing an ask, but the ask
+itself not yet sent. So this file carries its own `$comment_draft_status` field saying so, and
+this changelog entry is the same disclosure in the place a reader of `schema/CHANGELOG.md` would
+look for it. Do not read the existence of the file as approval; a future session finding this
+entry should check whether the consolidated Phase 0 ask (this file plus the weight-table schema,
+plus `assessment-result-v1`'s proposed `worksheet_summary`/`score` sibling fields) has since been
+sent and answered before treating the shape below as settled.
+
+**Why it is a NEW, STANDALONE document type rather than a field on `control-artifact-v1`'s
+`Control` object.** `control-artifact-v1.schema.json` is shared by every compiled catalog this
+project ships — `cmmc-l1`, `800-171r2`, `baseline-protection` — and only the 800-171 family has
+an assessment-objective decomposition to carry. Adding an `objectives` field to `Control` would
+be a schema change reaching every one of those catalogs for a shape only one of them needs; a
+sibling document that references a control catalog's ids without redefining them costs nothing
+to the schema every other catalog validates against.
+
+**Shape.** `catalog` (id, title, the `control_catalog_id` it decomposes, provenance `sources[]`,
+`compiled_at`, `content_sha256` — the same fields `control-artifact-v1`'s `artifact` block carries,
+minus the `artifact`-union source member, since an objectives catalog is never itself a union) and
+`requirements[]`, each a requirement id plus its `objectives[]` (id, statement, and a reserved,
+currently-unpopulated `method_class`) and one `assessment_methods` triple (`examine`, `interview`,
+`test`) recorded **per requirement, not per objective** — NIST's own CPRT data model attaches one
+triple of candidate evidence sources to the requirement as a whole, not to each lettered
+determination statement, so this schema follows that shape rather than inventing a finer one the
+source does not support.
+
+**`requirements[].id` must equal an id present in the named `control_catalog_id` catalog's
+`controls[]`, and the schema cannot state that.** JSON Schema cannot look inside a second document,
+so this is a Go-side obligation: `internal/assess.ObjectivesCatalog.CrossReferenceControlArtifact`
+checks both directions — every objective's requirement id exists in the control artifact, and
+every control artifact requirement has at least one objectives entry — and `gen/catalog`'s
+`compileFromObjectives` refuses to compile if either direction has an orphan. For the shipped
+`800-171a-objectives` catalog against `800-171r2`, the two requirement-id sets are exactly equal:
+no orphan either direction, confirmed by set equality at curation time as well as at compile time.
+
+**No Go worksheet or scoring code was added, and none should read this until Stage 1 is scoped.**
+`internal/assess.ObjectivesCatalog`, `RequirementObjectives`, and `Objective` are load-bearing
+types with a loader (`LoadObjectivesCatalog`/`LoadObjectivesCatalogFS`), a validator, and the
+cross-reference check above — but nothing in `internal/assess` yet renders a worksheet, scores
+anything, or wires a CLI flag to this catalog. That is Stage 1 (ROADMAP.md, "Assessment Stages
+1-2", item 4), a separate, later task gated on this schema's actual ratification.
+
+**Vendored under `catalogs/objectives/`, not the top level.** The top level of `catalogs/` is
+implicitly reserved for `control-artifact-v1` documents: `internal/compilesets`'s
+`TestTheModelUnderstandsEveryOperatorTheCatalogsUse` globs `catalogs/*.json` and loads every match
+as a control artifact, so a document of a different schema at that level fails that load rather
+than being silently skipped by it. `catalogs/embed.go`'s `//go:embed` directive was widened to
+include `objectives/*.json` alongside the existing `obligations/*.json` and
+`classification/*.json` subdirectory globs.
+
+Retrieval: NIST CPRT, framework `SP_800_171A`, version `1.0.0` (the version that pairs with Rev 2,
+which is what `800-171r2` compiles — version `3.0.0` pairs with Rev 3 and is out of scope). The
+documented endpoint shape worked on the first attempt, substituting `sp_800_171a_1_0_0` for
+`800-171r2`'s working `sp_800_171_2_0_0` — no third-party reference-implementation lookup was
+needed this time, unlike `800-171r2`'s own retrieval (docs/open-questions.md Q4).
