@@ -250,8 +250,9 @@ different moments — send this before Phase 1 starts so the answer is in hand b
    scaffolding the same new package differently).
 2. Evidence mirror slice 1 (write-only upload) — see below.
 3. Assessment's `800-171r2` control artifact — see below. Independent of every other track.
-4. Assessment's `800-171A` objectives catalog — sequenced right after track 3 lands (needs real
-   requirement ids to reference), but can be drafted in parallel and merged immediately after.
+4. **Done.** Assessment's `800-171A` objectives catalog — sequenced right after track 3 landed
+   (needed `800-171r2`'s real requirement ids to cross-reference against). See "Assessment
+   Stages 1-2" below for detail.
 5. Q20's live-IAM smoke subtest — see below. Small, `internal/smoke`-only, needs nothing else.
 
 Running in parallel with all five, but not as agent work — human-paced, started now, blocking
@@ -338,8 +339,22 @@ Strict prerequisite chain, not parallelizable at the start:
    independent passes, diffed, disagreement goes to review, never resolved by picking one). This
    is human-only, off-computer work with a commit at the end — not something to dispatch to a
    coding agent.
-3. **The 800-171A objectives catalog** (single-pass retrieval + hash, unlike the weight table —
-   don't conflate the two transcription disciplines).
+3. **Done.** The 800-171A objectives catalog (single-pass retrieval + hash, unlike the weight
+   table — don't conflate the two transcription disciplines) — `catalogs/objectives/
+   800-171a-objectives.json`, 320 assessment-objective determination statements across the same
+   110 requirements `800-171r2` names, retrieved from NIST CPRT `SP_800_171A_1_0_0`, vendored +
+   hashed, compiled via a new `compileFromObjectives` target in `gen/catalog` into
+   `internal/assess.ObjectivesCatalog` — a NEW, STANDALONE Go type and schema
+   (`schema/objectives-catalog-v1.schema.json`), not a field on `control-artifact-v1`. Retrieval
+   endpoint found by the same discovery discipline `800-171r2`'s Q4 entry used: the documented
+   shape, with `sp_800_171_2_0_0` substituted for `sp_800_171a_1_0_0`, worked on the first try —
+   no third-party reference lookup was needed this time. **The schema file is DRAFT, not
+   ratified** — this line item's own text below already says the two new schema files (this one
+   and the weight table's) are "needs pre-approval per rule 6, not yet asked", so
+   `schema/objectives-catalog-v1.schema.json` carries an explicit `$comment_draft_status` saying
+   so and is not to be treated as approved. Cross-referenced against `catalogs/800-171r2.json` at
+   compile time (`ObjectivesCatalog.CrossReferenceControlArtifact`): the two datasets' requirement
+   id sets are exactly equal, no orphan either direction.
 4. **Stage 1 (worksheet)** — `nih-cadr-dua` first (no weight-table dependency, `scoring.method:
    "none"`), then `dfars-7012`'s worksheet half. Must also wire the `nih-cadr-dua`
    revision-determination refusal (`--profile nih-cadr-dua` with no `--determinations` file must
@@ -349,7 +364,11 @@ Strict prerequisite chain, not parallelizable at the start:
 
 **Needs pre-approval per rule 6, not yet asked:** a `worksheet_summary` sibling field and a
 `score` sibling field on `assessment-result-v1`, plus two new schema files for the objectives
-catalog and weight-table documents.
+catalog and weight-table documents. **Partial update:** `schema/objectives-catalog-v1.schema.json`
+now exists as a drafted, DRAFT-marked file (item 3 above) so the objectives data has a shape to
+validate against, but drafting it is not the same as asking — it is still unratified, and the ask
+itself (this paragraph) has still not been sent. The weight-table schema remains entirely
+undrafted.
 
 ### Remote evidence mirror
 

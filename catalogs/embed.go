@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package catalogs is the vendored compiled control artifacts, obligation
-// profiles, and institutional classification profiles, embedded into the binary.
+// profiles, institutional classification profiles, and objectives catalogs,
+// embedded into the binary.
 //
 // It holds no logic. The only reason a data directory is also a Go package is
 // that `//go:embed` cannot reach outside the package directory, and the data has
@@ -25,8 +26,18 @@ import (
 )
 
 // files is the embedded tree: the compiled control artifacts at the top level,
-// the obligation profiles below `obligations/`, and the institutional
-// classification profiles below `classification/`.
+// the obligation profiles below `obligations/`, the institutional
+// classification profiles below `classification/`, and the objectives
+// catalogs below `objectives/`.
+//
+// `objectives/` is a separate subdirectory rather than a top-level file
+// because the top level is reserved for schema/control-artifact-v1.schema.json
+// documents — internal/compilesets.TestTheModelUnderstandsEveryOperatorTheCatalogsUse
+// globs `catalogs/*.json` and loads every match as a control artifact, so a
+// document of a different schema at that level would fail that load rather
+// than being ignored by it. Objectives catalogs are DRAFT
+// (schema/objectives-catalog-v1.schema.json's own status note) and read by
+// internal/assess, never by internal/artifact.
 //
 // Listed by glob rather than by name so that adding a catalog is a data change.
 // A catalog that fails to embed is not a silent omission — `internal/catalog`
@@ -36,7 +47,7 @@ import (
 // vendored documents is a decision about what the binary carries, and it should
 // take a line here rather than arriving because a file was dropped in a folder.
 //
-//go:embed *.json obligations/*.json classification/*.json
+//go:embed *.json obligations/*.json classification/*.json objectives/*.json
 var files embed.FS
 
 // FS returns the embedded catalog tree.
