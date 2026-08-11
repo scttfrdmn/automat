@@ -111,6 +111,17 @@ effects where visible". Whether a member account can read the delegation policy 
 it policy-management rights is unverified. If it cannot, preflight must be told rather than
 detect, and the onboarding bundle needs to carry that fact.
 
+**First live sandbox run (2026-08-10): partial, and from the wrong side.** `DescribeResourcePolicy`
+against this sandbox — which has never had a delegation policy created (no `setup` has run
+against it) — returned `ResourcePolicyNotFoundException: No resource-based policy found`, not
+`AccessDenied`. That is a readable, informative response about *absence*, called from the
+**management account**. The actual question is about the **member account's** visibility into
+a delegation policy that *does* exist, which this run cannot test: no member account exists in
+this sandbox yet (nothing has been vended and kept — every vended account this run went
+straight to `reclaim`), and no delegation policy has ever been created here. Needs a follow-up
+run: create a delegation policy, vend a member account, and call `DescribeResourcePolicy` from
+inside it.
+
 ### Q6 — SCP quota edges under union output — **RE-MEASURED AGAINST REAL STATEMENTS; HEADROOM IS AMPLE**
 
 DESIGN §16 names the quotas (5 SCPs per target, 5120 characters each). What was unverified was
@@ -169,11 +180,19 @@ Re-measure when `gen/catalog` emits SCP blocks from a conformance pack, and trea
 landing above ~2 of the 3 usable slots as a signal that the merger needs to be more aggressive
 about action lists than the normal form is.
 
-### Q7 — Does `MoveAccount` reliably succeed immediately after `CreateAccount`?
+### Q7 — Does `MoveAccount` reliably succeed immediately after `CreateAccount`? — **ANSWERED**
 
 DESIGN §5 documents the cosmetic race and requires treating create-without-move as an error
 state with a `parked` outcome. The retry policy that is actually needed — how long, how many
 attempts — is an empirical question.
+
+**First live sandbox run (2026-08-10, `internal/smoke`, two vends):** `DescribeCreateAccountStatus`
+polling reached `SUCCEEDED` after ~10.4s both times (10.40s, 10.41s) at 5s poll intervals — i.e.
+the very first or second poll after issuing `CreateAccount`. Once `SUCCEEDED`, `MoveAccount`
+itself completed in ~0.35s both times, with no delay or retry needed — the cosmetic race DESIGN
+§5 warns about did not manifest in either run. A ~15s total budget (poll `CreateAccount` to
+completion, then move once) comfortably covers both observations; this is not enough runs to
+rule out a slow tail, but gives no evidence one exists.
 
 ### Q8 — Does `MoveAccount` honor `aws:ResourceTag` on the account being moved?
 
@@ -203,6 +222,15 @@ If it turns out `MoveAccount` cannot be conditioned on the account at all, the f
 `organizations:MoveAccount` scoped by a permissions boundary that `preflight` verifies, or —
 better — dropping the org-wide account resource and accepting that automat must be told each
 account's ARN, which it knows, since it created it.
+
+**First live sandbox run (2026-08-10): still open.** `internal/smoke`'s `Q8_ResourceTagHonored`
+moved a deliberately untagged account and it succeeded (not denied) — but this is expected and
+uninformative under this run's *native* management-account credentials, which carry no
+resource-tag restriction at all. The real test — the same move attempted under the *brokered
+vendor role*, which does carry the condition — needs the onboarding bundle deployed into a
+member account first, which this run did not do (no bundle has been deployed into any sandbox
+account yet). Still the one entry on this list whose bad case is silent; still needs that
+follow-up run before it can be closed.
 
 ### Q9 — Does `MoveAccount` authorize against the *source* parent as well as the destination?
 
@@ -240,7 +268,19 @@ keys, which is itself part of the question). If it does not, the honest resoluti
 `DestinationParentId`-only grant plus documenting that the delegate can move an account it
 created back to the root, and saying so in the README's blast-radius section.
 
-### Q12 — Does `MoveAccount` into the account's *current* parent succeed or return `DuplicateAccountException`?
+**First live sandbox run (2026-08-10): still open, same reason as Q8.** `internal/smoke`'s
+`Q9_MoveAccountSourceParent` moved a freshly created account from the root into the delegated
+OU and it succeeded immediately (~0.35s, no denial) — but this run's credentials are the
+management account's own native admin session, which has no IAM resource restriction at all
+and was never going to be denied regardless of what the *vendor role's* three-entry resource
+list would do in the same position. This is exactly the case `docs/smoke.md`'s own text warns
+about: the question is about the **restricted vendor role's** authorization, not automat's own
+management-account access, and answering it for real needs the onboarding bundle deployed and
+the move attempted through the brokered vendor role — not done in this run. Confirmed instead:
+`CreateAccount` really does land a new account at the organization root (source parent was the
+root ARN both times), which is the premise the whole question rests on.
+
+### Q12 — Does `MoveAccount` into the account's *current* parent succeed or return `DuplicateAccountException`? — **ANSWERED**
 
 Q9's neighbour again, and the one `vend --resume` turns on. A resumed vend re-runs the move
 against an account that is already exactly where it belongs, which is the *success* path of
@@ -271,6 +311,15 @@ precisely because the move succeeded.
 
 **Phase 5 smoke runbook, alongside Q9:** after the first successful vend, re-run the move with
 the destination equal to the current parent and record the exact result.
+
+**First live sandbox run (2026-08-10), both vends: `DuplicateAccountException`, not a silent
+success.** Exact message both times: `"That account is already present at the specified
+destination."` This confirms the reading `internal/org/account.go`'s `isCode(err,
+"DuplicateAccountException")` branch already assumes and treats as success — the code's
+tolerance for this exception, combined with reading the parent first via `ListParents` before
+attempting the move at all, is the right (and now confirmed necessary) pair. Native
+credentials were sufficient to answer this one fully; unlike Q8/Q9 there is no restricted-role
+angle this result depends on.
 
 ### Q13 — `BP.IAM-1` protects the baseline roles from automat as well, so what is the vend ordering?
 
@@ -316,6 +365,14 @@ role establishment before policy attachment, and must not treat an `AccessDenied
 `automat-automation` from the automation role itself and record the result; then re-run the
 full vend and confirm it is a no-op rather than a denied write.
 
+**First live sandbox run (2026-08-10): not reached.** `internal/smoke`'s `Q13_BaselineRolesProtected`
+called `GetRole("automat-automation")` and got `NoSuchEntity` — expected and uninformative:
+`internal/baseline` does not exist yet, so no vend path has ever created that role anywhere,
+including in this sandbox, and the call ran against the management account rather than a
+child. This question cannot be answered empirically until `internal/baseline` exists to create
+the role in a member account and the smoke suite can assume into that child to attempt
+`PutRolePolicy` against it post-attach. Still fully open.
+
 ### Q24 — Does `reclaim`'s detach-then-close sequence behave against a real organization the way `docs/reclaim-design.md` assumes?
 
 `internal/org.Reclaimer` and `cmd/automat/reclaim.go` (Phase 5) are built and tested against
@@ -349,6 +406,40 @@ and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `Deta
 succeeded immediately after the SCP's own attach (a fresh attach followed by an immediate
 detach in the same run), and — only if the sandbox org's history permits reaching it
 without risking a real account — the exact shape of a closure-quota rejection.
+
+**First live sandbox run (2026-08-10): partially answered, and revealed a gap in `reclaim`
+itself.**
+
+- `DetachOwnedPolicies` (detaching the tag-owned SCP from the account's OU) completed in
+  ~0.35s both runs, immediately, no propagation delay observed — the SCP had been attached to
+  the OU (not the account) well before either close attempt, so this does not test an
+  immediate attach-then-detach sequence; it tests detach against a policy that has been in
+  place for a while, which is the more common case anyway.
+- `CloseAccount` itself returned in ~0.2s both times, `nil` error — a request accepted, exactly
+  what `Reclaimer.CloseAccount`'s current "trust a nil error as Applied: true" assumption
+  expects.
+- **`DescribeAccount` did NOT report `SUSPENDED` within 10 minutes for either account.** Run 1:
+  killed by `go test`'s own binary-wide timeout before the poll finished (a harness bug, since
+  fixed — see below). Run 2, with that fixed: the account was still `ACTIVE` at the 10-minute
+  mark and only reported `SUSPENDED` sometime shortly after (confirmed by a manual
+  `describe-account` a few minutes later). **This means real `CloseAccount` completion — full
+  propagation to `DescribeAccount`, not just request acceptance — can take longer than 10
+  minutes.** `Reclaimer.CloseAccount`'s assumption that a `nil` error means done is validated
+  for "request accepted"; it is not validated, and is now known to be wrong, for "the account
+  is actually closed" if any caller relies on `DescribeAccount` reporting `SUSPENDED` promptly
+  afterward (nothing in `cmd/automat/reclaim.go` currently polls for it, so this has not yet
+  caused a user-visible bug — but it is a real gap between what closure "returning" means and
+  what an operator watching the account would see).
+- Closure-quota rejection: not reached — only two accounts were ever closed in this org's
+  history, far under any rate limit.
+- Separately, this run's own harness (not `reclaim` itself) had a real bug: its `t.Cleanup`
+  reclaim path called `ListPoliciesForTarget` without the required `Filter` field and failed
+  outright, and `go test`'s default 10-minute *whole-binary* timeout killed the process mid-poll
+  on the first attempt before `t.Cleanup` could even run — both fixed
+  (`internal/smoke/harness.go`, `Makefile`'s `-timeout=30m`), and both required a hand-run
+  `automat reclaim --yes` afterward to close the accounts these bugs left `ACTIVE`. Neither
+  bug is evidence about production `reclaim` itself, only about the smoke harness's own
+  fidelity to it.
 
 ---
 
