@@ -227,7 +227,67 @@ open item in `docs/open-questions.md` plus the largest gaps in `docs/beyond.md`)
 that needed no schema change and no live-AWS infrastructure were implemented immediately and are
 folded into the phases above (Q20's validation gap, Q21's birth-certificate print, Q22's
 disclosure warning, `verify`'s structural-honesty breakdown, and `internal/baseline`'s slice 1
-interfaces). Everything else is organized here, in dependency order, for a later pass.
+interfaces). Everything else is organized below by track, with full technical detail; the
+**phase order** that sequences these tracks against each other — which can start now, which wait
+on a maintainer decision, which must not run in the same parallel batch because they'd touch the
+same files — is a separate scheduling layer, given first since it's what a future session reads
+before dispatching anything.
+
+### Phase order across tracks
+
+**Phase 0 — one consolidated pre-approval ask, blocks nothing below.** Three tracks each need a
+rule-6 schema decision: Q23's `OpRotate` operation + `rotation` block; assessment's
+`worksheet_summary`/`score` sibling fields plus two new schema files (objectives catalog, weight
+table); and, only if later evaluation shows it's needed, a cross-account-role field for the
+evidence mirror. Ask once, for all three together, rather than three separate asks at three
+different moments — send this before Phase 1 starts so the answer is in hand by the time Phase
+2's schema-gated work is ready.
+
+**Phase 1 — start now, five tracks, no schema change, no cross-track file conflict:**
+1. `internal/baseline` package skeleton + slice 2 (`EnsureAutomationRole`) — see below. The one
+   track that creates the new package; everything else in the baseline track depends on this
+   landing first, alone (not concurrently with slice 6, which would otherwise risk two agents
+   scaffolding the same new package differently).
+2. Evidence mirror slice 1 (write-only upload) — see below.
+3. Assessment's `800-171r2` control artifact — see below. Independent of every other track.
+4. Assessment's `800-171A` objectives catalog — sequenced right after track 3 lands (needs real
+   requirement ids to reference), but can be drafted in parallel and merged immediately after.
+5. Q20's live-IAM smoke subtest — see below. Small, `internal/smoke`-only, needs nothing else.
+
+Running in parallel with all five, but not as agent work — human-paced, started now, blocking
+nothing else: the **DFARS weight table's dual-transcription** (Q10's already-decided procedure)
+and the **Q5/Q8/Q9/Q13 cluster's manual AWS setup** (second permanent sandbox account, bundle
+deployment, CFN apply, delegation-policy apply).
+
+**Phase 2 — depends on Phase 1's baseline skeleton; schema-gated items depend on Phase 0's answer:**
+1. `internal/baseline` slices 3, 5, 6 — parallel-safe against each other (disjoint `Ensure*`
+   methods, no shared new state), built against Phase 1's skeleton.
+2. `internal/baseline` slice 4 — can run alongside 3/5/6; no longer gated on Q22's review timing
+   (Q22 already shipped).
+3. Q23's rotation — starts once Phase 0 approves it. Do **not** run in the same parallel batch as
+   evidence-mirror slice 2 (item 4 below) — both touch `internal/evidence`, real merge-conflict
+   risk even under worktree isolation. Sequence one after the other.
+4. Evidence mirror slice 2 (read-and-diff in `verify`) — depends only on mirror slice 1 (Phase
+   1), not on baseline. Sequence against Q23's rotation per the note above.
+5. Q5/Q8/Q9/Q13 cluster's brokered-credential harness code — starts once the manual AWS
+   deployment (running since Phase 1) has actually completed. Q13's subtest specifically also
+   needs baseline slice 2 (Phase 1) to exist — it will, by this point.
+
+**Phase 3 — depends on Phase 2's baseline slices, and on assessment's human-paced inputs:**
+1. `internal/baseline` slice 7 (evidence/manifest wiring) — needs to know what slices 3/4/5/6
+   actually produced.
+2. Assessment Stage 1 (worksheet) — needs the `800-171r2` catalog + objectives catalog (both
+   Phase 1) and Phase 0's schema approval. `nih-cadr-dua`'s worksheet first (no weight-table
+   dependency), then `dfars-7012`'s.
+
+**Phase 4 — final pieces, each with its own late dependency:**
+1. Assessment Stage 2 (DFARS scoring) — needs Stage 1 (Phase 3) and the weight table, which has
+   been transcribing since Phase 1 on its own timeline; check its status well before this phase
+   starts, since it's the likeliest long pole in the whole backlog.
+2. `internal/baseline` slice 9 (wire `verify`'s detective/procedural layers) — needs the whole
+   baseline track essentially done.
+3. `internal/baseline` slice 8 (`disable_org_access_role_after_vend`) — smallest, most
+   speculative; could be deferred past this plan entirely.
 
 ### `internal/baseline`, slices 2-9
 
