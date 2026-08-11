@@ -1034,6 +1034,17 @@ validation now refuses the value on the ordinary path, but what happens via `Ski
 future field that doesn't inherit the pattern is still unverified, per the "not currently
 reachable" paragraph above, which is now accurate again rather than merely assumed.
 
+**2026-08-11 — a smoke subtest now exists to answer this empirically.**
+`internal/smoke.q20ControlCharacterInResourceARN` (`Q20_ControlCharacterInResourceARN` in
+`TestSmokeChecklist`, see `docs/smoke.md`) constructs the deliberately malformed statement
+directly as `compilesets` input — bypassing `artifact.Validate` on purpose, the same bypass this
+question is about — packs it, and calls `CreatePolicy`/`AttachPolicy`/`DescribePolicy` against a
+real sandbox, recording which of the three outcomes above occurred as a `Finding`. Writing this
+test does **not** answer Q20: nothing in this tree has ever run it against real AWS, and per
+CLAUDE.md rule 1 nothing will until an operator runs `make smoke` against a sandbox org with
+`AUTOMAT_SMOKE_SCRATCH_OU` set. This paragraph should be replaced with the observed outcome after
+that first run, not left standing beside it.
+
 ### Q21 — `manifest.genesis_sha256` does not defend against a rewrite that edits the header too
 
 Added at H3's resolution (see `schema/CHANGELOG.md`, "Pre-publication change to

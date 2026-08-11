@@ -33,6 +33,7 @@ export AUTOMAT_SMOKE_OU=ou-xxxx-xxxxxxxx           # where throwaway accounts la
 export AUTOMAT_SMOKE_EMAIL_PATTERN='you+automat-smoke-{name}@example.edu'  # {name} required
 export AUTOMAT_SMOKE_FINDINGS=/path/to/findings.jsonl  # optional; defaults under the OS temp dir
 export AUTOMAT_SMOKE_REGION=us-east-1              # optional
+export AUTOMAT_SMOKE_SCRATCH_OU=ou-xxxx-yyyyyyyy   # optional; see Q20's note below
 make smoke
 ```
 
@@ -121,8 +122,9 @@ restatement.
 | 4 | **Q12** — `MoveAccount` into the parent the account already has | Success, or the exact exception. Immediately after order 1 succeeds, re-run the same move: it costs one API call and it is the behavior every `vend --resume` depends on |
 | 5 | **Q5** — what `preflight` can detect about delegation from the member side | Whether `DescribeResourcePolicy` is readable from the member account at all; if not, preflight must be told rather than detect, and the bundle must carry that fact |
 | 6 | **Q6** — SCP quota edges under real union output | Now largely answered offline against `catalogs/baseline-protection.json`: the shipped set plus a profile's allowlists packs into **one** policy at 46% of the limit. What a live run still adds is what a *campus* baseline in the reserved institutional slot looks like, and whether the three usable slots survive contact with one |
-| 7 | **Q13** — `BP.IAM-1` denies re-permissioning the baseline roles, automat included | Whether the protection SCP governs automat's own `PutRolePolicy` on `automat-automation` once attached, and how long after `AttachPolicy` that becomes true. Attempt the write from the automation role and record the result, then re-run the full vend and confirm it is a no-op rather than a denied write |
-| 8 | **Q24** — does `reclaim`'s detach-then-close sequence behave the way `docs/reclaim-design.md` assumes | Vend a throwaway account, `reclaim --yes` it, and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `DetachPolicy` on a just-attached SCP succeeded immediately, and — only if the sandbox org's own history permits reaching it safely — the exact shape of a closure-quota rejection |
+| 7 | **Q20** — what real IAM does with a control character in an ARN inside an attached SCP | Whether `CreatePolicy` refuses a resource ARN carrying a `\x01` byte outright (safe), or whether it and a subsequent `AttachPolicy` both succeed — and if so, whether `DescribePolicy` reads the content back byte-identical (a Deny that can never fire) or changed (AWS normalized or stripped something). Needs no vended account, so it runs here rather than after Q13 |
+| 8 | **Q13** — `BP.IAM-1` denies re-permissioning the baseline roles, automat included | Whether the protection SCP governs automat's own `PutRolePolicy` on `automat-automation` once attached, and how long after `AttachPolicy` that becomes true. Attempt the write from the automation role and record the result, then re-run the full vend and confirm it is a no-op rather than a denied write |
+| 9 | **Q24** — does `reclaim`'s detach-then-close sequence behave the way `docs/reclaim-design.md` assumes | Vend a throwaway account, `reclaim --yes` it, and record: how long `DescribeAccount` took to report `SUSPENDED`, whether `DetachPolicy` on a just-attached SCP succeeded immediately, and — only if the sandbox org's own history permits reaching it safely — the exact shape of a closure-quota rejection |
 
 **`TestSmokeChecklist`'s Q8 subtest is a partial answer.** It runs under this suite's own
 native credentials, which carry no resource-tag restriction at all — so a real run of it
@@ -150,6 +152,20 @@ Q24 is last on purpose: it is the only entry that destroys the account it tests 
 so it should run after every other question on this list has already been answered
 using accounts this same sandbox run vends — reclaiming early would remove the very
 account the earlier questions still need.
+
+**Q20 attaches a deliberately malformed policy, briefly, to a real target.** It
+constructs an SCP statement whose resource ARN carries a raw control character
+directly as Go data (bypassing `internal/artifact.Validate`, whose own fix for this
+exact gap is separate from and unaffected by this subtest — see
+`docs/open-questions.md` Q20), calls `CreatePolicy`, and — if that succeeds — attaches
+it, reads it back with `DescribePolicy`, then always detaches and deletes it in a
+`t.Cleanup` that runs whether the subtest passed, failed, or panicked partway through.
+`AUTOMAT_SMOKE_SCRATCH_OU`, if set, names a second, preferably empty OU for this one
+subtest to attach to, so that a worst-case outcome (AWS silently normalizing the
+control character into something that could match a real resource) cannot affect a
+sibling account sitting under `AUTOMAT_SMOKE_OU`. If unset, Q20 falls back to
+`AUTOMAT_SMOKE_OU` — still bounded by the unconditional cleanup, just without the
+extra isolation.
 
 ## Phase 1 review item 7 applies here too
 

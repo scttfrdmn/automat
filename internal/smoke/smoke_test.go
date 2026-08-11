@@ -18,6 +18,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 
+	"github.com/scttfrdmn/automat/internal/artifact"
+	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/compilesets"
 	"github.com/scttfrdmn/automat/internal/org"
 )
 
@@ -64,9 +67,35 @@ func getenvRequired(t testingT, key, why string) string {
 	return v
 }
 
+// smokeScratchOU returns AUTOMAT_SMOKE_SCRATCH_OU if set, or falls back to
+// smokeDestOU otherwise.
+//
+// Q20_ControlCharacterInResourceARN is the one subtest in this suite that
+// attaches a policy whose behavior is, by construction, the thing being
+// investigated — the risk the task that added it flagged is that a
+// worse-than-expected outcome (AWS silently normalizing the control
+// character into something that matches real resources) would land on
+// AUTOMAT_SMOKE_OU, the same OU every other subtest's accounts share.
+// AUTOMAT_SMOKE_SCRATCH_OU lets an operator name a second, empty OU to take
+// that risk instead, mirroring the reasoning internal/org/reclaim.go's
+// activeSiblings check applies to a different operation: an OU-scoped
+// mutation should not land somewhere else's accounts live if a place that
+// is nobody's can be used instead. Falling back to the shared OU when no
+// scratch OU is configured is still an acceptable choice, not a silent
+// downgrade: cleanup for this subtest is unconditional (t.Cleanup-registered
+// detach-then-delete) and runs whether or not the test itself failed, so the
+// blast radius is bounded to "briefly attached, then removed" either way.
+func smokeScratchOU(t testingT) string {
+	if v := os.Getenv("AUTOMAT_SMOKE_SCRATCH_OU"); v != "" {
+		return v
+	}
+	return smokeDestOU(t)
+}
+
 // TestSmokeChecklist runs docs/smoke.md's ordered checklist against a real
-// sandbox organization: Q9, Q7, Q8, Q12, Q5, Q6, Q13, Q24, in that order,
-// sharing the accounts earlier subtests vend with the ones that follow.
+// sandbox organization: Q9, Q7, Q8, Q12, Q5, Q6, Q20, Q13, Q24, in that
+// order, sharing the accounts earlier subtests vend with the ones that
+// follow.
 //
 // A subtest failure does not stop the suite — go test's own t.Run already
 // gives that for free — but it also must not abandon an account: every
@@ -250,6 +279,27 @@ func TestSmokeChecklist(t *testing.T) {
 		t.Logf("Q6: %d policies attached to %s, %d characters total", len(page.Policies), ou, total)
 	})
 
+	// Q20: does real IAM refuse, silently accept, or silently normalize a
+	// control character embedded in an SCP statement's resource ARN? Placed
+	// here — after Q6, before Q13 — because it needs no vended account
+	// (independent of accountID, the same reason Q5 and Q6 run before Q13
+	// asks for one) and it is the only remaining unattempted item from
+	// docs/smoke.md's table at the point this subtest was added.
+	//
+	// docs/open-questions.md's Q20 entry has the full history: automat's OWN
+	// validation now refuses this value at both the JSON Schema and the Go
+	// validator (a fix that shipped separately, is not touched here, and is
+	// not what this subtest exercises). What remains open is what happens if
+	// such a value reaches AWS by some path other than automat's validated
+	// pipeline — a hand-edited catalog loaded with SkipValidate, or a future
+	// artifact field that grows a resource list without inheriting the
+	// pattern. This subtest constructs that statement directly as Go data,
+	// bypassing artifact.Validate entirely, and asks AWS the question
+	// automat's own validator can no longer ask it.
+	t.Run("Q20_ControlCharacterInResourceARN", func(t *testing.T) {
+		q20ControlCharacterInResourceARN(ctx, t, h)
+	})
+
 	// Q13: attempt PutRolePolicy on automat-automation from a role that is
 	// NOT automat-automation itself (this suite's own caller) — the actual
 	// live question is whether the baseline-protection SCP, once attached,
@@ -320,6 +370,227 @@ func TestSmokeChecklist(t *testing.T) {
 		// and log a spurious "already closed" failure.
 		h.forgetVendedAccount(accountID)
 	})
+}
+
+// q20ControlCharacterInResourceARN is docs/open-questions.md Q20, the
+// live-AWS half of AUDIT-2 finding L4 that the validation fix (already
+// shipped, not touched here) explicitly left open: what happens when a
+// resource ARN carrying a raw control byte reaches AttachPolicy by some path
+// other than automat's own validated pipeline.
+//
+// Three outcomes, matching Q20's own text exactly:
+//
+//  1. CreatePolicy itself refuses the document (almost certainly
+//     MalformedPolicyDocumentException, the same exception
+//     internal/org/policy.go already recognizes for createPolicy/
+//     updatePolicy). SAFE: the value never reaches an attached policy at all.
+//  2. CreatePolicy and AttachPolicy both succeed, and DescribePolicy reads
+//     back byte-identical content. This is the outcome Q20 calls the more
+//     concerning of the two "succeeded" branches: a control character cannot
+//     appear in a real bucket ARN, so the Deny this statement renders can
+//     never match anything, and a Deny that never fires looks in the console
+//     exactly like one that does.
+//  3. CreatePolicy and AttachPolicy both succeed, but DescribePolicy's
+//     content differs from what was sent — AWS normalized or stripped the
+//     byte, so the statement now matches something OTHER than what was
+//     written.
+//
+// Every branch is recorded as a Finding (Q20 is not a boolean question; see
+// findings.go's own doc comment on why Finding exists) and none is asserted
+// as pass/fail — a live run's raw observation is what a human folds into
+// docs/open-questions.md by hand, per docs/smoke.md rule 4.
+func q20ControlCharacterInResourceARN(ctx context.Context, t *testing.T, h *Harness) {
+	// Hand-built directly as compilesets input, NOT through artifact.Validate
+	// or artifact.Decode — the point of this subtest is what happens when
+	// such a value arrives WITHOUT going through the validated pipeline (a
+	// hand-edited catalog loaded with SkipValidate, or a future field that
+	// does not inherit rule 8's character-class pattern). Constructing it as
+	// Go data feeding compilesets.Pack directly is the minimal way to get a
+	// deliberately malformed statement rendered into a policy document
+	// without needing a second, unvalidated catalog file on disk.
+	//
+	// encoding/json.Marshal (which compilesets.Pack's renderer uses) escapes
+	// the raw 0x01 byte as the six-character sequence backslash-u-0-0-0-1 in
+	// the JSON text it sends — expected and correct. JSON has no way to
+	// carry a literal control byte, so this is not an attempt to put a raw
+	// byte on the wire; it is exercising what AWS does with the
+	// escaped-but-still-anomalous value, which is the shape any such value
+	// would actually take by the time it reached CreatePolicy.
+	evilResource := "arn:aws:s3:::automat-smoke-q20-bucket" + "\x01" + "evil"
+	m := &compilesets.Merged{Statements: []compilesets.Statement{
+		{
+			SCPStatement: artifact.SCPStatement{
+				Sid:      "AutomatSmokeQ20ControlCharacter",
+				Effect:   "Deny",
+				Action:   []string{"s3:DeleteObject"},
+				Resource: []string{evilResource},
+			},
+			Origins: []string{"smoke:Q20"},
+		},
+	}}
+	packed, err := compilesets.Pack(m, compilesets.PackOptions{NamePrefix: "automat-smoke-q20"})
+	if err != nil {
+		t.Fatalf("compilesets.Pack of a deliberately malformed statement: %v — this is a failure of this "+
+			"subtest's own setup, not an AWS observation", err)
+	}
+	if len(packed.Policies) != 1 {
+		t.Fatalf("expected exactly one packed policy from a single statement, got %d", len(packed.Policies))
+	}
+	doc := packed.Policies[0].Document
+	if !strings.Contains(doc, `\u0001`) {
+		t.Fatalf("the rendered document does not contain the escaped control byte (\\u0001) this subtest "+
+			"exists to test — compilesets.Pack's rendering may have changed underneath this subtest: %s", doc)
+	}
+
+	policyName := fmt.Sprintf("automat-smoke-q20-%d", time.Now().UnixNano())
+	createOut, createErr := h.Policy.CreatePolicy(ctx, &organizations.CreatePolicyInput{
+		Name:    aws.String(policyName),
+		Content: aws.String(doc),
+		Description: aws.String("automat smoke Q20: throwaway policy carrying a control character in a " +
+			"resource ARN, created to observe real AWS behavior; safe to delete if found outside a run"),
+		Type: orgtypes.PolicyTypeServiceControlPolicy,
+	})
+	if createErr != nil {
+		safe := awsapi.APIErrorCode(createErr) == "MalformedPolicyDocumentException"
+		detail := fmt.Sprintf("CreatePolicy with a control character in the resource ARN was refused "+
+			"(code=%s, safe=%v): %v", awsapi.APIErrorCode(createErr), safe, createErr)
+		_ = recordFinding(Finding{Question: "Q20", At: time.Now(), Detail: detail,
+			Extra: map[string]any{"outcome": "create_refused", "error_code": awsapi.APIErrorCode(createErr), "safe": safe}})
+		t.Logf("Q20: %s", detail)
+		return
+	}
+
+	policyID := aws.ToString(createOut.Policy.PolicySummary.Id)
+	t.Cleanup(func() {
+		q20Cleanup(context.Background(), t, h, policyID)
+	})
+
+	// Risk-bounding (per the task that scoped this subtest, mirroring the
+	// reasoning internal/org/reclaim.go's activeSiblings applies to a
+	// different operation): prefer a dedicated/empty scratch OU over the
+	// shared destination OU other subtests' accounts live under, so that a
+	// worst-case silent normalization does not affect a sibling account. If
+	// no scratch OU is configured, smokeScratchOU falls back to the shared
+	// one — still acceptable given cleanup always runs, but noted here so a
+	// reader does not mistake the fallback for the intended path.
+	target := smokeScratchOU(t)
+	if before, err := q20ActiveAccountCount(ctx, h, target); err == nil && before > 0 {
+		t.Logf("Q20: attaching to %s, which has %d active account(s) under it — set "+
+			"AUTOMAT_SMOKE_SCRATCH_OU to a dedicated empty OU to avoid this", target, before)
+	}
+
+	_, attachErr := h.Policy.AttachPolicy(ctx, &organizations.AttachPolicyInput{
+		PolicyId: aws.String(policyID),
+		TargetId: aws.String(target),
+	})
+	if attachErr != nil {
+		detail := fmt.Sprintf("CreatePolicy succeeded (id=%s) but AttachPolicy to %s was refused: %v",
+			policyID, target, attachErr)
+		_ = recordFinding(Finding{Question: "Q20", At: time.Now(), Detail: detail,
+			Extra: map[string]any{"outcome": "attach_refused", "policy_id": policyID}})
+		t.Logf("Q20: %s", detail)
+		return
+	}
+	describeOut, describeErr := h.Policy.DescribePolicy(ctx, &organizations.DescribePolicyInput{
+		PolicyId: aws.String(policyID),
+	})
+	if describeErr != nil {
+		detail := fmt.Sprintf("CreatePolicy and AttachPolicy both succeeded (id=%s), but DescribePolicy "+
+			"afterward failed: %v — cannot tell whether the content round-tripped", policyID, describeErr)
+		_ = recordFinding(Finding{Question: "Q20", At: time.Now(), Detail: detail,
+			Extra: map[string]any{"outcome": "describe_failed", "policy_id": policyID}})
+		t.Logf("Q20: %s", detail)
+		return
+	}
+
+	got := aws.ToString(describeOut.Policy.Content)
+	if got == doc {
+		detail := fmt.Sprintf("CreatePolicy and AttachPolicy both succeeded, and DescribePolicy reports "+
+			"the content round-tripped byte-identical (policy=%s, target=%s) — the Deny attached but its "+
+			"resource ARN cannot match anything real, so this guard can never fire; a Deny that never "+
+			"fires looks in the console exactly like one that does", policyID, target)
+		_ = recordFinding(Finding{Question: "Q20", At: time.Now(), Detail: detail,
+			Extra: map[string]any{"outcome": "silent_deny_never_fires", "policy_id": policyID, "target": target}})
+		t.Logf("Q20: %s", detail)
+		return
+	}
+
+	detail := fmt.Sprintf("CreatePolicy and AttachPolicy both succeeded, but DescribePolicy's content "+
+		"DIFFERS from what was sent (policy=%s, target=%s) — AWS normalized or stripped something; sent "+
+		"%d characters, read back %d characters", policyID, target, len(doc), len(got))
+	_ = recordFinding(Finding{Question: "Q20", At: time.Now(), Detail: detail,
+		Extra: map[string]any{
+			"outcome": "content_normalized", "policy_id": policyID, "target": target,
+			"sent": doc, "read_back": got,
+		}})
+	t.Logf("Q20: %s", detail)
+}
+
+// q20ActiveAccountCount reports how many ACTIVE accounts sit directly under
+// target, best-effort — used only to warn when smokeScratchOU fell back to
+// the shared destination OU, never to gate the attach itself (this subtest's
+// safety comes from guaranteed cleanup, not from this count).
+func q20ActiveAccountCount(ctx context.Context, h *Harness, target string) (int, error) {
+	page, err := h.OrgClient.ListAccountsForParent(ctx,
+		&organizations.ListAccountsForParentInput{ParentId: aws.String(target)})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, a := range page.Accounts {
+		if a.Status == orgtypes.AccountStatusActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// q20Cleanup detaches (if attached) and deletes the throwaway policy Q20
+// created, registered via t.Cleanup so it runs regardless of which branch of
+// q20ControlCharacterInResourceARN returned or whether the subtest failed —
+// the same unconditional-cleanup discipline newHarness's own t.Cleanup
+// applies to vended accounts.
+//
+// DeletePolicy is reached through h.OrgClient directly, not through
+// awsapi.OrgReclaimAPI: that interface deliberately has no DeletePolicy
+// method (docs/reclaim-design.md — reclaim detaches but never deletes, to
+// preserve an audit trail across every account it reclaims). A throwaway
+// policy created solely to answer Q20 has no such trail worth preserving, so
+// this subtest reaches past the narrow interface for its own cleanup only,
+// the same pattern pollAccountStatus already uses h.OrgClient.DescribeAccount
+// for a call no narrow interface exposes.
+func q20Cleanup(ctx context.Context, t *testing.T, h *Harness, policyID string) {
+	if policyID == "" {
+		return
+	}
+	// Detach from every target still holding it. ListPoliciesForTarget is
+	// per-target, not per-policy, so this walks the one target this subtest
+	// could have attached to (smokeScratchOU) plus the shared destination OU
+	// as a defensive second check, in case smokeScratchOU's env var changed
+	// between setup and cleanup in some future refactor. A detach against a
+	// target that never had the policy attached fails with
+	// PolicyNotAttachedException, which is expected and logged, not fatal.
+	targets := map[string]bool{}
+	if v := os.Getenv("AUTOMAT_SMOKE_SCRATCH_OU"); v != "" {
+		targets[v] = true
+	}
+	if v := os.Getenv("AUTOMAT_SMOKE_OU"); v != "" {
+		targets[v] = true
+	}
+	for target := range targets {
+		_, err := h.OrgClient.DetachPolicy(ctx, &organizations.DetachPolicyInput{
+			PolicyId: aws.String(policyID), TargetId: aws.String(target),
+		})
+		if err != nil && awsapi.APIErrorCode(err) != "PolicyNotAttachedException" {
+			t.Logf("Q20 cleanup: DetachPolicy(%s, %s): %v", policyID, target, err)
+		}
+	}
+	if _, err := h.OrgClient.DeletePolicy(ctx, &organizations.DeletePolicyInput{
+		PolicyId: aws.String(policyID),
+	}); err != nil {
+		t.Logf("Q20 cleanup: DeletePolicy(%s): %v — this throwaway policy may need manual deletion in "+
+			"the sandbox organization", policyID, err)
+	}
 }
 
 // pollCreateAccountStatus polls DescribeCreateAccountStatus to completion,
