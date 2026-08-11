@@ -150,8 +150,13 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			now := time.Now()
 			freshness := verify.CheckFreshness("environment profile "+in.profile.Meta.ID, in.profile.ReviewBy, now)
 
+			honesty, err := verify.StructuralHonesty(in.sets)
+			if err != nil {
+				return err
+			}
+
 			out := cmd.OutOrStdout()
-			if err := renderVerifyReport(out, accountID, target, in.sets, policyReport, freshness); err != nil {
+			if err := renderVerifyReport(out, accountID, target, policyReport, freshness, honesty); err != nil {
 				return err
 			}
 
@@ -296,11 +301,14 @@ func verifyParentOf(ctx context.Context, api awsapi.OrgAPI, accountID string) (s
 }
 
 // renderVerifyReport prints the policy and freshness findings, plus the
-// enforcement-class breakdown DESIGN §12 calls "structural honesty" — which
-// control sets this compile drew from, computed from the artifact so the
-// report states its own limits without pitching anything.
+// per-control enforcement-class breakdown DESIGN §12 calls "structural
+// honesty" — how many of the compiled controls this tool enforces itself, how
+// many require a documented process outside this tool, and how many require
+// continuous evidence collection outside this tool's scope. Computed from the
+// artifact (verify.StructuralHonesty), not asserted in prose, so the report
+// states its own limits without pitching anything.
 func renderVerifyReport(w io.Writer, accountID, target string,
-	sets *catalog.Resolved, policy *verify.PolicyReport, freshness verify.FreshnessStatus) error {
+	policy *verify.PolicyReport, freshness verify.FreshnessStatus, honesty *verify.StructuralHonestyReport) error {
 	p := func(format string, args ...any) error {
 		_, err := fmt.Fprintf(w, format, args...)
 		return err
@@ -350,11 +358,11 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		return err
 	}
 
-	if err := p("\nStructural honesty (control sets this compile drew from):\n"); err != nil {
+	if err := p("\nStructural honesty:\n"); err != nil {
 		return err
 	}
-	for _, id := range sets.IDs {
-		if err := p("  %s\n", id); err != nil {
+	for _, line := range strings.Split(honesty.String(), "\n") {
+		if err := p("  %s\n", line); err != nil {
 			return err
 		}
 	}
