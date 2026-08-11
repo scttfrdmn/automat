@@ -50,6 +50,10 @@ func Merge(artifacts ...*artifact.Artifact) (*Merged, error) {
 // conflict a human has to settle, so it gets its own name rather than a
 // third argument every ordinary caller would pass as nil.
 func MergeWithOverrides(overrides *Overrides, artifacts ...*artifact.Artifact) (*Merged, error) {
+	// Fresh bookkeeping for this fold: see Overrides.resetApplied's doc for
+	// why a caller reusing one loaded *Overrides across two Merge calls must
+	// not let the first call's applied entries hide the second's.
+	overrides.resetApplied()
 	acc := &Merged{}
 	for _, a := range artifacts {
 		next, err := FromArtifactWithOverrides(a, overrides)
@@ -64,6 +68,10 @@ func MergeWithOverrides(overrides *Overrides, artifacts ...*artifact.Artifact) (
 	if err := reSlotBlockedPorts(acc.ConfigRules); err != nil {
 		return nil, err
 	}
+	// Q22's "override named nothing" disclosure: an override that never
+	// matched a real conflict during this whole fold is a silent no-op
+	// today, and this is the one place that has seen every attempt.
+	acc.Warnings = append(acc.Warnings, overrides.unappliedWarnings()...)
 	return acc, nil
 }
 
@@ -169,10 +177,20 @@ func CombineWithOverrides(a, b *Merged, overrides *Overrides) (*Merged, error) {
 		}
 	}
 
-	configRules, cr := combineConfigRules(a, b, overrides)
+	configRules, configWarnings, cr := combineConfigRules(a, b, overrides)
 	if cr != nil {
 		return nil, cr
 	}
+
+	// Warnings accumulate across the whole fold, the same way Statements and
+	// every allowlist do: a is the accumulator MergeWithOverrides threads
+	// through repeated Combine calls, and a warning raised three artifacts
+	// ago must still be visible in the final Merged, not only in the
+	// intermediate value that produced it.
+	var warnings []string
+	warnings = append(warnings, a.Warnings...)
+	warnings = append(warnings, b.Warnings...)
+	warnings = append(warnings, configWarnings...)
 
 	out := &Merged{
 		Statements:               mergeStatements(sts),
@@ -180,6 +198,7 @@ func CombineWithOverrides(a, b *Merged, overrides *Overrides) (*Merged, error) {
 		ServiceAllowlist:         intersectSets(a.ServiceAllowlist, b.ServiceAllowlist),
 		RegionDenyExemptServices: intersectSets(a.RegionDenyExemptServices, b.RegionDenyExemptServices),
 		ConfigRules:              configRules,
+		Warnings:                 warnings,
 	}
 	sortStatements(out.Statements)
 	return out, nil
@@ -288,6 +307,24 @@ type Merged struct {
 	// a map gives for free; SortedConfigRules is the deterministic view for
 	// a caller that needs one.
 	ConfigRules map[string]*MergedConfigRule
+
+	// Warnings are non-fatal observations the union produced but did not
+	// enforce — the same shape and rendering path as Narrowed.Warnings
+	// (narrow.go), extended here for the union's own uncommon path: an
+	// override resolving a Config-rule conflict (overrides.go's apply).
+	//
+	// Q22 (docs/open-questions.md) settled that an override is trusted
+	// verbatim rather than clamped to artifact.RuleParameter.Permits — the
+	// two conflict shapes that reach this path (an exact mismatch, a
+	// disjoint set-intersect) both have an empty meet, so clamping would
+	// convert "resolve a real conflict" into "always refuse." These
+	// warnings are the disclosure Q22 asked for instead: when an applied
+	// override's resolved value (or, for a set order, a specific member of
+	// it) is permitted by NEITHER conflicting side, a caller reading these
+	// sentences learns that fact at compile time rather than never, since
+	// nothing today deploys a conformance pack that would otherwise
+	// surface it live.
+	Warnings []string
 }
 
 // AllowSet is an intersected allowlist that remembers who constrained it.

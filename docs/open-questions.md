@@ -1031,6 +1031,44 @@ sentence and nothing else. **The first change that deploys a conformance pack tu
 unbounded operator-supplied value into a parameter of a live detective control** — decide
 this question as part of that work, not after it ships.
 
+**Decision (confirmed correct): trust-the-override stays.** Re-examined and settled —
+clamping the override to `artifact.RuleParameter.Permits` is mechanically incapable of
+resolving either conflict shape that reaches this code path (an `exact` mismatch, or a
+disjoint `set-intersect`, `ami-1,ami-2` against `ami-3,ami-4`): the meet of what every
+input permits is provably empty in both cases, so clamping would convert "resolve a real
+conflict" into "always refuse," which defeats the mechanism `Override`'s own doc comment
+was written for. No behavior change was made.
+
+**What was added instead: a disclosure, not a gate.** `internal/compilesets` now computes,
+at the two points where `Overrides.apply` resolves a real conflict
+(`addOneConfigRule`/`combineConfigRules` in `configrules.go`), whether the override's
+resolved value is permitted by *either* conflicting side (`current.Permits`/
+`incoming.Permits`, `order.go`). For a scalar order (`exact`/`min`/`max`), permitted-by-
+neither is reported as a widening; a non-numeric override under `min`/`max` (`Permits`'
+`meaningful=false`) is reported as its own, distinct case, since nothing was actually
+compared. For a set order (`set-union`/`set-intersect`), each member of the resolved value
+is checked independently and only the members permitted by neither side are named — so the
+worked example above now warns about `ami-EVERYTHING` specifically, not the whole
+five-member value. A second, narrower gap in the same code path was closed alongside it: an
+override naming a `(rule, parameter)` with no actual conflict at that spot used to be a
+silent no-op with no trace in the compile output; it now warns that the entry was never
+applied. Both surface through a new `Merged.Warnings []string` field, following
+`Narrowed.Warnings`'s existing shape, carried forward by `Narrow` into `Narrowed.Warnings`
+so `cmd/automat/vend.go`'s existing `renderVendWarnings` prints them with no changes to that
+function. This is a Go-only addition: no schema changed, and warnings are ephemeral
+compile-time text, not a field of any persisted document.
+
+**This remains genuinely inert in production until a conformance pack is deployed.**
+Confirmed again with the disclosure landed: `configRuleNames` in `cmd/automat/vend.go`
+still walks each control's raw `ConfigRules`, never the union `Merge`/`Narrow` produce, and
+no code path attaches `Merged.ConfigRules` to a live AWS Config conformance pack —
+`internal/baseline` does not exist yet. The new warning is visible in a compile plan today
+if an operator writes an overrides file that widens past both inputs, but nothing an
+operator sees today changes as a result of this fix; it is groundwork for when
+`internal/baseline` starts deploying conformance packs and an override's value becomes a
+parameter of a live detective control, at which point this warning is the operator's only
+present-day signal that it might be worth a second look before that day arrives.
+
 ### Q23 — `verify`'s evidence manifest has no rotation, and an hourly cron reaches the size ceiling in about a year
 
 Raised at AUDIT-4's M3. `writeVerifyEvidence` appends a record on every run, success or
