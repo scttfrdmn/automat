@@ -6,6 +6,8 @@ package awsapi
 import (
 	"context"
 
+	"github.com/aws/aws-sdk-go-v2/service/account"
+	"github.com/aws/aws-sdk-go-v2/service/configservice"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -339,6 +341,127 @@ type SSOOIDCAPI interface {
 		optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error)
 }
 
+// ConfigAPI is the in-child detective baseline internal/baseline (not yet
+// built; DESIGN §7 step 5) will drive: the AWS Config recorder, delivery
+// channel, and conformance pack DESIGN §10's baseline-protection controls
+// exist to guard.
+//
+// The read-before-write triplet — DescribeConfigurationRecorders,
+// DescribeDeliveryChannels, DescribeConformancePacks — is here for the same
+// reason OrgSetupAPI.DescribeResourcePolicy is: ensure-semantics needs a read
+// first, and in this case there are three resources to check rather than one,
+// each with its own Put. DescribeConformancePackStatus is the poll target for
+// the async half — a conformance pack deploys via a CloudFormation stack
+// under the hood, so PutConformancePack returning does not mean the pack is
+// live, the same "accepted, not finished" shape OrgVendAPI.
+// DescribeCreateAccountStatus already polls for CreateAccount.
+//
+// StartConfigurationRecorder is its own method, not folded into
+// PutConfigurationRecorder, because the two are genuinely different calls
+// against the real API: Put creates or replaces the recorder's configuration
+// but does not turn it on, and a recorder that exists but was never started
+// records nothing while reporting no error. This is the same "created but not
+// enabled" trap org.EnsureSCPEnabled's doc comment describes for
+// EnablePolicyType — a freshly created organization has the SCP policy type
+// off by default, so CreatePolicy and AttachPolicy both succeed and nothing
+// is enforced until EnablePolicyType runs. A future baseline.EnsureRecorder
+// has to call Start after Put for the same reason org.EnsureSCPEnabled calls
+// EnablePolicyType after (or instead of, once already on) create — the write
+// that makes the resource exist is not the write that makes it active.
+//
+// # What is deliberately absent
+//
+// DeleteConfigurationRecorder, StopConfigurationRecorder,
+// DeleteDeliveryChannel, and DeleteConformancePack are absent because they
+// are exactly the actions catalogs/baseline-protection.json's BP.CFG family
+// denies: BP.CFG-1 denies config:DeleteConfigurationRecorder and
+// config:StopConfigurationRecorder (plus config:PutConfigurationRecorder,
+// which is NOT absent here — see below), BP.CFG-2 denies
+// config:DeleteDeliveryChannel, and BP.CFG-3 denies
+// config:DeleteConformancePack. A capability automat has no interface method
+// for is a capability no code path in this repository can reach, which is
+// the same guarantee OrgReclaimAPI's own doc comment claims for
+// DeletePolicy — stronger than a code review, and TestNoWriteInterfaceCanDestroy
+// holds it the same way.
+//
+// PutConfigurationRecorder and PutDeliveryChannel ARE on this interface even
+// though BP.CFG-1 and BP.CFG-2 deny them to every OTHER principal in the
+// account: automat's own baselining is the one caller that must be able to
+// issue them (ensure-semantics has no other way to correct drift in a
+// recorder's recording group or a channel's destination), and
+// catalogs/baseline-protection.json's exemption list is exactly the
+// mechanism that reconciles "denied to the account" with "automat still
+// needs it" — see DESIGN §10's exempt_principals paragraph.
+//
+// PutRemediationConfigurations, and anything else in Config's auto-remediation
+// surface, is absent for a different reason than the four above: it is not
+// something baseline-protection denies, it is something this project does not
+// build at all. DESIGN.md's non-goals are explicit — "No continuous
+// monitoring / evidence collection agents. `verify` is point-in-time." — and
+// an auto-remediation action that reacts to a Config finding without an
+// operator invoking a command is exactly the kind of standing agent that
+// non-goal rules out.
+type ConfigAPI interface {
+	DescribeConfigurationRecorders(ctx context.Context, in *configservice.DescribeConfigurationRecordersInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecordersOutput, error)
+	DescribeDeliveryChannels(ctx context.Context, in *configservice.DescribeDeliveryChannelsInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeDeliveryChannelsOutput, error)
+	DescribeConformancePacks(ctx context.Context, in *configservice.DescribeConformancePacksInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConformancePacksOutput, error)
+
+	PutConfigurationRecorder(ctx context.Context, in *configservice.PutConfigurationRecorderInput,
+		optFns ...func(*configservice.Options)) (*configservice.PutConfigurationRecorderOutput, error)
+	PutDeliveryChannel(ctx context.Context, in *configservice.PutDeliveryChannelInput,
+		optFns ...func(*configservice.Options)) (*configservice.PutDeliveryChannelOutput, error)
+	PutConformancePack(ctx context.Context, in *configservice.PutConformancePackInput,
+		optFns ...func(*configservice.Options)) (*configservice.PutConformancePackOutput, error)
+
+	DescribeConformancePackStatus(ctx context.Context, in *configservice.DescribeConformancePackStatusInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConformancePackStatusOutput, error)
+
+	StartConfigurationRecorder(ctx context.Context, in *configservice.StartConfigurationRecorderInput,
+		optFns ...func(*configservice.Options)) (*configservice.StartConfigurationRecorderOutput, error)
+}
+
+// AccountAPI is opt-in region enablement, performed in-child via the Account
+// Management API and scoped to exactly one field of an environment profile:
+// envprofile.BaselineRegions (envprofile.Baseline.Regions), which is
+// deliberately distinct from envprofile.Permitted's region allowlist — that
+// field constrains which regions a principal may CALL into (an SCP condition),
+// while this interface's four methods control which regions are ENABLED at
+// all for the account, a prerequisite that has nothing to do with permission.
+// An operator can enable a region without ever permitting calls into it, and
+// vice versa; envprofile's own doc comment on Regions makes the same
+// distinction for exactly that reason.
+//
+// ListRegions is the read-first half, same ensure-semantics reasoning as
+// ConfigAPI's triplet and OrgSetupAPI.DescribeResourcePolicy before it: a
+// future baseline.EnsureRegions has to know an account's current opt-in
+// status before deciding whether EnableRegion or DisableRegion is a write or
+// a no-op. GetRegionOptStatus is the poll target — region enablement is
+// asynchronous, taking anywhere from minutes to hours per EnableRegionInput's
+// own doc comment, the same "accepted, not finished" shape
+// OrgVendAPI.DescribeCreateAccountStatus already polls for CreateAccount and
+// ConfigAPI.DescribeConformancePackStatus polls for PutConformancePack.
+//
+// Nothing else: no billing, no alternate-contact, no account-name calls. This
+// interface's whole job is region opt-in/opt-out, and account.Client carries
+// GetContactInformation, PutAlternateContact, PutAccountName, and several
+// primary-email operations that have no connection to baseline.regions and
+// no reason to be reachable through automat.
+type AccountAPI interface {
+	ListRegions(ctx context.Context, in *account.ListRegionsInput,
+		optFns ...func(*account.Options)) (*account.ListRegionsOutput, error)
+
+	EnableRegion(ctx context.Context, in *account.EnableRegionInput,
+		optFns ...func(*account.Options)) (*account.EnableRegionOutput, error)
+	DisableRegion(ctx context.Context, in *account.DisableRegionInput,
+		optFns ...func(*account.Options)) (*account.DisableRegionOutput, error)
+
+	GetRegionOptStatus(ctx context.Context, in *account.GetRegionOptStatusInput,
+		optFns ...func(*account.Options)) (*account.GetRegionOptStatusOutput, error)
+}
+
 // Compile-time proof that the real clients satisfy the interfaces. If an SDK
 // upgrade changes a signature, this fails at build time in one place rather than
 // wherever the interface happens to be used.
@@ -356,4 +479,6 @@ var (
 	_ QuotaAPI      = (*servicequotas.Client)(nil)
 	_ KMSAPI        = (*kms.Client)(nil)
 	_ SSOOIDCAPI    = (*ssooidc.Client)(nil)
+	_ ConfigAPI     = (*configservice.Client)(nil)
+	_ AccountAPI    = (*account.Client)(nil)
 )

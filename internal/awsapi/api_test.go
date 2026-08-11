@@ -55,6 +55,8 @@ func allInterfaces(t *testing.T) map[string]reflect.Type {
 		"QuotaAPI":      reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
 		"KMSAPI":        reflect.TypeOf((*KMSAPI)(nil)).Elem(),
 		"SSOOIDCAPI":    reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
+		"ConfigAPI":     reflect.TypeOf((*ConfigAPI)(nil)).Elem(),
+		"AccountAPI":    reflect.TypeOf((*AccountAPI)(nil)).Elem(),
 	}
 }
 
@@ -103,6 +105,22 @@ func TestNoWriteInterfaceCanDestroy(t *testing.T) {
 		"DisablePolicyType":                "turns SCPs off org-wide; every attached control silently stops applying (DESIGN §3 fact 8)",
 		"DeleteResourcePolicy":             "removes the org's whole delegation policy, not just automat's part of it",
 		"UntagResource":                    "removes a tag, and two of automat's tags are read by conditions in the delegation policy",
+
+		// ConfigAPI's deliberately-absent methods (its own doc comment): each is one
+		// of the exact actions catalogs/baseline-protection.json's BP.CFG family
+		// denies to every other principal in the account.
+		"DeleteConfigurationRecorder": "the account's own evidence collection kill switch; BP.CFG-1 denies it to every other principal",
+		"StopConfigurationRecorder":   "silently stops the recorder without deleting it; BP.CFG-1's other denied action",
+		"DeleteDeliveryChannel":       "removes where the recorder's evidence is delivered; BP.CFG-2 denies it to every other principal",
+		"DeleteConformancePack":       "removes the detective half of the vended baseline; BP.CFG-3 denies it to every other principal",
+		"PutRemediationConfigurations": "auto-remediation reacting to a Config finding with no operator invoking a command; " +
+			"DESIGN.md's non-goals: \"No continuous monitoring / evidence collection agents.\"",
+
+		// AccountAPI's deliberately-absent methods (its own doc comment): outside
+		// this interface's one designed job, region enablement for baseline.regions.
+		"GetContactInformation": "account contact surface; outside baseline.regions' scope",
+		"PutAlternateContact":   "billing/alternate-contact surface; outside baseline.regions' scope",
+		"PutAccountName":        "renames the account; outside baseline.regions' scope",
 	}
 
 	for name, iface := range allInterfaces(t) {
