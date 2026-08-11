@@ -30,7 +30,7 @@ than a clean pass, the same as any code meeting its real target for the first ti
 export AUTOMAT_SMOKE_PROFILE=my-sandbox-profile   # AWS credential profile
 export AUTOMAT_SMOKE_ORG=o-xxxxxxxxxx              # the sandbox org id, verified at runtime
 export AUTOMAT_SMOKE_OU=ou-xxxx-xxxxxxxx           # where throwaway accounts land
-export AUTOMAT_SMOKE_EMAIL_DOMAIN=sandbox.example.edu  # root-email domain for vended accounts
+export AUTOMAT_SMOKE_EMAIL_PATTERN='you+automat-smoke-{name}@example.edu'  # {name} required
 export AUTOMAT_SMOKE_FINDINGS=/path/to/findings.jsonl  # optional; defaults under the OS temp dir
 export AUTOMAT_SMOKE_REGION=us-east-1              # optional
 make smoke

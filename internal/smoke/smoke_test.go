@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,16 +21,31 @@ import (
 	"github.com/scttfrdmn/automat/internal/org"
 )
 
-// smokeEmailDomain is where every account this suite creates gets its root
-// email — automat-smoke-<random>@<domain>. Pointed at example.com's
-// reserved TLD isn't an option (AWS requires a real, reachable mailbox for
-// the create to succeed against some org configurations), so this suite
-// requires the sandbox's own email pattern via AUTOMAT_SMOKE_EMAIL_DOMAIN.
-func smokeEmailDomain(t testingT) string {
-	domain := getenvRequired(t, "AUTOMAT_SMOKE_EMAIL_DOMAIN",
-		"a domain automat-smoke-<n>@<domain> resolves to a real mailbox in the sandbox — AWS "+
-			"requires a reachable address for CreateAccount to succeed under some organizations")
-	return domain
+// smokeEmailPattern is the template every account this suite creates gets
+// its root email from, in the same {name}-placeholder shape
+// internal/config.Context.EmailPattern already uses (e.g.
+// "research-admin+{name}@dept.edu") — not a bare domain, because a mailbox
+// like Gmail's plus-addressing needs the local part preserved, not
+// discarded in favor of a synthesized one. AWS requires a real, reachable
+// mailbox for CreateAccount to succeed under some organizations, so this
+// suite requires the sandbox operator's own pattern via
+// AUTOMAT_SMOKE_EMAIL_PATTERN rather than guessing a domain-only shape.
+func smokeEmailPattern(t testingT) string {
+	pattern := getenvRequired(t, "AUTOMAT_SMOKE_EMAIL_PATTERN",
+		"an email pattern with a {name} placeholder, e.g. \"you+automat-smoke-{name}@gmail.com\" — "+
+			"AWS requires a reachable address for CreateAccount to succeed under some organizations")
+	if !strings.Contains(pattern, "{name}") {
+		t.Fatalf("AUTOMAT_SMOKE_EMAIL_PATTERN %q has no {name} placeholder, so every account this "+
+			"suite creates would race for the same email — AWS requires a globally unique address "+
+			"per account", pattern)
+	}
+	return pattern
+}
+
+// smokeEmail renders one unique address from smokeEmailPattern for the
+// named test account.
+func smokeEmail(pattern, name string) string {
+	return strings.Replace(pattern, "{name}", name, 1)
 }
 
 func smokeDestOU(t testingT) string {
@@ -62,7 +78,7 @@ func TestSmokeChecklist(t *testing.T) {
 
 	ctx := context.Background()
 	ou := smokeDestOU(t)
-	emailDomain := smokeEmailDomain(t)
+	emailPattern := smokeEmailPattern(t)
 
 	// Q9 and Q7 share one CreateAccount + immediate MoveAccount, because
 	// Q7's own question (timing) can only be measured on the same call Q9
@@ -71,7 +87,7 @@ func TestSmokeChecklist(t *testing.T) {
 	// path).
 	var accountID string
 	t.Run("Q9_MoveAccountSourceParent", func(t *testing.T) {
-		email := fmt.Sprintf("automat-smoke-%d@%s", time.Now().UnixNano(), emailDomain)
+		email := smokeEmail(emailPattern, fmt.Sprintf("q9-%d", time.Now().UnixNano()))
 		out, err := h.Vend.CreateAccount(ctx, &organizations.CreateAccountInput{
 			AccountName: aws.String("automat-smoke-q9"),
 			Email:       aws.String(email),
@@ -150,7 +166,7 @@ func TestSmokeChecklist(t *testing.T) {
 	// this is the one whose bad case is silent, so its core assertion is a
 	// real t.Error, not just a Finding.
 	t.Run("Q8_ResourceTagHonored", func(t *testing.T) {
-		email := fmt.Sprintf("automat-smoke-q8-%d@%s", time.Now().UnixNano(), emailDomain)
+		email := smokeEmail(emailPattern, fmt.Sprintf("q8-%d", time.Now().UnixNano()))
 		out, err := h.Vend.CreateAccount(ctx, &organizations.CreateAccountInput{
 			AccountName: aws.String("automat-smoke-q8-untagged"),
 			Email:       aws.String(email),
