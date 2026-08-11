@@ -28,10 +28,15 @@ behalf — see README's feature table and `docs/cli-surface.md` for exactly what
   arithmetic (Stages 1–2 of `docs/assessment-reporting.md`), gated on a weight table that
   needs independent double-transcription from a primary source before any code can consume
   it. Stage 3, the CMMC L1 summary, ships today.
-- **A remote evidence mirror** — DESIGN §11 describes a second copy of the evidence chain
-  (an object store, a management-side mirror) as the compensating control against a
-  rewritten local manifest. No such mirror exists; evidence lives in local files only,
-  read and written through one directory a command is told about.
+- **Reading the remote evidence mirror back** — DESIGN §11 describes a second copy of the
+  evidence chain (an object store, a management-side mirror) as the compensating control
+  against a rewritten local manifest. The write half ships: every evidence-writing command
+  uploads the local manifest's own bytes to a bucket named in the environment profile, once
+  the local copy has already been written. What is still missing is the other half of the
+  compensating control — `verify` fetching the mirrored copy and comparing it against the
+  local file, flagging drift between the two as a new finding class. Until that exists, a
+  rewritten local manifest and its now-stale mirror are two documents nothing in this
+  codebase compares for you.
 - **Signature verification and any form of trust registry** (DESIGN §11a). The KMS and
   local-key signers this build ships *produce* a signature; nothing in this codebase
   *checks* one, and there is no trust-policy loader and no registry of accepted signers.

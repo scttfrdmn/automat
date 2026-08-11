@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -64,6 +65,7 @@ type globals struct {
 	newIAMRole    func(ctx context.Context, region, profile string) (awsapi.IAMRoleAPI, error)
 	newQuota      func(ctx context.Context, region, profile string) (awsapi.QuotaAPI, error)
 	newKMS        func(ctx context.Context, region, profile string) (awsapi.KMSAPI, error)
+	newS3Mirror   func(ctx context.Context, region, profile string) (awsapi.S3MirrorAPI, error)
 	// newBrokeredOrgVend overrides brokeredOrgVendClient in tests, the same way
 	// every other constructor field does — a test substitutes internal/awsfake
 	// here too, never a live AssumeRole.
@@ -368,4 +370,19 @@ func (g *globals) kmsClient(ctx context.Context, region, profile string) (awsapi
 		return nil, err
 	}
 	return kms.NewFromConfig(cfg), nil
+}
+
+// s3MirrorClient is the remote evidence-mirror client (DESIGN §11, ROADMAP.md
+// "Remote evidence mirror" slice 1), native in every state — a mirror bucket
+// is read out of the environment profile, not brokered through the vendor
+// role, the same shape kmsClient already gives evidence signing.
+func (g *globals) s3MirrorClient(ctx context.Context, region, profile string) (awsapi.S3MirrorAPI, error) {
+	if g.newS3Mirror != nil {
+		return g.newS3Mirror(ctx, region, profile)
+	}
+	cfg, err := g.awsConfig(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	return s3.NewFromConfig(cfg), nil
 }

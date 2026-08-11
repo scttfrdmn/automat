@@ -158,13 +158,40 @@ func newReclaimCmd(g *globals) *cobra.Command {
 				}
 				return serr
 			}
-			manifestPath, werr := writeReclaimEvidence(accountID, target, caller.ARN, time.Now(),
+			manifestPath, writtenManifest, werr := writeReclaimEvidence(accountID, target, caller.ARN, time.Now(),
 				apply.Actions(), orgInfo, evidenceDir, signer, applyErr)
 			if werr != nil {
 				if applyErr != nil {
 					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", applyErr, werr)
 				}
 				return werr
+			}
+
+			// Additive and best-effort, after the local write above has already
+			// succeeded unconditionally (DESIGN §11's "local copy always"
+			// priority). reclaim takes no --environment-profile — an account is
+			// named directly, the same reasoning assess.go's own doc comment
+			// gives for its own --evidence-dir flag — so there is no
+			// envprofile.OutputTargets here to read a mirror bucket out of, and
+			// evidenceMirror(nil) always resolves to zero configured mirrors.
+			// This call site exists so reclaim's evidence path stays wired the
+			// same shape vend's and verify's do; it does nothing today without a
+			// new CLI flag naming a bucket, which is a CLI-surface change this
+			// task does not make.
+			if writtenManifest != nil {
+				mirrors, merr := evidenceMirror(ctx, g, region, profile, nil)
+				if merr != nil {
+					if _, perr := fmt.Fprintf(cmd.ErrOrStderr(),
+						"warning: could not build the evidence mirror: %v\n", merr); perr != nil {
+						return fmt.Errorf("write the warning: %w", perr)
+					}
+				} else {
+					for _, warn := range uploadToMirrors(ctx, mirrors, writtenManifest) {
+						if _, perr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn); perr != nil {
+							return fmt.Errorf("write the warning: %w", perr)
+						}
+					}
+				}
 			}
 
 			if applyErr != nil {
@@ -298,20 +325,20 @@ func reclaimPartialError(r *org.Reclaimer, target string, cause error, manifestP
 // matching docs/reclaim-design.md's own reasoning for using OutcomeSuccess
 // at all.
 func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, actions []org.Action,
-	info reclaimOrgInfo, evidenceDir string, signer evidence.Signer, applyErr error) (string, error) {
+	info reclaimOrgInfo, evidenceDir string, signer evidence.Signer, applyErr error) (string, *evidence.Manifest, error) {
 	if evidenceDir == "" {
 		evidenceDir = envprofile.DefaultEvidenceDir
 	}
 	dir, err := evidence.OpenDir(".", evidenceDir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
 	path := dir.Path(accountID)
 
 	m, err := dir.LoadOrNew(accountID, accountID, "", now.UTC().Format(time.RFC3339), nil)
 	if err != nil {
-		return "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
+		return "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"automat refuses to continue a chain it cannot read, because a manifest rewritten from "+
 			"scratch over a damaged one is the one failure the hash chain exists to make visible",
 			accountID, err)
@@ -357,10 +384,10 @@ func writeReclaimEvidence(accountID, target, callerARN string, now time.Time, ac
 		ToolVersion: version.Version,
 	}
 	if _, err := m.Append(rec, signer); err != nil {
-		return "", fmt.Errorf("cannot append the reclaim record for account %s: %w", accountID, err)
+		return "", nil, fmt.Errorf("cannot append the reclaim record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return path, nil
+	return path, m, nil
 }

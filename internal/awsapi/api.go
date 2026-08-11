@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -326,6 +327,44 @@ type KMSAPI interface {
 		optFns ...func(*kms.Options)) (*kms.VerifyOutput, error)
 }
 
+// S3MirrorAPI is the remote evidence-mirror surface DESIGN §11's "in-account
+// S3 (created at vend) and/or the vending account" compensating control asks
+// for, and ROADMAP.md's "Remote evidence mirror" backlog item names as slice
+// 1 (write-only) and slice 2 (read-and-diff in `verify`).
+//
+// PutObject is slice 1's whole job: evidence.S3Mirror.Upload calls it and
+// nothing else. GetObject is carried here now, ahead of any caller using it,
+// so this interface is complete for both slices rather than needing a second
+// widening later — slice 2's read-and-diff will use it once `verify` gains a
+// second interface method (kept separate from evidence.Mirror, the same
+// Signer/Verifier split evidence/signer.go's own doc comment explains: a
+// writer never needs read access, and bundling the two would make a
+// write-only caller ask for a grant it does not need).
+//
+// # What is deliberately absent, and why
+//
+// DeleteObject: automat never administers or deletes a mirror copy. A copy of
+// the evidence chain that automat's own credentials can delete is not a
+// compensating control against a compromise of those credentials — it is the
+// same single point of failure the local copy already has, mirrored.
+//
+// PutBucketPolicy, PutObjectLockConfiguration, PutBucketVersioning: automat
+// never configures the bucket-level protections — Object Lock, versioning —
+// that would make the mirror WORM. Those are operator/infrastructure
+// decisions, not something this tool configures for itself. The reasoning is
+// the same shape as the DeleteObject absence, one level up: giving automat a
+// method to configure its own tamper-evidence infrastructure would let a
+// compromise of automat's own credentials disable the very protection meant
+// to survive that compromise. A bucket's WORM configuration has to be set up
+// and held by someone automat vending an account cannot impersonate, or the
+// "compensating control" is a control automat compensates for itself.
+type S3MirrorAPI interface {
+	PutObject(ctx context.Context, in *s3.PutObjectInput,
+		optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, in *s3.GetObjectInput,
+		optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
 // SSOOIDCAPI is the device authorization grant used by `automat login`.
 //
 // automat does not implement a credential store: a successful device flow
@@ -478,6 +517,7 @@ var (
 	_ IAMRoleAPI    = (*iam.Client)(nil)
 	_ QuotaAPI      = (*servicequotas.Client)(nil)
 	_ KMSAPI        = (*kms.Client)(nil)
+	_ S3MirrorAPI   = (*s3.Client)(nil)
 	_ SSOOIDCAPI    = (*ssooidc.Client)(nil)
 	_ ConfigAPI     = (*configservice.Client)(nil)
 	_ AccountAPI    = (*account.Client)(nil)

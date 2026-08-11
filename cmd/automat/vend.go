@@ -222,12 +222,27 @@ func newVendCmd(g *globals) *cobra.Command {
 			// attach a policy has produced the state that most needs recording, and
 			// an operator who is handed only the error has an account nobody wrote
 			// down.
-			manifestPath, genesisSHA, werr := writeVendEvidence(in, applied, signer)
+			manifestPath, genesisSHA, writtenManifest, werr := writeVendEvidence(in, applied, signer)
 			if werr != nil {
 				if aerr != nil {
 					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", aerr, werr)
 				}
 				return werr
+			}
+
+			// The mirror upload is additive and best-effort, after the local write
+			// above has already succeeded unconditionally (DESIGN §11's "local copy
+			// always" priority) — a failure here must never fail a vend that
+			// otherwise succeeded, and must never gate on that write.
+			var mirrorWarnings []string
+			if writtenManifest != nil {
+				mirrors, merr := evidenceMirror(ctx, g, region, profile, in.Profile.Baseline.Evidence)
+				if merr != nil {
+					mirrorWarnings = append(mirrorWarnings,
+						fmt.Sprintf("could not build the evidence mirror: %v", merr))
+				} else {
+					mirrorWarnings = uploadToMirrors(ctx, mirrors, writtenManifest)
+				}
 			}
 
 			if aerr != nil {
@@ -242,7 +257,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			if err := renderActions(out, "Applied:", apply.Actions()); err != nil {
 				return err
 			}
-			if err := renderVendWarnings(out, in, applied); err != nil {
+			if err := renderVendWarnings(out, in, applied, mirrorWarnings...); err != nil {
 				return err
 			}
 			if !apply.Changed() {
@@ -1272,23 +1287,25 @@ func attestationIDs(in *vendInput) []string {
 	return out
 }
 
-// writeVendEvidence writes the manifest, and returns the path it wrote to and
-// the manifest's genesis anchor (Meta.GenesisSHA), so the caller can print the
+// writeVendEvidence writes the manifest, and returns the path it wrote to,
+// the manifest's genesis anchor (Meta.GenesisSHA) so the caller can print the
 // anchor on the birth certificate — the operator's own second copy of the
-// header, per docs/open-questions.md Q21.
+// header, per docs/open-questions.md Q21 — and the written manifest itself,
+// so the caller can upload it to a configured evidence.Mirror (evidenceMirror)
+// without opening the directory a second time.
 //
 // A manifest needs an account id — it is the manifest's own id and its account_id
 // field — so a pass that created no account writes nothing and says so by returning
-// an empty path. A pass that changed nothing appends nothing and also writes
-// nothing: evidence.Manifest refuses an empty record list, and a chain that grew on
-// every no-op run would be a chain nobody reads.
+// an empty path and a nil manifest. A pass that changed nothing appends nothing and
+// also writes nothing: evidence.Manifest refuses an empty record list, and a chain
+// that grew on every no-op run would be a chain nobody reads.
 //
 // signer may be nil, in which case the manifest is unsigned — a valid
 // document, per Signer's own doc comment; whether the config file names a
 // KMS key is a policy decision this function does not make.
-func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, string, error) {
+func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, string, *evidence.Manifest, error) {
 	if st == nil || st.AccountID == "" || len(st.Records) == 0 {
-		return "", "", nil
+		return "", "", nil, nil
 	}
 	// The directory is resolved ONCE, and the read and the write both go through
 	// that descriptor. `local_dir` comes out of the environment profile, so its
@@ -1298,28 +1315,28 @@ func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (st
 	// AUDIT-2 H1: the two used to disagree, silently.
 	dir, err := evidence.OpenDir(".", in.Profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir))
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
 	path := dir.Path(st.AccountID)
 
 	m, err := dir.LoadOrNew(st.AccountID, st.AccountID, st.OrgID, in.Now, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
+		return "", "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"The account exists either way. automat refuses to continue a chain it cannot read, "+
 			"because a manifest rewritten from scratch over a damaged one is the one failure the "+
 			"hash chain exists to make visible", st.AccountID, err)
 	}
 	for i := range st.Records {
 		if _, aerr := m.Append(st.Records[i], signer); aerr != nil {
-			return "", "", fmt.Errorf("cannot append the %s record for account %s: %w",
+			return "", "", nil, fmt.Errorf("cannot append the %s record for account %s: %w",
 				st.Records[i].Operation, st.AccountID, aerr)
 		}
 	}
 	if err := dir.Write(m, st.AccountID); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	return path, m.Meta.GenesisSHA, nil
+	return path, m.Meta.GenesisSHA, m, nil
 }
 
 // vendFailure turns a step failure into the error the operator sees.
@@ -1362,14 +1379,18 @@ func vendFailure(cause error, st *vendState, manifestPath string) error {
 	return fmt.Errorf("%s%w", b.String(), cause)
 }
 
-// renderVendWarnings prints what the narrowing and the packing observed.
+// renderVendWarnings prints what the narrowing and the packing observed, plus
+// any extra warnings the caller collected — a failed evidence-mirror upload,
+// for one (evidenceMirror/uploadToMirrors), which must never fail the
+// command that produced the manifest and so is surfaced here instead.
 //
 // Warnings rather than errors, and printed rather than logged. An operator who
 // wrote eu-west-1 into a profile and got an account that cannot reach eu-west-1 is
 // owed the sentence explaining why at plan time; an operator three vends from the
 // policy quota needs to know before the vend that hits it.
-func renderVendWarnings(w io.Writer, in *vendInput, st *vendState) error {
+func renderVendWarnings(w io.Writer, in *vendInput, st *vendState, extra ...string) error {
 	all := append(append([]string(nil), in.Narrowed.Warnings...), st.PackWarnings...)
+	all = append(all, extra...)
 	if len(st.Orphans) > 0 {
 		all = append(all, "service control policies automat owns are attached to "+st.Destination+
 			" and are not in this profile's set: "+strings.Join(st.Orphans, ", ")+

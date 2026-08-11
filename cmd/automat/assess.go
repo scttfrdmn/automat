@@ -186,13 +186,37 @@ func newAssessCmd(g *globals) *cobra.Command {
 			if serr != nil {
 				return serr
 			}
-			manifestPath, werr := writeAssessEvidence(profile, det, result, accountID, callerARN,
+			manifestPath, writtenManifest, werr := writeAssessEvidence(profile, det, result, accountID, callerARN,
 				evidenceDir, now, signer)
 			if werr != nil {
 				return werr
 			}
 			if _, perr := fmt.Fprintf(out, "\nEvidence: %s\n", manifestPath); perr != nil {
 				return fmt.Errorf("write the result: %w", perr)
+			}
+
+			// Additive and best-effort, after the local write above has already
+			// succeeded unconditionally (DESIGN §11's "local copy always"
+			// priority). assess takes no --environment-profile (AUDIT-5, this
+			// command's own doc comment) — the account is named directly — so
+			// there is no envprofile.OutputTargets here to read a mirror bucket
+			// out of, and evidenceMirror(nil) always resolves to zero configured
+			// mirrors; this call site keeps assess's evidence path wired the
+			// same shape vend's and verify's do.
+			if writtenManifest != nil {
+				mirrors, merr := evidenceMirror(ctx, g, orgCtx.Region, orgCtx.Profile, nil)
+				if merr != nil {
+					if _, perr := fmt.Fprintf(cmd.ErrOrStderr(),
+						"warning: could not build the evidence mirror: %v\n", merr); perr != nil {
+						return fmt.Errorf("write the warning: %w", perr)
+					}
+				} else {
+					for _, warn := range uploadToMirrors(ctx, mirrors, writtenManifest) {
+						if _, perr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn); perr != nil {
+							return fmt.Errorf("write the warning: %w", perr)
+						}
+					}
+				}
 			}
 			return nil
 		},
@@ -258,20 +282,20 @@ func writeAssessOutputFile(root *os.Root, name, shownDir string, data []byte) er
 // not the operation failing. Contrast writeVerifyEvidence, where a drifted
 // account IS the check failing; assess makes no claim of its own to fail.
 func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, result *assess.Result,
-	accountID, callerARN, evidenceDir string, now time.Time, signer evidence.Signer) (string, error) {
+	accountID, callerARN, evidenceDir string, now time.Time, signer evidence.Signer) (string, *evidence.Manifest, error) {
 	if evidenceDir == "" {
 		evidenceDir = envprofile.DefaultEvidenceDir
 	}
 	dir, err := evidence.OpenDir(".", evidenceDir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
 	path := dir.Path(accountID)
 
 	m, err := dir.LoadOrNew(accountID, accountID, "", now.UTC().Format(time.RFC3339), nil)
 	if err != nil {
-		return "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
+		return "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"automat refuses to continue a chain it cannot read, because a manifest rewritten from "+
 			"scratch over a damaged one is the one failure the hash chain exists to make visible",
 			accountID, err)
@@ -299,10 +323,10 @@ func writeAssessEvidence(profile *assess.Profile, det *assess.Determinations, re
 		}
 	}
 	if _, err := m.Append(rec, signer); err != nil {
-		return "", fmt.Errorf("cannot append the assess record for account %s: %w", accountID, err)
+		return "", nil, fmt.Errorf("cannot append the assess record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return path, nil
+	return path, m, nil
 }

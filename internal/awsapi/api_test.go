@@ -54,6 +54,7 @@ func allInterfaces(t *testing.T) map[string]reflect.Type {
 		"IAMRoleAPI":    reflect.TypeOf((*IAMRoleAPI)(nil)).Elem(),
 		"QuotaAPI":      reflect.TypeOf((*QuotaAPI)(nil)).Elem(),
 		"KMSAPI":        reflect.TypeOf((*KMSAPI)(nil)).Elem(),
+		"S3MirrorAPI":   reflect.TypeOf((*S3MirrorAPI)(nil)).Elem(),
 		"SSOOIDCAPI":    reflect.TypeOf((*SSOOIDCAPI)(nil)).Elem(),
 		"ConfigAPI":     reflect.TypeOf((*ConfigAPI)(nil)).Elem(),
 		"AccountAPI":    reflect.TypeOf((*AccountAPI)(nil)).Elem(),
