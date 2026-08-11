@@ -24,7 +24,7 @@ adds `init` and `vend`.
 | `automat init` | **Shipped** — see D2 | `cmd/automat/init.go` |
 | `automat vend` | **Shipped** — steps 1–4 and 6 only; see D3 | `cmd/automat/vend.go` |
 | `automat compile` | **Not a subcommand — see below** | `gen/catalog`, maintainer tooling |
-| `automat verify` | **Shipped** — policy and freshness layers only, `--account` not `--account \| --ou`; see D4 | `cmd/automat/verify.go` |
+| `automat verify` | **Shipped** — policy, freshness, and structural-honesty layers only, `--account` not `--account \| --ou`; see D4 | `cmd/automat/verify.go` |
 | `automat list` | **Shipped** — no tag-based filtering; see D5 | `cmd/automat/list.go` |
 | `automat reclaim` | **Shipped** — `--account`/`--dry-run`/`--yes`, unconditional `--yes`; see D9 | `cmd/automat/reclaim.go` |
 

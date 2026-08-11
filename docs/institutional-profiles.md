@@ -363,7 +363,8 @@ Stanford's do not, and the test fails if that stops being true.
 Neither document enforces anything today. Every Stanford control carries
 `automat_enforces: no`, which is accurate: they are patch windows, inventory registration,
 and physical-security requirements, and a tool that vends AWS accounts does not do them.
-Stating that per control is the same structural honesty `verify` prints per control set.
+Stating that per control is the same structural honesty `verify` prints as its per-control
+enforcement-class breakdown (DESIGN §12, `internal/verify.StructuralHonesty`).
 
 ## What is not here yet
 

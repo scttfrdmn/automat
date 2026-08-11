@@ -24,11 +24,6 @@ behalf — see README's feature table and `docs/cli-surface.md` for exactly what
   procedural controls, and an in-account automation role. Today's build attaches
   preventive controls only; nothing watches a vended account after it is created. This is
   the single largest gap between what ships and what DESIGN describes.
-- **Structural honesty in `verify`'s report** — a per-control enforcement-class breakdown
-  ("N of M controls enforced or monitored by this tool, N require a documented process, M
-  require continuous evidence collection outside this tool's scope"), computed from the
-  artifact rather than asserted in prose. The shipped report lists which control sets a
-  compile drew from; it does not yet break enforcement down control by control.
 - **The remaining assessment stages** — the 800-171A objective worksheet and DFARS score
   arithmetic (Stages 1–2 of `docs/assessment-reporting.md`), gated on a weight table that
   needs independent double-transcription from a primary source before any code can consume

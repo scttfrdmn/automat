@@ -290,7 +290,7 @@ answer rather than an absent question.
 
 `automat verify --account <id>`: re-walk the artifact against reality.
 
-**Implemented (Phase 4): the policy and freshness layers only** — see
+**Implemented (Phase 4): the policy, freshness, and structural-honesty layers** — see
 `docs/cli-surface.md` D4 for why `--ou` is not a separate accepted form (baseline-
 protection's automation-role exemption embeds the account id, so the expected policy
 set cannot be compiled for an OU with no account in hand) and why the detective and
@@ -303,7 +303,7 @@ procedural layers are not checked (both check what DESIGN §7 step 5 —
 - Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift). **Not yet checkable — see D4.**
 - Procedural layer: attestation stubs present; staleness vs. declared frequency. **Not yet checkable — see D4.**
 - Freshness layer: **warn** when the environment profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
-- Structural honesty: for each control set, print the enforcement-class breakdown ("X of Y controls enforced/monitored by this tool; N require documented process; M require continuous evidence collection outside this tool's scope"). Computed from the artifact — this is also how the tool states its limits for L2+ catalogs without ever pitching anything. **Not yet implemented**; the shipped report lists the control sets compiled rather than a per-control breakdown.
+- Structural honesty: a per-control enforcement-class breakdown ("X of Y controls enforced by this tool; N require a documented process outside this tool; M require continuous evidence collection outside this tool's scope"), computed from the artifact rather than asserted in prose — this is also how the tool states its limits for L2+ catalogs without ever pitching anything. Implemented (`internal/verify.StructuralHonesty`): every control across the resolved control sets is placed in exactly one of three buckets — enforced (an SCP, either the control set's own or baseline-protection's), documented (a procedural attestation stub), or continuous (an AWS Config rule, nothing else watching it in this build) — with documented taking priority over continuous for a control curated bindings assign both to (`gen/MAPPING-NOTES.md`'s "Curated bindings": those rules observe a symptom of the requirement, not the requirement itself). This is a non-overlapping partition and a distinct computation from the double-counting `artifact.Artifact.Breakdown()` that `gen/catalog` prints at compile time.
 
 Exit codes suitable for cron/CI.
 

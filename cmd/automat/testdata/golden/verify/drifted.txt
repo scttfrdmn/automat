@@ -8,9 +8,9 @@ Policy layer:
 Freshness layer:
   environment profile golden-drifted: review_by 2099-12-31 has not yet passed
 
-Structural honesty (control sets this compile drew from):
-  baseline-protection
-  cmmc-l1
+Structural honesty:
+  compiled from: baseline-protection, cmmc-l1
+  5 controls total: 2 enforced by this tool, 2 require a documented process outside this tool, 1 require continuous evidence collection outside this tool's scope
   (detective and procedural findings are not checked in this build — see `automat verify --help`)
 
 automat dev

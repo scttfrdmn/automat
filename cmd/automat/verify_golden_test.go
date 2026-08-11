@@ -10,9 +10,49 @@ import (
 	"testing"
 	"time"
 
+	"github.com/scttfrdmn/automat/internal/artifact"
 	"github.com/scttfrdmn/automat/internal/catalog"
 	"github.com/scttfrdmn/automat/internal/verify"
 )
+
+// syntheticControlSets builds a small, HAND-BUILT catalog.Resolved for the
+// golden scenarios below — not the real shipped catalogs. This is
+// deliberate: the golden fixtures pin the renderer's OUTPUT SHAPE, and a
+// fixture built from catalogs/cmmc-l1.json would silently change if that
+// catalog's own enforcement assignments ever changed, coupling a renderer
+// test to catalog content the way the original bare &catalog.Resolved{IDs:
+// [...]} (with Artifacts left nil) was written to avoid.
+//
+// The mix is chosen to exercise verify.StructuralHonesty's bucket-priority
+// rule in the same fixture that exercises the renderer: baseline-protection
+// controls land in Enforced, a config-rule-only control lands in Continuous,
+// a procedural-only control lands in Documented, and a control carrying BOTH
+// config-rule and procedural (mirroring cmmc-l1's three curated bindings,
+// gen/MAPPING-NOTES.md) lands in Documented, not Continuous.
+func syntheticControlSets() *catalog.Resolved {
+	return &catalog.Resolved{
+		IDs: []string{"baseline-protection", "cmmc-l1"},
+		Artifacts: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{ID: "baseline-protection"},
+				Controls: artifact.Controls{
+					{ID: "BP-1", Enforcement: []artifact.EnforcementClass{artifact.EnforcementBaselineProtection}},
+					{ID: "BP-2", Enforcement: []artifact.EnforcementClass{artifact.EnforcementBaselineProtection}},
+				},
+			},
+			{
+				Meta: artifact.Meta{ID: "cmmc-l1"},
+				Controls: artifact.Controls{
+					{ID: "C-1", Enforcement: []artifact.EnforcementClass{artifact.EnforcementConfigRule}},
+					{ID: "C-2", Enforcement: []artifact.EnforcementClass{artifact.EnforcementProcedural}},
+					{ID: "C-3", Enforcement: []artifact.EnforcementClass{
+						artifact.EnforcementConfigRule, artifact.EnforcementProcedural,
+					}},
+				},
+			},
+		},
+	}
+}
 
 // Golden files for `automat verify`'s printed report — ROADMAP's Phase 4
 // accept criterion ("`verify` golden reports for compliant / drifted /
@@ -47,7 +87,7 @@ var verifyGoldenScenarios = []struct {
 	{
 		dir: "compliant",
 		build: func() (string, string, *catalog.Resolved, *verify.PolicyReport, verify.FreshnessStatus) {
-			sets := &catalog.Resolved{IDs: []string{"baseline-protection", "cmmc-l1"}}
+			sets := syntheticControlSets()
 			policy := &verify.PolicyReport{
 				Target: "ou-exam-golden01",
 				Expected: []verify.PolicyStatus{
@@ -62,7 +102,7 @@ var verifyGoldenScenarios = []struct {
 	{
 		dir: "drifted",
 		build: func() (string, string, *catalog.Resolved, *verify.PolicyReport, verify.FreshnessStatus) {
-			sets := &catalog.Resolved{IDs: []string{"baseline-protection", "cmmc-l1"}}
+			sets := syntheticControlSets()
 			policy := &verify.PolicyReport{
 				Target: "ou-exam-golden02",
 				Expected: []verify.PolicyStatus{
@@ -79,7 +119,7 @@ var verifyGoldenScenarios = []struct {
 	{
 		dir: "freshness-lapsed",
 		build: func() (string, string, *catalog.Resolved, *verify.PolicyReport, verify.FreshnessStatus) {
-			sets := &catalog.Resolved{IDs: []string{"baseline-protection", "cmmc-l1"}}
+			sets := syntheticControlSets()
 			policy := &verify.PolicyReport{
 				Target: "ou-exam-golden03",
 				Expected: []verify.PolicyStatus{
@@ -97,8 +137,12 @@ func TestVerifyReportMatchesGolden(t *testing.T) {
 	for _, sc := range verifyGoldenScenarios {
 		t.Run(sc.dir, func(t *testing.T) {
 			accountID, target, sets, policy, freshness := sc.build()
+			honesty, herr := verify.StructuralHonesty(sets)
+			if herr != nil {
+				t.Fatalf("verify.StructuralHonesty: %v", herr)
+			}
 			var sb strings.Builder
-			if err := renderVerifyReport(&sb, accountID, target, sets, policy, freshness); err != nil {
+			if err := renderVerifyReport(&sb, accountID, target, policy, freshness, honesty); err != nil {
 				t.Fatalf("renderVerifyReport: %v", err)
 			}
 			got := sb.String()
