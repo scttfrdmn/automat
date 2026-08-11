@@ -60,10 +60,11 @@ func newRootCmdWith(g *globals) *cobra.Command {
 			"what automat can and cannot do from there. If you are in a member account, it\n" +
 			"will point you at `automat setup --request`. If you own the organization,\n" +
 			"`automat init` prepares it. Then `automat vend` creates accounts.\n\n" +
-			"Phase 2 build: preflight, onboarding, `init`, and `vend` work. `vend` attaches\n" +
-			"preventive controls (service control policies) but performs no in-child baseline\n" +
-			"work — no Config recorder, no conformance pack, no in-account roles (DESIGN §7\n" +
-			"step 5). Every plan and every evidence manifest says so.",
+			"Phase 2/3 build: preflight, onboarding, `init`, and `vend` work. `vend` attaches\n" +
+			"preventive controls (service control policies) and establishes the in-account\n" +
+			"automation role, but performs no further in-child baseline work — no Config\n" +
+			"recorder, no conformance pack, no region enablement, no attestation stubs\n" +
+			"(DESIGN §7 step 5). Every plan and every evidence manifest says so.",
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		// Print help rather than an opaque error when invoked bare.

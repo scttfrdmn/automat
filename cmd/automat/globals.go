@@ -72,6 +72,14 @@ type globals struct {
 	// CloseAccount half needs the vendor role in MEMBER, the same shape
 	// newBrokeredOrgVend gives CreateAccount (docs/reclaim-design.md).
 	newBrokeredOrgReclaim func(ctx context.Context, region, profile, roleARN, externalIDRef string) (awsapi.OrgReclaimAPI, error)
+	// newChildIAMRole is childIAMRoleClient's test seam — `vend`'s in-child
+	// baseline step (internal/baseline.EnsureAutomationRole) needs an IAM
+	// client built from a session assumed INTO the just-vended account, the
+	// same shape newBrokeredOrgVend gives a session assumed into the
+	// MANAGEMENT account, but with no ExternalId: DESIGN §3 fact 6's
+	// OrganizationAccountAccessRole trusts the management account outright.
+	newChildIAMRole func(ctx context.Context, region, profile, partition, accountID,
+		roleName string) (awsapi.IAMRoleAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -321,6 +329,47 @@ func (g *globals) orgReclaimClient(ctx context.Context, region, profile string) 
 		return nil, err
 	}
 	return organizations.NewFromConfig(cfg), nil
+}
+
+// childIAMRoleClient assumes roleName into accountID and returns an IAM
+// client on that session — the credential DESIGN §7 step 5 needs for the
+// in-child baseline work, and DESIGN §3 fact 6's "door for in-account
+// baselining": OrganizationAccountAccessRole (or whatever
+// account.role_name named at CreateAccount) trusting the management account
+// by default, no ExternalId required.
+//
+// Built via broker.Assume, the same assumption machinery
+// brokeredOrgVendClient already uses for the vendor role — but with an EMPTY
+// ExternalId ref, not because this assumption is less protected (it needs
+// none: the trust is to the whole management account, not to a member
+// account across an organization boundary) but because
+// OrganizationAccountAccessRole's trust policy, as AWS creates it, names no
+// condition to satisfy.
+//
+// roleName is the caller's to choose, but vend.go always passes
+// envprofile.DefaultOrgAccessRole today: org.EnsureAccount does not send
+// CreateAccountInput.RoleName (docs/cli-surface.md D3's documented gap), so
+// whatever an environment profile's account.role_name says, AWS creates the
+// role under its own default name regardless — and that is the name this
+// client has to assume.
+func (g *globals) childIAMRoleClient(ctx context.Context, region, profile, partition, accountID,
+	roleName string) (awsapi.IAMRoleAPI, error) {
+	if g.newChildIAMRole != nil {
+		return g.newChildIAMRole(ctx, region, profile, partition, accountID, roleName)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	if partition == "" {
+		partition = "aws"
+	}
+	roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, "", region)
+	if err != nil {
+		return nil, err
+	}
+	return iam.NewFromConfig(cfg), nil
 }
 
 // brokeredOrgReclaimClient is CloseAccount's client for the MEMBER state:

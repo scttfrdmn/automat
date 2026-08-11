@@ -18,6 +18,7 @@ import (
 
 	"github.com/scttfrdmn/automat/internal/artifact"
 	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/baseline"
 	"github.com/scttfrdmn/automat/internal/catalog"
 	"github.com/scttfrdmn/automat/internal/compilesets"
 	"github.com/scttfrdmn/automat/internal/config"
@@ -64,19 +65,39 @@ var (
 //
 // # What this build does and does not do
 //
-// Steps 1 to 4 and step 6: resolve the environment profile to a compiled control
-// set, create the account, place it in the OU, ensure the OU's service control
-// policies, write the evidence manifest, print the birth certificate.
+// Steps 1 to 4 and step 6, plus ONE piece of step 5: resolve the environment
+// profile to a compiled control set, create the account, place it in the OU,
+// establish the in-account automation role (internal/baseline.Ensurer, the
+// package skeleton and the first slice of step 5's in-child work), ensure the
+// OU's service control policies, write the evidence manifest, print the birth
+// certificate.
 //
-// Step 5 — the in-child baseline work — is NOT performed, and it is reported
-// rather than omitted. There is no internal/baseline package and no Config,
-// Account Management, or IAM-write interface in internal/awsapi, so a Config
-// recorder, a conformance pack, region enablement, attestation stubs, and the
-// in-account automation role are all out of reach of this binary. A vend that
+// # The automation role runs BEFORE the SCP set, reversing DESIGN §7's listed
+// order
+//
+// DESIGN §7 numbers "ensure the OU's service control policies" step 4 and the
+// in-child baseline work (which creates the automation role) step 5 — read
+// literally, the policies attach first. runVendSteps does the opposite for
+// this one piece of step 5, and that is a deliberate, disclosed decision
+// (CLAUDE.md rule 2), not a silent reinterpretation: baseline-protection's
+// BP.IAM-1 control denies re-permissioning the automation role to every
+// principal in the account, with no exemption, once it is attached
+// (docs/open-questions.md Q13). Attaching the SCP set before the role is
+// fully permissioned would mean the very iam:PutRolePolicy call that
+// permissions the role lands on a Deny automat itself compiled. See
+// internal/baseline's package doc for the full argument.
+//
+// # The rest of step 5 — is NOT performed, and it is reported rather than
+// omitted
+//
+// No Config recorder, no delivery channel, no conformance pack, no opt-in
+// region enablement, no attestation stubs — internal/baseline exists now but
+// carries only EnsureAutomationRole; the Ensurer methods those need
+// (ROADMAP.md's "internal/baseline, slices 3-6") are not built. A vend that
 // silently skipped them would produce an account an operator believes has a
-// detective baseline, which is the failure mode the whole evidence chain exists to
-// prevent: the plan says so, the applied output says so, and the manifest carries
-// a parked baseline-apply record saying so.
+// detective baseline, which is the failure mode the whole evidence chain
+// exists to prevent: the plan says so, the applied output says so, and the
+// manifest carries a parked baseline-apply record saying so.
 //
 // # The one thing a first-vend plan cannot tell you
 //
@@ -89,6 +110,15 @@ var (
 // happen rather than inventing an ARN, the same way org.EnsurePolicySet reports an
 // attachment whose policy does not exist yet. A re-vend, a resume, and an adopted
 // account all know the id and pack normally.
+//
+// The automation role has the SAME problem one step earlier: a first vend's
+// plan pass has no account id yet either, so `runVendSteps` cannot even build
+// the trust policy (it names the account only implicitly, through the session
+// that will later assume OrganizationAccountAccessRole into it) — there is no
+// client to plan against until the account exists. So a first-vend PLAN
+// reports the automation role as unknown-but-would-happen too, the same shape
+// the policy set already uses; only an apply, or a plan against an account
+// that already exists (a re-vend or a resume), can check or create it.
 func newVendCmd(g *globals) *cobra.Command {
 	var (
 		profilePath  string
@@ -114,9 +144,11 @@ func newVendCmd(g *globals) *cobra.Command {
 			"--resume is also safe — an account is found by its root email, which belongs to\n" +
 			"exactly one AWS account — but --resume is the handle for a create that was still\n" +
 			"in flight.\n\n" +
-			"This build performs no in-child baseline work (DESIGN §7 step 5): no Config\n" +
-			"recorder, no conformance pack, no region enablement, no attestation stubs, and no\n" +
-			"in-account automation role. The plan and the evidence manifest both say so.\n\n" +
+			"This build establishes the in-account automation role (DESIGN §7 step 5's first\n" +
+			"piece) before attaching the OU's service control policies, then performs no\n" +
+			"further in-child baseline work: no Config recorder, no conformance pack, no\n" +
+			"region enablement, no attestation stubs. The plan and the evidence manifest\n" +
+			"both say so.\n\n" +
 			"--dry-run prints the plan and stops. Note that --profile is the AWS credential\n" +
 			"profile, as everywhere else; the environment profile is --environment-profile.",
 		Args: cobra.NoArgs,
@@ -180,6 +212,16 @@ func newVendCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The account CreateAccount actually creates OrganizationAccountAccessRole
+			// under, regardless of what the environment profile's account.role_name
+			// says: org.EnsureAccount does not send RoleName today
+			// (docs/cli-surface.md D3's own documented gap), so the role that exists
+			// to assume is always AWS's default. vendAutomationRoleStep assumes this
+			// EXACT role.
+			childIAMRole := func(ctx context.Context, accountID, partition string) (awsapi.IAMRoleAPI, error) {
+				return g.childIAMRoleClient(ctx, region, profile, partition, accountID,
+					envprofile.DefaultOrgAccessRole)
+			}
 
 			out := cmd.OutOrStdout()
 			// One clock read for the whole command. Every timestamp in the manifest
@@ -189,11 +231,11 @@ func newVendCmd(g *globals) *cobra.Command {
 			in.Now = now
 
 			plan := newVendEnsurer(g, vendAPI, policyAPI, org.ModePlan, caller.ARN, credential)
-			planned, err := runVendSteps(ctx, plan, readAPI, caller, in, now)
+			planned, err := runVendSteps(ctx, plan, readAPI, caller, in, now, childIAMRole)
 			if err != nil {
 				return err
 			}
-			if err := renderActions(out, "Plan:", plan.Actions()); err != nil {
+			if err := renderActions(out, "Plan:", combinedActions(plan, planned)); err != nil {
 				return err
 			}
 			if err := renderVendWarnings(out, in, planned); err != nil {
@@ -207,7 +249,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			}
 
 			apply := newVendEnsurer(g, vendAPI, policyAPI, org.ModeApply, caller.ARN, credential)
-			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now)
+			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now, childIAMRole)
 
 			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
 			if serr != nil {
@@ -232,20 +274,20 @@ func newVendCmd(g *globals) *cobra.Command {
 
 			if aerr != nil {
 				if rerr := renderActions(cmd.ErrOrStderr(), "Applied before the failure:",
-					apply.Actions()); rerr != nil {
+					combinedActions(apply, applied)); rerr != nil {
 					return fmt.Errorf("%w (and the partial-progress report could not be "+
 						"written: %v)", aerr, rerr)
 				}
 				return vendFailure(aerr, applied, manifestPath)
 			}
 
-			if err := renderActions(out, "Applied:", apply.Actions()); err != nil {
+			if err := renderActions(out, "Applied:", combinedActions(apply, applied)); err != nil {
 				return err
 			}
 			if err := renderVendWarnings(out, in, applied); err != nil {
 				return err
 			}
-			if !apply.Changed() {
+			if !vendChanged(apply, applied) {
 				if _, werr := fmt.Fprintln(out,
 					"\nNothing needed changing; the account was already vended."); werr != nil {
 					return fmt.Errorf("write the result: %w", werr)
@@ -341,6 +383,61 @@ type vendState struct {
 	Records []evidence.Record
 	// Parked reports that the vend stopped somewhere recoverable.
 	Parked bool
+
+	// AutomationRoleARN is the in-account automation role's ARN, once known —
+	// empty on a first-vend plan, matching every other id this package leaves
+	// blank for a planned creation it cannot predict (see vendInput.automationRoleARN).
+	AutomationRoleARN string
+
+	// BaselineActions is internal/baseline.Ensurer's own actions from
+	// vendAutomationRoleStep — a separate slice rather than folded into e's,
+	// because that step runs a DIFFERENT Ensurer type
+	// (internal/baseline.Ensurer, not internal/org.Ensurer) against a
+	// different client. org.Action is the same struct either package
+	// produces (internal/baseline reuses it rather than a parallel type — see
+	// its package doc), so combinedActions below can splice the two into one
+	// list in true call order for printing.
+	BaselineActions []org.Action
+	// PreSCPOrgActions is how many of e.Actions() existed at the moment
+	// vendAutomationRoleStep ran, i.e. right after account placement and
+	// before the SCP set — the split point combinedActions uses to insert
+	// BaselineActions between them.
+	PreSCPOrgActions int
+}
+
+// combinedActions splices org.Ensurer e's own actions and st.BaselineActions
+// into one list in true call order, for a caller that wants a single printed
+// plan/applied report rather than two separate ones. The automation role is
+// ensured between account placement and the SCP set (this package's own
+// disclosed reversal of DESIGN §7's listed step order, Q13), so it belongs
+// between e.Actions()[:st.PreSCPOrgActions] and the rest.
+func combinedActions(e *org.Ensurer, st *vendState) []org.Action {
+	all := e.Actions()
+	cut := st.PreSCPOrgActions
+	if cut > len(all) {
+		cut = len(all)
+	}
+	out := make([]org.Action, 0, len(all)+len(st.BaselineActions))
+	out = append(out, all[:cut]...)
+	out = append(out, st.BaselineActions...)
+	out = append(out, all[cut:]...)
+	return out
+}
+
+// vendChanged reports whether either Ensurer in this pass wrote anything —
+// e's own accumulator, matching org.Ensurer.Changed's own definition, OR any
+// of st.BaselineActions (internal/baseline.Ensurer uses the identical
+// Action.Applied convention, so the same check applies).
+func vendChanged(e *org.Ensurer, st *vendState) bool {
+	if e.Changed() {
+		return true
+	}
+	for _, a := range st.BaselineActions {
+		if a.Applied {
+			return true
+		}
+	}
+	return false
 }
 
 // loadVendInput resolves every document and refuses every refusable thing, with no
@@ -547,15 +644,24 @@ func newVendEnsurer(g *globals, vendAPI awsapi.OrgVendAPI, policyAPI awsapi.OrgP
 	}
 }
 
+// childIAMRoleFunc builds an IAM client on a session assumed into a just-
+// vended account, for vendAutomationRoleStep — a function value rather than a
+// *globals reference so runVendSteps stays testable against fakes without
+// importing globals' concerns, the same reason internal/org's own Ensurer
+// takes clients rather than constructing them.
+type childIAMRoleFunc func(ctx context.Context, accountID, partition string) (awsapi.IAMRoleAPI, error)
+
 // runVendSteps is DESIGN §7, run identically in plan and apply mode.
 //
 // The ordering is the security property and it is this command's job rather than
 // the ensure functions' (org.EnsurePolicyAttachment's doc says so): the policy type
 // is confirmed enabled before anything is attached, the account is placed in the OU
-// before policies are ensured on that OU, and baseline-protection goes last in the
-// policy set (Q13).
+// before policies are ensured on that OU, the in-account automation role is
+// established before that OU's policy set (Q13, reversing DESIGN §7's listed
+// step order — see the command's doc comment), and baseline-protection goes
+// last within the policy set itself.
 func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
-	caller *callerIdentity, in *vendInput, now string) (*vendState, error) {
+	caller *callerIdentity, in *vendInput, now string, childIAMRole childIAMRoleFunc) (*vendState, error) {
 	st := &vendState{Partition: partitionOf(caller.ARN)}
 
 	if err := describeVendOrg(ctx, read, caller, st); err != nil {
@@ -609,6 +715,14 @@ func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
 		st.Parent = st.Destination
 	}
 	st.recordAccountSteps(e, in, caller, now)
+
+	// The automation role (DESIGN §7 step 5's first piece), established BEFORE
+	// step 4's SCP set — the disclosed reversal of DESIGN's listed order (Q13,
+	// see the command's and internal/baseline's own doc comments).
+	st.PreSCPOrgActions = len(e.Actions())
+	if berr := vendAutomationRoleStep(ctx, e, caller, in, st, now, childIAMRole); berr != nil {
+		return st, berr
+	}
 
 	// Step 4. The pack needs the account id, so this is the earliest point it can
 	// happen; see the command's doc comment for why a plan without one reports
@@ -878,6 +992,76 @@ func vendCreateTags(caller *callerIdentity, delegatedOU string) map[string]strin
 	}
 }
 
+// vendAutomationRoleStep establishes the in-account automation role
+// (DESIGN §7 step 5's first piece, internal/baseline.Ensurer) BEFORE the
+// caller attaches the OU's service control policy set — the disclosed
+// reversal of DESIGN §7's listed step order, per Q13 and the command's own
+// doc comment.
+//
+// A no-op when the profile says not to create one (Baseline.AutomationRole
+// carries create: false) or when the account does not exist yet: a
+// first-vend plan has no account to assume into, so — like vendPolicySpecs'
+// own first-vend case — this reports the step as unknown-but-would-happen
+// rather than guessing at an ARN. A re-vend, a resume, or a plan against an
+// already-vended account all have an AccountID and proceed normally.
+func vendAutomationRoleStep(ctx context.Context, e *org.Ensurer, caller *callerIdentity,
+	in *vendInput, st *vendState, now string, childIAMRole childIAMRoleFunc) error {
+	if !in.Profile.Baseline.AutomationRole.ShouldCreate() {
+		return nil
+	}
+	if st.AccountID == "" {
+		e.RecordUnknown("in-account automation role",
+			"cannot be checked: the account does not exist yet, so there is nothing to assume "+
+				envprofile.DefaultOrgAccessRole+" into. It would be established once the account "+
+				"exists; re-run the plan against the vended account to see it")
+		return nil
+	}
+
+	roleName := in.Profile.Baseline.AutomationRole.RoleName()
+	roleARN := in.automationRoleARN(st)
+
+	trust, err := baseline.TrustPolicyJSON(st.ManagementAccountID, st.Partition)
+	if err != nil {
+		return err
+	}
+	perms, err := baseline.PermissionsPolicyJSON()
+	if err != nil {
+		return err
+	}
+
+	if e.Mode != org.ModeApply {
+		// A plan cannot assume into the account without an apply's session — the
+		// same reason org.Ensurer's own plan pass never calls AssumeRole for the
+		// vendor role. Reported rather than executed, naming the role the plan
+		// would check if it could.
+		e.RecordUnknown("in-account automation role "+roleName,
+			"cannot be checked in plan mode without assuming "+envprofile.DefaultOrgAccessRole+
+				" into "+st.AccountID+"; apply to ensure it, or re-run this command's own apply pass "+
+				"which does assume into the account for exactly this check")
+		return nil
+	}
+
+	child, err := childIAMRole(ctx, st.AccountID, st.Partition)
+	if err != nil {
+		return err
+	}
+	bl := &baseline.Ensurer{Role: child, Mode: org.ModeApply, Principal: caller.ARN}
+	arn, actions, err := bl.EnsureAutomationRole(ctx, roleName, trust, perms)
+	st.BaselineActions = append(st.BaselineActions, actions...)
+	if arn != "" {
+		st.AutomationRoleARN = arn
+	} else {
+		st.AutomationRoleARN = roleARN
+	}
+	if err != nil {
+		st.park(in, caller, now, evidence.OpBaselineApply, err,
+			"the in-account automation role could not be established or re-permissioned; fix the "+
+				"cause above, then "+vendResumeHint(in, st))
+		return err
+	}
+	return nil
+}
+
 // vendPolicySpecs packs the narrowed control set into policy specs, in the order
 // EnsurePolicySet must see them.
 //
@@ -963,12 +1147,17 @@ func (in *vendInput) automationRoleARN(st *vendState) string {
 		in.Profile.Baseline.AutomationRole.RoleName()
 }
 
-// recordStepFiveIsMissing puts DESIGN §7 step 5 in the plan as an unknown rather
-// than leaving it out.
+// recordStepFiveIsMissing puts the REMAINING, unbuilt pieces of DESIGN §7 step
+// 5 in the plan as an unknown rather than leaving them out.
 //
-// Every line here is something an operator reading a vend's output would otherwise
-// assume happened. The detail names what is missing in the code rather than only in
-// the account, because the operator's next question is whether a re-run would fix it.
+// The automation role is no longer listed here: vendAutomationRoleStep
+// actually establishes it (internal/baseline's first slice), and its own
+// actions are what report on it, the same way the SCP set's own actions
+// report on step 4 rather than a separate "step 4 is missing" note. Every
+// line still here is something an operator reading a vend's output would
+// otherwise assume happened. The detail names what is missing in the code
+// rather than only in the account, because the operator's next question is
+// whether a re-run would fix it.
 func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 	p := in.Profile
 	var missing []string
@@ -981,10 +1170,6 @@ func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 	if p.Baseline.Regions != nil {
 		missing = append(missing, "opt-in region enablement")
 	}
-	if p.Baseline.AutomationRole.ShouldCreate() {
-		missing = append(missing, "the in-account automation role "+
-			p.Baseline.AutomationRole.RoleName())
-	}
 	if attestationIDs(in) != nil {
 		missing = append(missing, "attestation stubs for the procedural controls")
 	}
@@ -992,14 +1177,17 @@ func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 		missing = append(missing, "disabling further use of "+envprofile.DefaultOrgAccessRole)
 	}
 	if len(missing) == 0 {
-		missing = append(missing, "nothing this profile asks for")
+		// Nothing left to disclose: the automation role is the only piece of
+		// step 5 this profile asked for, and it was established above.
+		return
 	}
 	e.RecordUnknown("in-child baseline (DESIGN §7 step 5)",
-		"NOT PERFORMED by this build: "+strings.Join(missing, ", ")+". automat holds no Config, "+
-			"Account Management, or IAM-write interface and no internal/baseline package, so it "+
-			"cannot assume into the account at all. The account's preventive controls are real — the "+
-			"service control policies above are attached at the OU — and its detective baseline does "+
-			"not exist. Re-running will not change that; a later build will")
+		"NOT PERFORMED by this build: "+strings.Join(missing, ", ")+". automat holds no Config or "+
+			"Account Management interface with an Ensurer method yet (internal/baseline carries only "+
+			"the automation role so far), so it cannot do this in-account work yet. The account's "+
+			"preventive controls are real — the service control policies above are attached at the OU "+
+			"— and the in-account automation role exists, but the rest of its detective baseline does "+
+			"not. Re-running will not change that; a later build will")
 
 	// DESIGN §14's five account tags, of which this build writes two. Reported for
 	// the same reason: an operator who reads §14 and then reads a vended account's
@@ -1138,7 +1326,7 @@ func (st *vendState) recordSCPStep(e *org.Ensurer, in *vendInput, caller *caller
 // that no re-run completes it.
 func (st *vendState) recordBaselineIsMissing(e *org.Ensurer, in *vendInput,
 	caller *callerIdentity, now string) {
-	if e.Mode != org.ModeApply || st.AccountID == "" || !e.Changed() {
+	if e.Mode != org.ModeApply || st.AccountID == "" || !vendChanged(e, st) {
 		return
 	}
 	st.Records = append(st.Records, evidence.Record{
@@ -1151,13 +1339,14 @@ func (st *vendState) recordBaselineIsMissing(e *org.Ensurer, in *vendInput,
 		Artifact:   in.artifactRef(),
 		EnvProfile: in.Profile.Ref(in.ContentHash),
 		Err: &evidence.RecordError{
-			Message: "the in-child baseline (DESIGN §7 step 5) was not performed: this build of " +
-				"automat holds no Config, Account Management, or IAM-write interface, so it never " +
-				"assumed into the account. No Config recorder, no conformance pack, no region " +
-				"enablement, no attestation stubs, and no in-account automation role",
-			Remediation: "the account's preventive controls are attached and real; its detective " +
-				"baseline does not exist. Re-running this build will not change that. This record is " +
-				"here so that nothing later mistakes the absence for a baseline that succeeded",
+			Message: "the in-child baseline (DESIGN §7 step 5) was only PARTLY performed: this build " +
+				"of automat established the in-account automation role, but holds no Config or " +
+				"Account Management Ensurer method yet. No Config recorder, no conformance pack, no " +
+				"region enablement, no attestation stubs",
+			Remediation: "the account's preventive controls are attached and real, and the automation " +
+				"role exists; the rest of its detective baseline does not. Re-running this build will " +
+				"not change that. This record is here so that nothing later mistakes the absence for " +
+				"a baseline that succeeded",
 		},
 		ToolVersion: version.Version,
 	})
@@ -1467,8 +1656,9 @@ func renderBirthCertificate(w io.Writer, in *vendInput,
 		}
 		line(label, o.ID+" sha256:"+o.ContentSHA256+note)
 	}
-	line("detective baseline", "NOT APPLIED — DESIGN §7 step 5 is not in this build; the "+
-		"manifest carries a parked baseline-apply record")
+	line("automation role", st.AutomationRoleARN)
+	line("detective baseline", "NOT APPLIED — DESIGN §7 step 5's remaining pieces are not in this "+
+		"build; the manifest carries a parked baseline-apply record")
 	line("evidence manifest", manifestPath)
 	// The genesis anchor, printed so the birth certificate is the operator's own
 	// second, independently-held copy of the manifest header — the compensating
