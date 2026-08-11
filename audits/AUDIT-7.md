@@ -49,14 +49,23 @@ directly against the source in this pass.
 
 ## Result
 
-7 findings survive independent verification: 1 high, 3 medium, 2 low, 1 nit. **0 FIXED, 0
-ACCEPTED — all 7 are open, pending the maintainer's disposition**, since this audit did not
-apply fixes. One additional claim from the dimension reviews (a characterization of Q9's
-`docs/open-questions.md` text as overclaiming) was checked directly against the actual prose and
-found not to match — excluded, not reported. Dependency review: no new dependency (see below).
-CLI-surface reconciliation: not applicable — no new CLI surface was added by this work;
-`internal/smoke` is a test-only package gated behind the `smoke` build tag and is not part of
-`cmd/automat`.
+7 findings survive independent verification: 1 high, 3 medium, 2 low, 1 nit. One additional
+claim from the dimension reviews (a characterization of Q9's `docs/open-questions.md` text as
+overclaiming) was checked directly against the actual prose and found not to match — excluded,
+not reported. Dependency review: no new dependency (see below). CLI-surface reconciliation: not
+applicable — no new CLI surface was added by this work; `internal/smoke` is a test-only package
+gated behind the `smoke` build tag and is not part of `cmd/automat`.
+
+**Disposition (2026-08-10, commit `2e3bc94`): all 7 FIXED.** H1, M1, L1, L2, and N1 were code
+fixes, each verified by the untagged and `-tags=smoke` build/vet/test/lint gates; N1's new
+assertion was additionally counter-checked in a throwaway worktree (renamed
+`TestSmokeChecklist` to confirm the extended check fails for the right reason before removing
+the worktree). M2 and M3 were scoped to their lighter resolution by the maintainer's explicit
+choice: M2 as a doc-wording correction only (the code's `OutcomeSuccess` semantics were already
+correct; only `docs/reclaim-design.md`'s prose premise was wrong), and M3 as a disclosure added
+to Q8's `docs/open-questions.md` entry rather than new smoke-subtest code, since the real check
+needs the onboarding bundle deployed into a sandbox member account first — the same prerequisite
+already blocking Q8's and Q9's own read-side re-tests.
 
 ---
 
@@ -97,6 +106,11 @@ for not reusing `org.Reclaimer` (it must "always apply" without a plan/apply gat
 detach-then-close by hand; the plan/apply distinction the doc comment objects to is orthogonal to
 the sibling check, which `Reclaimer` performs regardless of mode.
 
+**FIXED (`2e3bc94`).** `reclaimAccount` now builds `&org.Reclaimer{Policy: h.Reclaim, Close:
+h.Reclaim, Mode: org.ModeApply}` and calls its `DetachOwnedPolicies`/`CloseAccount` directly,
+inheriting the sibling check rather than re-omitting it. The hand-rolled pagination/ownership
+logic this replaced is deleted entirely, which also resolves L1 below.
+
 ---
 
 ## Medium
@@ -125,6 +139,11 @@ contradicted by observation — e.g. "AWS closes accounts asynchronously; propag
 has been observed to take longer than 10 minutes" — or drop the specific timeframe entirely and
 point at `docs/reclaim-design.md`/`docs/open-questions.md` Q24 for what is actually known.
 
+**FIXED (`2e3bc94`).** Both the plan-mode and apply-mode `Detail` strings in
+`internal/org/reclaim.go` now read "DescribeAccount may continue reporting the account as
+ACTIVE for some time — observed longer than 10 minutes in testing — before it reflects
+SUSPENDED," dropping the falsified "a few minutes" bound.
+
 ### M2 — The persisted `OpReclaim` evidence record cannot distinguish "AWS accepted the close request" from "the account is actually closed," and the doc that justifies the record's shape asserts the stronger claim as its premise
 
 `cmd/automat/reclaim.go:300-365`, `writeReclaimEvidence`. `applyErr == nil` (i.e., `CloseAccount`
@@ -152,6 +171,15 @@ success path too, not only the failure path; or have `reclaim` poll `DescribeAcc
 different, still-honest record ("close requested, not yet confirmed by AWS") if the poll times
 out rather than treating that as equivalent to a confirmed close.
 
+**FIXED (`2e3bc94`), scoped to the lighter resolution by maintainer choice.** The code's
+`OutcomeSuccess` semantics were already correct at the `writeReclaimEvidence` doc-comment
+level ("a claim about whether the request... was accepted, never about the account's
+compliance") — only `docs/reclaim-design.md`'s prose premise was wrong. That sentence now
+reads "a close request has been accepted; AWS confirms closure (`SUSPENDED`) asynchronously,
+and... that confirmation can take longer than 10 minutes to become observable," pointing at
+`writeReclaimEvidence`'s doc comment for the enforcement. No schema field was added and no
+poll was added to `CloseAccount` — the maintainer declined both heavier options for now.
+
 ### M3 — `docs/smoke.md`'s Phase-1-review-mandated Q8 tag-write audit was never implemented, and nothing in the session's Q8 findings discloses that the write-side check is still missing
 
 `docs/smoke.md` states, as a standing requirement carried from the Phase 1 review: *"When Q8 is
@@ -174,6 +202,11 @@ it has silently fallen out of the record entirely.
 (under the brokered vendor-role credential, same prerequisite Q8's read-side check already names
 as blocking), or add an explicit line to the Q8 entry in `docs/open-questions.md` disclosing that
 the write-side half of `docs/smoke.md`'s own rule was not exercised this run.
+
+**FIXED (`2e3bc94`), scoped to the lighter resolution by maintainer choice.** Added a
+disclosure paragraph to Q8's `docs/open-questions.md` entry naming the missing check by name
+and stating it needs the same onboarding-bundle-in-a-sandbox-member-account prerequisite
+already blocking Q8's and Q9's own read-side re-tests. No new smoke subtest was written.
 
 ---
 
@@ -202,6 +235,10 @@ of the hang risk, but the same root cause.
 `internal/org/reclaim.go` to both loops in `harness.go`, and add the missing pagination loop
 around `ListTagsForResource`.
 
+**FIXED (`2e3bc94`), as a consequence of H1's fix.** `reclaimAccount`'s hand-rolled pagination
+loops (including the un-paginated `ListTagsForResource` call) are deleted entirely, replaced
+by `org.Reclaimer`'s own helpers, which already carry the `listPageCap`/`seen`-token guard.
+
 ### L2 — `recordFinding`'s errors are silently discarded at every call site, with no upfront writability check, so a real run can complete with zero recorded findings and no diagnostic
 
 `internal/smoke/findings.go:67-82`, `recordFinding`, returns an `error` from `os.OpenFile`/
@@ -222,6 +259,12 @@ for observations that then evaporate unnoticed.
 robust to the "eleven call sites" problem — probe `findingsPath()`'s writability once in
 `newHarness` and fail fast if it is not writable, the same "check the precondition once, up
 front" pattern the harness already applies to `AUTOMAT_SMOKE_PROFILE`/`AUTOMAT_SMOKE_ORG`.
+
+**FIXED (`2e3bc94`).** Added `probeFindingsWritable` (`internal/smoke/findings.go`), called
+from `newHarness` right after the two required env-var checks: opens `findingsPath()` for
+append, writes nothing, closes it, and `t.Fatal`s on error — before any account is created.
+The eleven `recordFinding` call sites in `smoke_test.go` are left as-is, since the
+precondition is now checked once up front.
 
 ---
 
@@ -245,6 +288,13 @@ and the actual test name drifting apart while the tag stays present.
 **Recommended fix:** extend the test to also extract exported `Test*` function names from every
 smoke-tagged file and assert at least one matches the Makefile's `-run` pattern (a regex match
 against `'Smoke'`, mirroring what `go test -run` does).
+
+**FIXED (`2e3bc94`).** `TestMakefileSmokeClaimIsStillTrue` now extracts the `-run '<pattern>'`
+value from the Makefile via regex, collects every exported `Test*` name from smoke-tagged
+files, and fails if none match the pattern. Counter-checked in a throwaway git worktree: with
+`TestSmokeChecklist` renamed to `TestLiveOrgChecklist`, the extended assertion failed with
+the expected message ("matches none of the smoke-tagged test names found") before the
+worktree was discarded.
 
 ---
 
@@ -288,18 +338,20 @@ through `cmd/automat`. `docs/cli-surface.md` requires no reconciliation this aud
 
 ## For the human
 
-Seven open findings, none fixed by this audit (by design — this was a report-only pass, not a
-fix-and-counter-check one). Ranked by what's most load-bearing to decide first:
+Originally seven open findings, reported without fixes applied (this was, at the time, a
+report-only pass). All seven were subsequently resolved (commit `2e3bc94`, 2026-08-10) — see
+each finding's own **FIXED** line above for what changed. Summary of the maintainer's
+disposition choices:
 
-- **H1** is the one with the sharpest blast radius if a real operator's sandbox ever has more
-  than one account under the smoke OU — recommend fixing before the next live run rather than
-  accepting, since the harness's own doc comment already explains why it diverges from
-  `org.Reclaimer` and the sibling check is orthogonal to that reasoning.
-- **M1 and M2** are two faces of the same underlying gap (`CloseAccount`'s "done" claim is weaker
-  than what's printed/recorded) — worth deciding together, since the fix for one likely informs
-  the fix for the other (a bounded poll would address both).
-- **M3** is a process gap (a Phase-1-review-mandated check that never got built) rather than a
-  code defect — worth a maintainer decision on whether to build the write-side check now or
-  explicitly re-scope Q8 to disclose it's still missing.
-- **L1, L2, N1** are all "this code doesn't hold itself to the standard the rest of the tree
-  already established" — straightforward to fix, low urgency given the package's own gating.
+- **H1, M1, L1, L2, N1** were fixed as code, at the depth the audit recommended. H1's fix
+  (delegating to `org.Reclaimer`) resolved L1 as a side effect.
+- **M2 and M3** were each resolved at the lighter of the two options the audit's recommended
+  fix offered — a doc-wording correction for M2 (no schema change, no poll added to
+  `CloseAccount`) and a disclosure sentence for M3 (no new smoke subtest) — both chosen by the
+  maintainer explicitly (via AskUserQuestion, plan-mode session, 2026-08-10) over their heavier
+  alternatives, since both heavier options either reversed a design decision
+  (`docs/reclaim-design.md`'s stated "no poll" stance) without new information changing the
+  underlying reasoning, or required infrastructure (the onboarding bundle deployed into a
+  sandbox member account) not yet available.
+- No finding was ACCEPTED-as-a-risk; every finding has a FIXED disposition, even where the fix
+  was documentation rather than code.
