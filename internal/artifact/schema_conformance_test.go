@@ -241,6 +241,19 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 		{"exemption reason containing a newline", func(t *testing.T, a *Artifact) {
 			exemptions(t, a)[0].Reason = "Approved\n  - controls[XX]: no exemptions"
 		}},
+		// The same class of bug as the exemption-reason checks above, but found
+		// later: checkStatementList enforced minLength and uniqueItems for
+		// action/resource but never applied reNoControlBytes, and the published
+		// schema matched it exactly — so a control byte in either field passed
+		// both validators with no bypass needed. docs/open-questions.md Q20.
+		{"action containing a control character", func(t *testing.T, a *Artifact) {
+			c := mustControl(t, a, "BB.L1-b.1.b")
+			c.SCP.Statements[0].Action = []string{"config:StopConfigurationRecorder\x01"}
+		}},
+		{"resource containing a control character", func(t *testing.T, a *Artifact) {
+			c := mustControl(t, a, "BB.L1-b.1.b")
+			c.SCP.Statements[0].Resource = []string{"arn:aws:config:*:*:config-rule/\x01evil"}
+		}},
 		// The artifact-level global-service exemption list. Both validators must
 		// agree, because a namespace that does not name a real service exempts
 		// nothing and the failure is silent — the reviewer reads the catalog, sees

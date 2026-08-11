@@ -332,6 +332,29 @@ func TestValidateRejects(t *testing.T) {
 			wantFix:  "disagree with itself",
 		},
 		{
+			// Same class of gap as ExemptPrincipal.Reason's control-byte check
+			// (CLAUDE.md rule 8): checkStatementList enforced minLength and
+			// uniqueItems on action/resource but never applied reNoControlBytes,
+			// so a control byte in either field passed Validate() outright.
+			// docs/open-questions.md Q20.
+			name: "action member with a control character",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Action = []string{"config:StopConfigurationRecorder\x01"}
+			},
+			wantPath: "action[0]",
+			wantFix:  "control character",
+		},
+		{
+			name: "resource member with a control character",
+			mutate: func(a *Artifact) {
+				c := mustControl(t, a, "BB.L1-b.1.b")
+				c.SCP.Statements[0].Resource = []string{"arn:aws:config:*:*:config-rule/\x01evil"}
+			},
+			wantPath: "resource[0]",
+			wantFix:  "control character",
+		},
+		{
 			name: "non-alphanumeric sid",
 			mutate: func(a *Artifact) {
 				c := mustControl(t, a, "BB.L1-b.1.b")

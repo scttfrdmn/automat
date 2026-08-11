@@ -972,6 +972,28 @@ the embedded FS. If **vendored-only is load-bearing** rather than incidental, it
 written down as a control with a test, not left as a property of the current call sites. A
 field whose safety depends on who happens to call it is one refactor from not being safe.
 
+**2026-08-10 — the "not currently reachable" claim above was wrong for `action`/`resource`.**
+AUDIT-2 L4 accepted the assumption that rule 8's character-class pattern was applied to every
+round-trip field, `scp_statement.action`/`.resource` among them, on the strength of
+`ExemptPrincipal.Reason` carrying `reNoControlBytes` at both layers. A closer look found that
+`checkStatementList` in `internal/artifact/validate.go` — the function backing both fields —
+only ever enforced `minLength:1` and `uniqueItems`; it never applied `reNoControlBytes` or any
+other pattern. The published schema matched it exactly: `scp_statement.action.items` and
+`.resource.items` carried `"minLength": 1` and nothing else. So a resource or action ARN
+carrying a literal `\x01` byte passed `artifact.Validate()` with zero bypass needed — not
+through `SkipValidate`, not through a hand-edited catalog, through the ordinary path. Fixed by
+adding the `reNoControlBytes` check to `checkStatementList` (mirroring the `Reason` check's
+wording, adapted to say "action"/"resource") and adding
+`"pattern": "^[^\\x00-\\x1f\\x7f]+$"` to both schema items, alongside their existing
+`minLength: 1`. This is a strictly-tightening schema change under CLAUDE.md rule 6: no
+document that previously failed validation now passes, and every document that now fails
+contains a control character in `action` or `resource` that the schema and validator had
+missed. The live-AWS behavioral half of this question — what `AttachPolicy` actually does with
+such a byte if one reaches it another way — is unaffected and remains open: automat's own
+validation now refuses the value on the ordinary path, but what happens via `SkipValidate` or a
+future field that doesn't inherit the pattern is still unverified, per the "not currently
+reachable" paragraph above, which is now accurate again rather than merely assumed.
+
 ### Q21 — `manifest.genesis_sha256` does not defend against a rewrite that edits the header too
 
 Added at H3's resolution (see `schema/CHANGELOG.md`, "Pre-publication change to
