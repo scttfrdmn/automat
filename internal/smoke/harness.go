@@ -14,6 +14,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
@@ -180,6 +181,7 @@ func (h *Harness) reclaimAccount(accountID string) error {
 	for {
 		page, perr := h.Reclaim.ListPoliciesForTarget(ctx, &organizations.ListPoliciesForTargetInput{
 			TargetId: aws.String(target), NextToken: pageToken,
+			Filter: orgtypes.PolicyTypeServiceControlPolicy,
 		})
 		if perr != nil {
 			return fmt.Errorf("list policies attached to %s: %w", target, perr)
