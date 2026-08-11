@@ -212,13 +212,13 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\x00-\\x1f\\x7f]+$" }
         },
         "resource": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\x00-\\x1f\\x7f]+$" }
         },
         "condition": {
           "description": "IAM condition block: operator -> condition key -> value(s).",

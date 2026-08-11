@@ -444,21 +444,33 @@ func (s *SCP) validate(p *problems, path string) {
 	}
 }
 
-// checkStatementList enforces minLength:1 and uniqueItems over a statement's action
-// or resource list, matching the published schema.
+// checkStatementList enforces minLength:1, the no-control-byte pattern, and
+// uniqueItems over a statement's action or resource list, matching the
+// published schema.
 //
 // One helper for both because the two fields carry the same constraint and the same
 // consequence: the packer keys on both, so an empty or repeated member in either is a
-// statement that does not mean what it appears to.
+// statement that does not mean what it appears to. The control-byte check is here for
+// the same reason it is on ExemptPrincipal.Reason: these values are printed back in
+// validation reports (see safe()) and rendered into the compiled policy, where a
+// control byte forges a line of the report or an entry of the policy — CLAUDE.md rule
+// 8 requires the pattern at both this layer and the schema for exactly that reason.
 func checkStatementList(p *problems, path string, vals []string, kind string) {
 	seen := make(map[string]bool, len(vals))
 	for i, v := range vals {
 		ipath := fmt.Sprintf("%s[%d]", path, i)
-		if v == "" {
+		switch {
+		case v == "":
 			p.add(ipath, "is empty",
 				fmt.Sprintf("name a real %s or remove the entry; an empty %s matches nothing, so the "+
 					"statement is present in the rendered policy and enforces less than it appears to",
 					kind, kind))
+			continue
+		case !reNoControlBytes.MatchString(v):
+			p.add(ipath, "contains a control character",
+				fmt.Sprintf("use a printable %s; %ss are echoed in validation reports and rendered into "+
+					"the compiled policy, where a control character forges a line of the report or a "+
+					"statement of the policy", kind, kind))
 			continue
 		}
 		if seen[v] {
