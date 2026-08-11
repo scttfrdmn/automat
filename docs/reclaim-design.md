@@ -101,10 +101,15 @@ one it can.
 already in the closed `Operation` enum (landed ahead of time when the enum was drafted).
 Custody-transfer is reserved for the case DESIGN §11 built it for: custody of the *manifest
 itself* passing to a different system or owner, with the chain deliberately ending
-(`Manifest.Closed()`/`ErrClosed`). Closing the AWS account is a different fact — the
-subject the manifest is about no longer exists in AWS — but the manifest itself is not
-being handed to anyone; it is the terminal record of what happened to *this* account,
-staying exactly where every other account's evidence directory already keeps it.
+(`Manifest.Closed()`/`ErrClosed`). Closing the AWS account is a different fact — a close
+request has been accepted; AWS confirms closure (`SUSPENDED`) asynchronously, and per the
+first live-org run (`docs/open-questions.md` Q24, AUDIT-7 M1/M2), that confirmation can take
+longer than 10 minutes to become observable via `DescribeAccount`. The manifest records that
+the request was accepted, not that AWS has confirmed the account is gone — see
+`writeReclaimEvidence`'s own doc comment (`cmd/automat/reclaim.go`) for how that distinction
+is enforced in code. Either way, the manifest itself is not being handed to anyone; it is
+the terminal record of what happened to *this* account, staying exactly where every other
+account's evidence directory already keeps it.
 
 **The manifest chain does not close.** Two reasons: (1) AWS itself keeps a closed account
 in `SUSPENDED` status for a 90-day grace window during which it can be **reinstated** by

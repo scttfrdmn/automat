@@ -57,6 +57,20 @@ func findingsPath() string {
 	return os.TempDir() + "/automat-smoke-findings.jsonl"
 }
 
+// probeFindingsWritable confirms findingsPath can be opened for appending,
+// without writing anything — the up-front check newHarness makes (AUDIT-7
+// L2) so a bad AUTOMAT_SMOKE_FINDINGS path fails loudly before any account
+// is created, rather than letting recordFinding's per-call discarded error
+// swallow the problem for an entire run.
+func probeFindingsWritable() error {
+	path := findingsPath()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // operator-chosen path, smoke-tagged only
+	if err != nil {
+		return fmt.Errorf("open findings file %s: %w", path, err)
+	}
+	return file.Close()
+}
+
 // recordFinding appends one Finding as a JSON line to the findings file.
 //
 // Append-only, one line per call: a smoke run's findings accumulate across

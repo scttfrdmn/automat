@@ -14,10 +14,10 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
-	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/org"
 )
 
 // Harness is the real-AWS session every smoke subtest shares: one set of
@@ -91,6 +91,20 @@ func newHarness(t testingT) *Harness {
 	}
 	region := os.Getenv("AUTOMAT_SMOKE_REGION")
 
+	// Checked once, up front, the same as the two env vars above (AUDIT-7
+	// L2): recordFinding's own errors are discarded at every call site
+	// because a findings-write failure should not fail a subtest that
+	// already did real, mutating AWS work — but that means an unwritable
+	// AUTOMAT_SMOKE_FINDINGS path would otherwise let an entire run
+	// complete, having mutated a real organization, with zero findings
+	// recorded and no diagnostic anywhere. Probing here turns that into a
+	// loud failure before anything is created.
+	if err := probeFindingsWritable(); err != nil {
+		t.Fatalf("AUTOMAT_SMOKE_FINDINGS path is not writable: %v — every recordFinding call this run "+
+			"would make discards its own error, so a bad path here would otherwise let the whole run "+
+			"complete with no findings recorded and nothing to show for the accounts it mutated", err)
+	}
+
 	ctx := context.Background()
 	opts := []func(*awsconfig.LoadOptions) error{awsconfig.WithSharedConfigProfile(profile)}
 	if region != "" {
@@ -160,12 +174,20 @@ func (h *Harness) reclaimAllTrackedAccounts(t testingT) {
 	}
 }
 
-// reclaimAccount is the harness's own minimal detach-then-close, deliberately
-// NOT internal/org.Reclaimer: cleanup must not stop for a plan/apply
-// distinction or an unconditional --yes gate meant for a human operator —
-// it always applies, because a smoke run choosing to abandon an account
-// mid-cleanup is worse than one that closes it without a second
-// confirmation nobody is present to give.
+// reclaimAccount detaches and closes accountID via org.Reclaimer, the same
+// production detach-then-close path Q24_ReclaimDetachThenClose
+// (smoke_test.go) already builds — not a hand-rolled duplicate (AUDIT-7
+// H1): an earlier version of this function re-implemented
+// DetachOwnedPolicies/CloseAccount by hand and, in doing so, dropped the
+// sibling-active-account check (internal/org/reclaim.go's activeSiblings)
+// that AUDIT-6 C1 added to production code specifically because an SCP is
+// attached at the OU, not the account (DESIGN §5, §8), so detaching it to
+// reclaim one account can silently strip guardrails from another account
+// still sitting under the same OU. Using org.Reclaimer here inherits that
+// check instead of re-omitting it. Always applies, with no plan/apply gate
+// or --yes prompt: a cleanup routine that stopped for a confirmation nobody
+// is present to give would abandon the account, which is worse than closing
+// it without one.
 func (h *Harness) reclaimAccount(accountID string) error {
 	ctx := context.Background()
 	parents, err := h.Org.ListParents(ctx, &organizations.ListParentsInput{ChildId: aws.String(accountID)})
@@ -177,45 +199,11 @@ func (h *Harness) reclaimAccount(accountID string) error {
 	}
 	target := aws.ToString(parents.Parents[0].Id)
 
-	var pageToken *string
-	for {
-		page, perr := h.Reclaim.ListPoliciesForTarget(ctx, &organizations.ListPoliciesForTargetInput{
-			TargetId: aws.String(target), NextToken: pageToken,
-			Filter: orgtypes.PolicyTypeServiceControlPolicy,
-		})
-		if perr != nil {
-			return fmt.Errorf("list policies attached to %s: %w", target, perr)
-		}
-		for _, p := range page.Policies {
-			tags, terr := h.Reclaim.ListTagsForResource(ctx,
-				&organizations.ListTagsForResourceInput{ResourceId: p.Id})
-			if terr != nil {
-				return fmt.Errorf("list tags on policy %s: %w", aws.ToString(p.Id), terr)
-			}
-			owned := false
-			for _, tag := range tags.Tags {
-				if aws.ToString(tag.Key) == "automat:managed-by" && aws.ToString(tag.Value) == "automat" {
-					owned = true
-				}
-			}
-			if !owned {
-				continue
-			}
-			if _, derr := h.Reclaim.DetachPolicy(ctx, &organizations.DetachPolicyInput{
-				PolicyId: p.Id, TargetId: aws.String(target),
-			}); derr != nil {
-				return fmt.Errorf("detach policy %s from %s: %w", aws.ToString(p.Id), target, derr)
-			}
-		}
-		if page.NextToken == nil || aws.ToString(page.NextToken) == "" {
-			break
-		}
-		pageToken = page.NextToken
+	r := &org.Reclaimer{Policy: h.Reclaim, Close: h.Reclaim, Mode: org.ModeApply, Credential: org.Native}
+	if _, err := r.DetachOwnedPolicies(ctx, target, accountID); err != nil {
+		return fmt.Errorf("detach automat's policies from %s: %w", target, err)
 	}
-
-	if _, err := h.Reclaim.CloseAccount(ctx, &organizations.CloseAccountInput{
-		AccountId: aws.String(accountID),
-	}); err != nil {
+	if _, err := r.CloseAccount(ctx, accountID); err != nil {
 		return fmt.Errorf("close account %s: %w", accountID, err)
 	}
 	return nil

@@ -270,8 +270,11 @@ func (r *Reclaimer) CloseAccount(ctx context.Context, accountID string) (*Action
 	if r.planning() {
 		return r.record(Action{
 			Verb: VerbClose, Kind: "account", ID: accountID,
-			Detail: "would be closed. AWS will hold it in SUSPENDED status for a 90-day grace window, " +
-				"reinstatable by contacting AWS Support; after that it cannot be reopened",
+			Detail: "would be closed. AWS closes accounts asynchronously; DescribeAccount may continue " +
+				"reporting the account as ACTIVE for some time — observed longer than 10 minutes in " +
+				"testing — before it reflects SUSPENDED. Once SUSPENDED, AWS holds it there for a " +
+				"90-day grace window, reinstatable by contacting AWS Support; after that it cannot be " +
+				"reopened",
 		}), nil
 	}
 
@@ -281,8 +284,9 @@ func (r *Reclaimer) CloseAccount(ctx context.Context, accountID string) (*Action
 	if err == nil {
 		return r.record(Action{
 			Verb: VerbClose, Kind: "account", ID: accountID,
-			Detail: "close requested. AWS closes accounts asynchronously — it may report SUSPENDED " +
-				"only after a few minutes", Applied: true,
+			Detail: "close requested. AWS closes accounts asynchronously; DescribeAccount may continue " +
+				"reporting the account as ACTIVE for some time — observed longer than 10 minutes in " +
+				"testing — before it reflects SUSPENDED", Applied: true,
 		}), nil
 	}
 

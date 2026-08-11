@@ -6,6 +6,7 @@ package artifact
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -22,10 +23,22 @@ import (
 // to remove the sentence. This walks the tree for `//go:build smoke` and asserts
 // the Makefile's "no automated test carries the smoke tag" wording is present
 // only when that is still true.
+//
+// AUDIT-7 N1: also extracts every exported `Test*` function name from the
+// smoke-tagged files and confirms at least one matches the Makefile's own
+// `-run` pattern. The tag existing was never sufficient by itself — renaming
+// the one test that carries it (e.g. `TestSmokeChecklist` to something that
+// no longer contains "Smoke") would leave this test green while `make
+// smoke`'s `-run 'Smoke'` matches zero tests and silently runs nothing again,
+// the same defect class this test exists to catch, just reached a different
+// way.
+var reTestFuncName = regexp.MustCompile(`(?m)^func\s+(Test\w+)\s*\(`)
+
 func TestMakefileSmokeClaimIsStillTrue(t *testing.T) {
 	repoRoot := "../.."
 
 	var smokeTagged []string
+	var testNames []string
 	err := filepath.WalkDir(repoRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -43,12 +56,20 @@ func TestMakefileSmokeClaimIsStillTrue(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		tagged := false
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "//go:build smoke" || line == "// +build smoke" {
-				smokeTagged = append(smokeTagged, path)
+				tagged = true
 				break
 			}
+		}
+		if !tagged {
+			return nil
+		}
+		smokeTagged = append(smokeTagged, path)
+		for _, m := range reTestFuncName.FindAllStringSubmatch(string(data), -1) {
+			testNames = append(testNames, m[1])
 		}
 		return nil
 	})
@@ -70,4 +91,34 @@ func TestMakefileSmokeClaimIsStillTrue(t *testing.T) {
 		t.Fatalf("the Makefile still claims no automated test carries the smoke tag, but %d do: %v — "+
 			"update the smoke target's comment and help text to reflect what now runs", len(smokeTagged), smokeTagged)
 	}
+	if len(smokeTagged) == 0 {
+		return
+	}
+
+	runPattern := reMakefileSmokeRun.FindStringSubmatch(string(makefile))
+	if runPattern == nil {
+		t.Fatal("the Makefile's `smoke` target has no `-run '<pattern>'` flag on its `go test` line — " +
+			"without one, `go test -tags=smoke` runs every test in the tree, including ones that never " +
+			"expected to be reached this way")
+	}
+	runRe, rerr := regexp.Compile(runPattern[1])
+	if rerr != nil {
+		t.Fatalf("the Makefile's `-run %q` is not a valid regexp: %v", runPattern[1], rerr)
+	}
+	matched := false
+	for _, name := range testNames {
+		if runRe.MatchString(name) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		t.Fatalf("the Makefile's `-run %q` matches none of the smoke-tagged test names found (%v) — "+
+			"`make smoke` would run zero tests and exit 0, silently, the same defect class this test "+
+			"exists to catch", runPattern[1], testNames)
+	}
 }
+
+// reMakefileSmokeRun extracts the -run pattern from the Makefile's `go test
+// -tags=smoke ... -run '<pattern>'` invocation.
+var reMakefileSmokeRun = regexp.MustCompile(`-run\s+'([^']+)'`)

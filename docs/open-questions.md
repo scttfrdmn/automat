@@ -232,6 +232,15 @@ member account first, which this run did not do (no bundle has been deployed int
 account yet). Still the one entry on this list whose bad case is silent; still needs that
 follow-up run before it can be closed.
 
+**Disclosed gap (AUDIT-7 M3): the tag-*write* audit `docs/smoke.md` requires was not run
+either.** That page's own standing rule (carried from the Phase 1 review) requires testing,
+in the same run, that the delegate cannot apply `automat:vended-by` to an account or policy
+outside its namespace — "a condition that binds correctly while the principal can write the
+tag it reads is not a control." No `TagResource` call was attempted by either live run.
+Building that check for real needs the same prerequisite as the read-side re-test above: the
+onboarding bundle deployed into a sandbox member account, so the write attempt can be made
+under the brokered vendor role rather than this suite's unrestricted native credentials.
+
 ### Q9 — Does `MoveAccount` authorize against the *source* parent as well as the destination?
 
 Q8's neighbor, same statement, opposite direction. The `MoveAccountsIntoTheDelegatedSubtreeOnly`
