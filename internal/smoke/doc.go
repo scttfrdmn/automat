@@ -3,13 +3,13 @@
 
 //go:build smoke
 
-// Package smoke automates docs/smoke.md's checklist: the eight questions
+// Package smoke automates docs/smoke.md's checklist: the questions
 // docs/open-questions.md files under "Awaiting a live org" (Q9, Q7, Q8,
-// Q12, Q5, Q6, Q13, Q24), which no fake and no emulator can answer because
-// they are questions about undocumented real-AWS behavior, not about
-// automat's own reaction to a state transition it already knows the shape
-// of (docs/testing-strategy.md's own distinction between fakes and the
-// emulator).
+// Q12, Q5, Q6, Q20, Q13, Q24), which no fake and no emulator can answer
+// because they are questions about undocumented real-AWS behavior, not
+// about automat's own reaction to a state transition it already knows the
+// shape of (docs/testing-strategy.md's own distinction between fakes and
+// the emulator).
 //
 // # This is CLAUDE.md rule 1's one documented exception
 //
@@ -43,10 +43,12 @@
 // It does not edit docs/open-questions.md. Per docs/smoke.md rule 4, the
 // output of a run is a human decision, not a test result — this package
 // writes structured Findings (see findings.go) that a person reads and
-// then, by hand, narrows or deletes the corresponding entry. Of the eight
+// then, by hand, narrows or deletes the corresponding entry. Of these
 // questions, only Q8's resource-tag check and half of Q13 (the
-// re-vend-is-a-no-op check) are genuinely boolean; the rest are latency
-// distributions, exact exception shapes, or "which of several
-// already-handled outcomes occurred" — none of which t.Fatal/t.Error can
-// express, which is why Finding exists at all.
+// re-vend-is-a-no-op check) are genuinely boolean; the rest — including
+// Q20, which of three already-handled outcomes a control character in an
+// SCP resource ARN produces once attached — are latency distributions,
+// exact exception shapes, or "which of several already-handled outcomes
+// occurred," none of which t.Fatal/t.Error can express, which is why
+// Finding exists at all.
 package smoke
