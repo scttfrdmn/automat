@@ -222,7 +222,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			// attach a policy has produced the state that most needs recording, and
 			// an operator who is handed only the error has an account nobody wrote
 			// down.
-			manifestPath, werr := writeVendEvidence(in, applied, signer)
+			manifestPath, genesisSHA, werr := writeVendEvidence(in, applied, signer)
 			if werr != nil {
 				if aerr != nil {
 					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", aerr, werr)
@@ -251,7 +251,7 @@ func newVendCmd(g *globals) *cobra.Command {
 					return fmt.Errorf("write the result: %w", werr)
 				}
 			}
-			return renderBirthCertificate(out, in, applied, manifestPath)
+			return renderBirthCertificate(out, in, applied, manifestPath, genesisSHA)
 		},
 	}
 
@@ -1272,7 +1272,10 @@ func attestationIDs(in *vendInput) []string {
 	return out
 }
 
-// writeVendEvidence writes the manifest, and returns the path it wrote to.
+// writeVendEvidence writes the manifest, and returns the path it wrote to and
+// the manifest's genesis anchor (Meta.GenesisSHA), so the caller can print the
+// anchor on the birth certificate — the operator's own second copy of the
+// header, per docs/open-questions.md Q21.
 //
 // A manifest needs an account id — it is the manifest's own id and its account_id
 // field — so a pass that created no account writes nothing and says so by returning
@@ -1283,9 +1286,9 @@ func attestationIDs(in *vendInput) []string {
 // signer may be nil, in which case the manifest is unsigned — a valid
 // document, per Signer's own doc comment; whether the config file names a
 // KMS key is a policy decision this function does not make.
-func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, error) {
+func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, string, error) {
 	if st == nil || st.AccountID == "" || len(st.Records) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 	// The directory is resolved ONCE, and the read and the write both go through
 	// that descriptor. `local_dir` comes out of the environment profile, so its
@@ -1295,28 +1298,28 @@ func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (st
 	// AUDIT-2 H1: the two used to disagree, silently.
 	dir, err := evidence.OpenDir(".", in.Profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() { _ = dir.Close() }()
 	path := dir.Path(st.AccountID)
 
 	m, err := dir.LoadOrNew(st.AccountID, st.AccountID, st.OrgID, in.Now, nil)
 	if err != nil {
-		return "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
+		return "", "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"The account exists either way. automat refuses to continue a chain it cannot read, "+
 			"because a manifest rewritten from scratch over a damaged one is the one failure the "+
 			"hash chain exists to make visible", st.AccountID, err)
 	}
 	for i := range st.Records {
 		if _, aerr := m.Append(st.Records[i], signer); aerr != nil {
-			return "", fmt.Errorf("cannot append the %s record for account %s: %w",
+			return "", "", fmt.Errorf("cannot append the %s record for account %s: %w",
 				st.Records[i].Operation, st.AccountID, aerr)
 		}
 	}
 	if err := dir.Write(m, st.AccountID); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return path, nil
+	return path, m.Meta.GenesisSHA, nil
 }
 
 // vendFailure turns a step failure into the error the operator sees.
@@ -1395,7 +1398,7 @@ func renderVendWarnings(w io.Writer, in *vendInput, st *vendState) error {
 // and because the hashes are what make the claim checkable — a birth certificate
 // naming control sets without their hashes is a label.
 func renderBirthCertificate(w io.Writer, in *vendInput,
-	st *vendState, manifestPath string) error {
+	st *vendState, manifestPath, genesisSHA string) error {
 	if st.AccountID == "" {
 		return nil
 	}
@@ -1467,6 +1470,12 @@ func renderBirthCertificate(w io.Writer, in *vendInput,
 	line("detective baseline", "NOT APPLIED — DESIGN §7 step 5 is not in this build; the "+
 		"manifest carries a parked baseline-apply record")
 	line("evidence manifest", manifestPath)
+	// The genesis anchor, printed so the birth certificate is the operator's own
+	// second, independently-held copy of the manifest header — the compensating
+	// control docs/open-questions.md Q21 already claims exists. Printed only when
+	// a manifest was actually written: a parked vend that created no manifest has
+	// no anchor to print, and an empty value here would be a copy of nothing.
+	line("genesis anchor", genesisSHA)
 	if st.RequestID != "" {
 		line("create-account request", st.RequestID)
 	}

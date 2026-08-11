@@ -1024,6 +1024,23 @@ detect tampering; `vend`'s birth certificate and the external mirror are the loa
 pieces DESIGN §11 already names. Recorded so the next audit does not re-discover the
 residual and re-file it as though the anchor were meant to close the whole finding.
 
+**Update: the birth certificate now actually prints the anchor.** Until this fix,
+`renderBirthCertificate` (`cmd/automat/vend.go`) never printed `Meta.GenesisSHA` — the
+compensating control this entry and `internal/evidence/validate.go`'s own comments
+claimed existed was aspirational for any unsigned manifest, since the birth certificate
+is the only second copy of the header an operator without an external mirror ever sees.
+`writeVendEvidence` now returns the genesis anchor alongside the manifest path, and
+`renderBirthCertificate` prints it as a `genesis anchor` line. This narrows the residual
+for the unsigned case — the operator's terminal transcript is now a real second copy of
+`genesis_sha256` to diff against a manifest handed back later — but does not close it:
+an editor who rewrites both the header and the birth certificate's saved transcript
+together is still internally consistent, for the same reason DESIGN §11's external
+mirror only narrows rather than closes. The signed-manifest case needed no such fix and
+was already fully closed before this change, per `TestPrefixTruncationIsRefused`'s third
+part (`internal/evidence/header_binding_test.go`): a signed chain, prefix-truncated with
+its header rewritten to match, is still refused — the link-and-signature check catches
+it independently of the anchor.
+
 ### Q22 — May an override widen a Config-rule parameter past what every input artifact permitted?
 
 Raised at AUDIT-4's L1. `internal/compilesets.Overrides.apply` returns an override's value
