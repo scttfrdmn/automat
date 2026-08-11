@@ -220,6 +220,136 @@ Design authority: `docs/assessment-reporting.md`. Read it before writing any of 
 - **Manual smoke-test runbook: still not automated, unchanged from Phase 1's disclosure** — `make smoke` runs zero tests today (no file carries the `smoke` build tag). `docs/smoke.md`'s checklist gained an eighth, last entry (**Q24**, `docs/open-questions.md`): whether `reclaim`'s detach-then-close sequence behaves against a real org the way its design assumes (real `CloseAccount` is asynchronous; the fake is not) — ordered last because it is the only entry that destroys the account it tests. **This item is explicitly handed off, not executed by this pass**: it requires a human with real AWS credentials against a named sandbox organization and `AUTOMAT_SMOKE_PROFILE` set, which no agent run can supply. Capturing answers to Q5, Q7, Q8, Q9, Q12, Q13, Q24 remains open.
 - **Accept:** a stranger with a standalone AWS account can go README → init → vend → verify without asking a human anything — **met** by the README quickstart above; the environment profile in it is verified to load, and every flag name in the walkthrough is copy-pasted from the built binary's own `--help` output rather than paraphrased.
 
+## Backlog — research complete, awaiting implementation
+
+Everything below came out of a 2026-08-10/11 research pass (9 parallel agents studying every
+open item in `docs/open-questions.md` plus the largest gaps in `docs/beyond.md`). Five findings
+that needed no schema change and no live-AWS infrastructure were implemented immediately and are
+folded into the phases above (Q20's validation gap, Q21's birth-certificate print, Q22's
+disclosure warning, `verify`'s structural-honesty breakdown, and `internal/baseline`'s slice 1
+interfaces). Everything else is organized here, in dependency order, for a later pass.
+
+### `internal/baseline`, slices 2-9
+
+Slice 1 (`awsapi.ConfigAPI`/`AccountAPI` + fakes, no behavior) is done. Remaining slices, in the
+research plan's own order:
+
+2. **`EnsureAutomationRole`**, wired into `runVendSteps` **before** SCP attachment. This is the
+   one genuine surprise worth a PR-description callout per CLAUDE.md rule 2: DESIGN §7 lists
+   baseline work as step 5, after the SCP-attachment step it lists as step 4 — but the automation
+   role must be created and fully permissioned *before* `baseline-protection` attaches, or the
+   protecting SCP denies the very `PutRolePolicy` call that permissions the role (Q13's ordering
+   constraint). The two steps must run in the reverse of DESIGN's listed order, not the order the
+   numbering implies. Also implements the Q13 parked-on-re-permission-denial handling for
+   re-vends after the SCP is already attached.
+3. **`EnsureConfigRecorder` + `EnsureDeliveryChannel`.** Scope-cut: v1 requires
+   `delivery_bucket` to be a pre-existing, operator-named bucket; automat does not provision S3
+   buckets with their own lifecycle/encryption/public-access-block policy in this pass.
+4. **`EnsureConformancePack`**, the first production consumer of
+   `compilesets.Merged.SortedConfigRules()`. This is the exact point where Q22's now-inert
+   override-disclosure warning starts mattering in production — schedule after Q22's disclosure
+   has had a chance to be reviewed against real conformance-pack content, not concurrently.
+5. **`EnsureRegions`** — independent of 3/4, can land in parallel with either.
+6. **`EnsureAttestationStubs`**, the first consumer of `compilesets.DedupeAttestations`. No AWS
+   call at all (pure local-filesystem work through `internal/safeio`) — cheapest slice, could
+   land first regardless of numbering.
+7. **Evidence/manifest wiring**: replace `recordBaselineIsMissing` with real `OpBaselineApply`
+   records populating `Enforcement.ConformancePackARN`/`ConfigRuleNames`/`RegionSet`/`AttestationIDs`
+   (all four fields already exist on `evidence.Enforcement`, unused today).
+8. **`disable_org_access_role_after_vend`** — smallest, most speculative; the actual mechanism
+   (deny policy vs. narrowing assumability) is a real open design question DESIGN §7 doesn't
+   settle. Could defer to its own later follow-up entirely.
+9. **Wire `verify`'s detective and procedural layers** against what step 5 now installs — DESIGN
+   §12's own next increment once baseline exists, not part of this track's own scope.
+
+### Assessment Stages 1-2 (800-171A worksheet + DFARS scoring)
+
+Strict prerequisite chain, not parallelizable at the start:
+
+1. **The `800-171r2` control artifact itself does not exist yet** — confirmed by the research
+   pass. `catalogs/obligations/dfars-7012.json`'s `control_catalogs[].artifact_id: "800-171r2"`
+   is a forward reference to nothing. This is Phase-0-shaped catalog work (retrieve NIST CPRT
+   `SP_800_171_2_0_0`, vendor + hash, compile via `gen/catalog`) and must land as its own PR
+   before anything else in this track.
+2. **The DFARS weight table** (Q10's already-decided dual-transcription procedure: two
+   independent passes, diffed, disagreement goes to review, never resolved by picking one). This
+   is human-only, off-computer work with a commit at the end — not something to dispatch to a
+   coding agent.
+3. **The 800-171A objectives catalog** (single-pass retrieval + hash, unlike the weight table —
+   don't conflate the two transcription disciplines).
+4. **Stage 1 (worksheet)** — `nih-cadr-dua` first (no weight-table dependency, `scoring.method:
+   "none"`), then `dfars-7012`'s worksheet half. Must also wire the `nih-cadr-dua`
+   revision-determination refusal (`--profile nih-cadr-dua` with no `--determinations` file must
+   refuse, not silently render every objective NOT MET) — the mechanism already exists in
+   `Determinations.ValidateAgainst`, it's just never called from a path that requires it.
+5. **Stage 2 (DFARS scoring)** — strictly after 2 and 4.
+
+**Needs pre-approval per rule 6, not yet asked:** a `worksheet_summary` sibling field and a
+`score` sibling field on `assessment-result-v1`, plus two new schema files for the objectives
+catalog and weight-table documents.
+
+### Remote evidence mirror
+
+Two independent slices:
+
+1. **Write-only upload.** New `awsapi.S3MirrorAPI` (`PutObject`/`GetObject`, no `DeleteObject` —
+   automat never administers or deletes a mirror copy). New `evidence.Mirror` interface + one
+   `S3Mirror` implementation, following `Signer`/`KMSSigner`'s existing shape. Reads the bucket
+   name from the **already-existing, already-schema-legal**
+   `envprofile.OutputTargets.InAccountBucket`/`ManagementMirrorBucket` fields — no new config
+   surface needed for this slice. Recommend management-account bucket as the default (a vended
+   account's own admin has no access to it unless separately granted); the in-account bucket's
+   tamper-resistance is weaker until `internal/baseline` can protect it with an SCP, and should be
+   documented as such rather than presented as equivalent.
+2. **Read-and-diff in `verify`.** The half that actually closes (not just narrows) Q21's residual:
+   `verify` fetches the mirrored copy and compares `Meta` + `records[0]` against the local file,
+   flagging drift as a new finding class. Needs a second interface method (kept separate from
+   `Mirror`, mirroring `Signer`/`Verifier`'s existing split — a writer never needs read access).
+
+Flag as needs-pre-approval only if a cross-account-role config field turns out to be needed (not
+certain — the research found the existing `Region`/`Profile` fields on `config.Context` may be
+sufficient).
+
+### Q23 — evidence manifest rotation
+
+Reuse `Custody.SuccessorManifestID` (already schema-legal, currently unused) via a new
+`OpRotate` operation and `rotation` schema block, generalizing the existing terminal-record
+check (`IsCustodyTransfer`) to cover both terminal kinds. **Needs pre-approval per rule 6**
+(widens the operation enum). Trigger: automatic, at a 2,000-record threshold (well under the
+~8,971-record ceiling `MaxManifestBytes` implies), but visibly logged, not silent — matches this
+project's preference for explicit, disclosed behavior over implicit magic. A `Meta.PredecessorSHA`
+field for cryptographically (not just nominally) linking rotated manifests is a distinct, later,
+also-needs-pre-approval ask — don't bundle the two.
+
+### Q5/Q8/Q9/Q13 live-org test cluster
+
+One shared, corrected prerequisite: the vendor role deploys into the **management** account, not
+the member account (the member only needs an identity matching the bundle's trust policy — the
+earlier framing of "deploy the bundle into the member account" was wrong). Needs a second,
+*permanently-kept* AWS account under the sandbox org (not vended-and-reclaimed like every other
+smoke-test account) playing "member," plus the onboarding bundle actually deployed: `automat setup
+--request`, a manual CFN deploy of the vendor-role template into the management account, and a
+manual `organizations:PutResourcePolicy` applying the delegation policy. Sized ~half a day manual
+AWS setup + ~1 day of Go work for a new brokered-credential harness path in `internal/smoke`
+(constructing a client via `internal/broker.Assume` rather than only ever native credentials).
+Once deployed: Q8's move-of-an-untagged-account check becomes a real assertion (not just a
+recorded `Finding`) under the *actual* restricted vendor role; Q9 gets tested against the real
+3-ARN resource list; Q5 gets tested from the member account's own point of view against a
+delegation policy that now actually exists. **Q13 stays blocked on `internal/baseline` regardless**
+— no amount of bundle deployment creates the automation role Q13 needs to test against.
+
+### Q20's live-IAM behavioral test
+
+Once the validation-gap fix (already shipped) is in place, add a new `internal/smoke` subtest:
+construct a control-character-bearing SCP resource/action directly against `compilesets.Pack`
+(bypassing automat's own — now-fixed — validation, which is exactly the "arrived another way"
+case Q20's remaining open half is about), `CreatePolicy`/`AttachPolicy` it against the sandbox OU,
+and observe whether AWS refuses it, preserves it literally (silent no-op Deny), or normalizes it
+into something else. Cheap and low-risk relative to the rest of the smoke checklist — no account
+needs to be vended, just a throwaway policy create/attach/detach. Needs its own cleanup path since
+`OrgReclaimAPI` deliberately has no `DeletePolicy` (`internal/smoke` may reach past the narrow
+interface to the harness's own concrete client, the same way `Harness.OrgClient` already does).
+
 ## Deferred / explicitly out of scope for v1
 - **Signature verification, trust-policy loading, and any form of registry** (DESIGN §11a). The *fields* exist and are recordable; nothing reads them. Verification without a trust model is theatre, and a trust model automat ships is a trust model automat owns. v2's intended mechanism is keyless OIDC-identity signing distributed over ordinary git or an OCI registry, so an institution never has to run a key ceremony — automat proposes a format and must never become a registry, a signing service, or a standards owner.
 - Approval-per-vend request queue.
