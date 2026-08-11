@@ -32,6 +32,7 @@ func run() error {
 	targets := []func(string) (*artifact.Artifact, error){
 		compileFrom,
 		compileBaseline,
+		compileFrom171r2,
 	}
 
 	for _, compileOne := range targets {

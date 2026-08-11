@@ -326,11 +326,14 @@ research plan's own order:
 
 Strict prerequisite chain, not parallelizable at the start:
 
-1. **The `800-171r2` control artifact itself does not exist yet** — confirmed by the research
-   pass. `catalogs/obligations/dfars-7012.json`'s `control_catalogs[].artifact_id: "800-171r2"`
-   is a forward reference to nothing. This is Phase-0-shaped catalog work (retrieve NIST CPRT
-   `SP_800_171_2_0_0`, vendor + hash, compile via `gen/catalog`) and must land as its own PR
-   before anything else in this track.
+1. **Done.** The `800-171r2` control artifact — `catalogs/800-171r2.json`, 110 requirements
+   across 14 families, retrieved from NIST CPRT `SP_800_171_2_0_0`, vendored + hashed, compiled
+   via a new `compileFrom171r2` target in `gen/catalog` — now exists, so
+   `catalogs/obligations/dfars-7012.json`'s `control_catalogs[].artifact_id: "800-171r2"` is a
+   resolvable reference rather than a forward one. Every requirement compiles `procedural`
+   with a per-family attestation stub: no AWS-side mapping is joined (docs/open-questions.md
+   Q4 step 3, Security Hub's 800-171 Rev 2 standard and Audit Manager's 800-171 Rev 2
+   framework, remains deferred future work, not attempted in this pass).
 2. **The DFARS weight table** (Q10's already-decided dual-transcription procedure: two
    independent passes, diffed, disagreement goes to review, never resolved by picking one). This
    is human-only, off-computer work with a commit at the end — not something to dispatch to a

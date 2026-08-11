@@ -65,10 +65,12 @@ internal/
   version/              # build identity
   awsfake/              # hand-rolled fakes for all service interfaces
 schema/                 # JSON Schemas + CHANGELOG (versioned contracts)
-catalogs/               # vendored compiled artifacts: cmmc-l1, baseline-protection, plus
-                        # obligations/ (dfars-7012, nih-cadr-dua) and classification/
-                        # (uc-protection-levels, stanford-risk-classifications).
-                        # 800-171r2/r3 remain Phase 0 scope, not yet compiled.
+catalogs/               # vendored compiled artifacts: cmmc-l1, baseline-protection, 800-171r2
+                        # (110 requirements, all procedural — no AWS mapping joined yet, see
+                        # docs/open-questions.md Q4), plus obligations/ (dfars-7012,
+                        # nih-cadr-dua) and classification/ (uc-protection-levels,
+                        # stanford-risk-classifications). 800-171r3 remains Phase 0 scope,
+                        # not yet compiled.
 gen/                    # maintainer tooling: OSCAL + conformance-pack → catalog compiler
 docs/                   # conventions.md, reclaim-design.md now written (Phase 5); see
                         # docs/cli-surface.md, docs/audit-ritual.md, docs/open-questions.md,
