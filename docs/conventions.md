@@ -51,17 +51,34 @@ and the delegation policy's own SCP-modification statements are scoped to it
 There is no separate "OU marker tag" distinct from this one — an OU automat creates gets
 the identical `automat:managed-by=automat` tag a policy does, not a second convention.
 
-## What DESIGN §14 named as future and is not built
+## What DESIGN §14 named as future and is now half built
 
 DESIGN §14's original draft named a manifest storage convention —
 `s3://automat-evidence-<acct>/manifests/…` plus a management-side mirror — as part of the
-adoption contract. **That storage layer does not exist in this codebase.** Evidence
-manifests today are local files, written and read through `internal/evidence.Dir`
+adoption contract. **The write half of that now exists; the read half does not.**
+
+Every evidence-writing command (`vend`, `verify`, `reclaim`, `assess`) still writes the
+local file first and unconditionally, through `internal/evidence.Dir`
 (`OpenDir`/`LoadOrNew`/`Write`) against a directory named by the environment profile's
-`baseline.evidence.local_dir` (or a command's own `--evidence-dir` flag) — no S3 client,
-no remote mirror, no `internal/awsapi` interface for either. The mirror is referenced in
-`docs/open-questions.md` and in `internal/evidence`'s own doc comments as the intended
-compensating control against a rewritten local chain (DESIGN §11), but it is design intent
-for a later phase, not a convention this build follows. This page states only what ships;
-when a remote store lands, it earns its own section here rather than this one being
+`baseline.evidence.local_dir` (or a command's own `--evidence-dir` flag) — that has not
+changed and is not going to: DESIGN §11's "local copy always" priority.
+
+What is new is `internal/evidence.Mirror` (`S3Mirror`, `internal/awsapi.S3MirrorAPI`,
+`internal/awsfake.S3`): after the local write succeeds, `cmd/automat`'s `evidenceMirror`
+helper builds zero, one, or two mirrors from an environment profile's
+`baseline.evidence.in_account_bucket` and `management_mirror_bucket` — both, if a profile
+sets both, following DESIGN §11's own "and/or" — and uploads the same bytes the local file
+holds to each, via `s3:PutObject`. A mirror upload failure is reported as a warning and
+never fails the command that produced the manifest, and never blocks on the local write,
+which has already happened by the time a mirror is even considered.
+
+This is write-only. **`verify` does not fetch the mirrored copy and does not compare it
+against the local file.** ROADMAP.md's "Remote evidence mirror" backlog item calls that
+comparison slice 2 — a second interface method (kept separate from `Mirror`, the same
+`Signer`/`Verifier` split for the same reason: a writer never needs read access) that
+`verify` would use to flag drift between the two copies as a new finding class. Until that
+lands, a rewritten local manifest and its now-stale mirrored copy are two documents nothing
+in this codebase compares — the mirror is a copy an operator or auditor can go read by
+hand, not yet a check `verify` performs. This page states only what ships; when the
+read-and-diff half lands, it earns its own paragraph here rather than this one being
 corrected quietly.

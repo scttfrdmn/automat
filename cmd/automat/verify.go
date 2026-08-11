@@ -164,13 +164,34 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			if serr != nil {
 				return serr
 			}
-			manifestPath, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer)
+			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer)
 			if werr != nil {
 				return werr
 			}
 			if manifestPath != "" {
 				if _, perr := fmt.Fprintf(out, "\nEvidence: %s\n", manifestPath); perr != nil {
 					return fmt.Errorf("write the result: %w", perr)
+				}
+			}
+
+			// Additive and best-effort, after the local write above has already
+			// succeeded unconditionally — the same priority writeVendEvidence's own
+			// comment states for `vend` (DESIGN §11's "local copy always"). verify
+			// has no warnings-rendering path of its own, so a failed upload prints a
+			// plain stderr line rather than failing this command.
+			if writtenManifest != nil {
+				mirrors, merr := evidenceMirror(ctx, g, region, profile, in.profile.Baseline.Evidence)
+				if merr != nil {
+					if _, perr := fmt.Fprintf(cmd.ErrOrStderr(),
+						"warning: could not build the evidence mirror: %v\n", merr); perr != nil {
+						return fmt.Errorf("write the warning: %w", perr)
+					}
+				} else {
+					for _, warn := range uploadToMirrors(ctx, mirrors, writtenManifest) {
+						if _, perr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn); perr != nil {
+							return fmt.Errorf("write the warning: %w", perr)
+						}
+					}
 				}
 			}
 
@@ -396,19 +417,19 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // that changes no exit code (DESIGN §11a, §12), and a record marked failure for
 // a date would say the account drifted when nothing about it moved.
 func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
-	policy *verify.PolicyReport, signer evidence.Signer) (string, error) {
+	policy *verify.PolicyReport, signer evidence.Signer) (string, *evidence.Manifest, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
 	path := dir.Path(accountID)
 
 	m, err := dir.LoadOrNew(accountID, accountID, "", now.UTC().Format(time.RFC3339), nil)
 	if err != nil {
-		return "", fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
+		return "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"automat refuses to continue a chain it cannot read, because a manifest rewritten from "+
 			"scratch over a damaged one is the one failure the hash chain exists to make visible",
 			accountID, err)
@@ -433,12 +454,12 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 		ToolVersion: version.Version,
 	}
 	if _, err := m.Append(rec, signer); err != nil {
-		return "", fmt.Errorf("cannot append the verify record for account %s: %w", accountID, err)
+		return "", nil, fmt.Errorf("cannot append the verify record for account %s: %w", accountID, err)
 	}
 	if err := dir.Write(m, accountID); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return path, nil
+	return path, m, nil
 }
 
 // verifyDriftError is the RecordError a drifted verify record carries.
