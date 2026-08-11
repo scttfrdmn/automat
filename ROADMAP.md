@@ -235,13 +235,16 @@ before dispatching anything.
 
 ### Phase order across tracks
 
-**Phase 0 — one consolidated pre-approval ask, blocks nothing below.** Three tracks each need a
+**Phase 0 — one consolidated pre-approval ask. APPROVED 2026-08-11.** Three tracks each needed a
 rule-6 schema decision: Q23's `OpRotate` operation + `rotation` block; assessment's
 `worksheet_summary`/`score` sibling fields plus two new schema files (objectives catalog, weight
-table); and, only if later evaluation shows it's needed, a cross-account-role field for the
-evidence mirror. Ask once, for all three together, rather than three separate asks at three
-different moments — send this before Phase 1 starts so the answer is in hand by the time Phase
-2's schema-gated work is ready.
+table); and, only if later evaluation showed it was needed, a cross-account-role field for the
+evidence mirror. The evidence-mirror slice 1 work (Phase 1) confirmed the existing
+`Region`/`Profile` config fields are sufficient — no cross-account-role field is needed, so that
+third item is moot. **The maintainer approved items 1 and 2** (Q23's rotation addition and
+assessment's schema additions, including `schema/objectives-catalog-v1.schema.json`, which now
+exists ratified rather than draft — see `schema/CHANGELOG.md`). Phase 2's schema-gated work may
+proceed.
 
 **Phase 1 — start now, five tracks, no schema change, no cross-track file conflict:**
 1. `internal/baseline` package skeleton + slice 2 (`EnsureAutomationRole`) — see below. The one
@@ -362,13 +365,12 @@ Strict prerequisite chain, not parallelizable at the start:
    `Determinations.ValidateAgainst`, it's just never called from a path that requires it.
 5. **Stage 2 (DFARS scoring)** — strictly after 2 and 4.
 
-**Needs pre-approval per rule 6, not yet asked:** a `worksheet_summary` sibling field and a
-`score` sibling field on `assessment-result-v1`, plus two new schema files for the objectives
-catalog and weight-table documents. **Partial update:** `schema/objectives-catalog-v1.schema.json`
-now exists as a drafted, DRAFT-marked file (item 3 above) so the objectives data has a shape to
-validate against, but drafting it is not the same as asking — it is still unratified, and the ask
-itself (this paragraph) has still not been sent. The weight-table schema remains entirely
-undrafted.
+**Approved by the maintainer 2026-08-11 (Phase 0, above).** A `worksheet_summary` sibling field
+and a `score` sibling field on `assessment-result-v1` are cleared to build when Stage 1/2 code is
+written (item 4/5 above); `schema/objectives-catalog-v1.schema.json` is ratified (item 3 above,
+already built and merged). The weight-table schema remains undrafted — it's cleared to build once
+someone drafts it, but the DFARS weight table itself (item 2) is still mid-transcription, so
+there's nothing yet to shape a schema around.
 
 ### Remote evidence mirror
 
@@ -396,8 +398,9 @@ sufficient).
 
 Reuse `Custody.SuccessorManifestID` (already schema-legal, currently unused) via a new
 `OpRotate` operation and `rotation` schema block, generalizing the existing terminal-record
-check (`IsCustodyTransfer`) to cover both terminal kinds. **Needs pre-approval per rule 6**
-(widens the operation enum). Trigger: automatic, at a 2,000-record threshold (well under the
+check (`IsCustodyTransfer`) to cover both terminal kinds. **Approved by the maintainer 2026-08-11
+(Phase 0, above)** — widens the operation enum, cleared to build. Trigger: automatic, at a
+2,000-record threshold (well under the
 ~8,971-record ceiling `MaxManifestBytes` implies), but visibly logged, not silent — matches this
 project's preference for explicit, disclosed behavior over implicit magic. A `Meta.PredecessorSHA`
 field for cryptographically (not just nominally) linking rotated manifests is a distinct, later,

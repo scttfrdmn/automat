@@ -1529,21 +1529,16 @@ Notes on the choices that constrain future changes:
 - **Content hash is out-of-band**, matching `assessment-result-v1` and every
   other document in `schema/`.
 
-## objectives-catalog/v1 — 1.0.0 (DRAFT, NOT RATIFIED)
+## objectives-catalog/v1 — 1.0.0 (RATIFIED 2026-08-11)
 
 New schema file, added while retrieving the NIST SP 800-171A objectives catalog
 (ROADMAP.md, "Backlog — research complete" › "Assessment Stages 1-2", item 3).
-**Explicitly NOT the same footing as `obligation-profile/v1`, `classification-profile/v1`, or
-`assessment-result-v1` above** — those three were each ratified at the maintainer's review before
-being listed here as accepted. This one is not: ROADMAP.md's own "Assessment Stages 1-2" section
-states plainly that "two new schema files for the objectives catalog and weight-table documents"
-are "needs pre-approval per rule 6, not yet asked" — identified as needing an ask, but the ask
-itself not yet sent. So this file carries its own `$comment_draft_status` field saying so, and
-this changelog entry is the same disclosure in the place a reader of `schema/CHANGELOG.md` would
-look for it. Do not read the existence of the file as approval; a future session finding this
-entry should check whether the consolidated Phase 0 ask (this file plus the weight-table schema,
-plus `assessment-result-v1`'s proposed `worksheet_summary`/`score` sibling fields) has since been
-sent and answered before treating the shape below as settled.
+**Approved by the maintainer 2026-08-11**, as part of the Phase 0 consolidated pre-approval ask
+ROADMAP.md's backlog section described: this schema file, the not-yet-built weight-table schema
+file, and `assessment-result-v1`'s proposed `worksheet_summary`/`score` sibling fields were
+presented together and approved together. This file and the sibling fields are ratified; the
+weight-table schema remains to be drafted and is not yet built (see ROADMAP.md's "Assessment
+Stages 1-2" item 2 — the DFARS weight table itself is still mid-transcription).
 
 **Why it is a NEW, STANDALONE document type rather than a field on `control-artifact-v1`'s
 `Control` object.** `control-artifact-v1.schema.json` is shared by every compiled catalog this
