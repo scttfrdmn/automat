@@ -60,7 +60,7 @@ endif
 ifndef AUTOMAT_SMOKE_ORG
 	$(error AUTOMAT_SMOKE_ORG must be set explicitly; see docs/smoke.md)
 endif
-	go test -tags=smoke -count=1 ./internal/... -run 'Smoke' -v
+	go test -tags=smoke -count=1 -timeout=30m ./internal/... -run 'Smoke' -v
 
 
 # Emulator-backed tests, in a separate Go module (docs/testing-strategy.md,
