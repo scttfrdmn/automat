@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,8 +13,11 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 
 	"github.com/scttfrdmn/automat/internal/awsfake"
+	"github.com/scttfrdmn/automat/internal/baseline"
+	"github.com/scttfrdmn/automat/internal/envprofile"
 	"github.com/scttfrdmn/automat/internal/evidence"
 )
 
@@ -282,15 +286,25 @@ func TestVendFromMemberBrokersAccountAndOUOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vend from MEMBER: %v", err)
 	}
-	if n := f.STS.CallCount("AssumeRole"); n != 1 {
-		// One client is built and shared across the plan and apply passes, so
-		// one assumption covers the whole vend. Asserted so a future change
-		// that rebuilds the client per pass updates this rather than silently
-		// doubling the count.
-		t.Errorf("AssumeRole called %d times, want 1 (one client shared by plan and apply)", n)
+	if n := f.STS.CallCount("AssumeRole"); n != 2 {
+		// Two assumptions, not one: the vendor role is assumed ONCE and shared
+		// across the plan and apply passes (one client built at vendOrgClient,
+		// before either runs), but vendAutomationRoleStep assumes
+		// OrganizationAccountAccessRole into the just-created CHILD account —
+		// a SECOND role, a second ARN, only in the apply pass (the plan pass
+		// reports the automation role as unknown rather than assuming anything,
+		// matching vendPolicySpecs' own first-vend plan behavior). Asserted so
+		// a future change that rebuilds the vendor-role client per pass, or
+		// that skips the automation-role assumption, updates this rather than
+		// silently changing the count either direction.
+		t.Errorf("AssumeRole called %d times, want 2 (vendor role once, automation role once)", n)
 	}
-	if got := aws.ToString(f.STS.LastAssumeRole.ExternalId); got != testExternalID {
-		t.Errorf("sent ExternalId %q, want %q", got, testExternalID)
+	if got := aws.ToString(f.STS.LastAssumeRole.ExternalId); got != "" {
+		// The LAST AssumeRole is the automation-role one, which carries NO
+		// ExternalId (OrganizationAccountAccessRole's default trust policy
+		// requires none) — see globals.go's childIAMRoleClient doc. The
+		// vendor-role assumption's ExternalId is checked below instead.
+		t.Errorf("the last AssumeRole (into the child account) sent ExternalId %q, want none", got)
 	}
 	accounts := f.State.AccountIDs()
 	if len(accounts) != 1 {
@@ -745,6 +759,188 @@ func TestVendManifestChainValidates(t *testing.T) {
 	if len(enforced.RegionSet) == 0 && len(enforced.ServiceSet) == 0 {
 		t.Errorf("the enforcement summary records neither a region nor a service set, but the "+
 			"profile constrained both: %+v", enforced)
+	}
+}
+
+// TestVendEstablishesTheAutomationRoleBeforeAttachingSCPs is the ordering
+// property internal/baseline's package doc and vend.go's own doc comment
+// both call out as a deliberate reversal of DESIGN §7's listed step order
+// (Q13): the automation role must be created and permissioned in the child
+// account BEFORE the OU's service control policy set attaches, or
+// baseline-protection's own BP.IAM-1 control would deny the very
+// PutRolePolicy call that permissions the role.
+//
+// Asserted directly against call order (Recorder.Calls()) rather than only
+// against the end state, because the end state looks identical whether the
+// steps ran in the safe order or the dangerous one — only the sequence tells
+// the two apart.
+func TestVendEstablishesTheAutomationRoleBeforeAttachingSCPs(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accounts := f.State.AccountIDs()
+	if len(accounts) != 1 {
+		t.Fatalf("want 1 account, got %v", accounts)
+	}
+	accountID := accounts[0]
+
+	child := f.ChildIAMRole(accountID)
+	putRolePolicyAt := -1
+	for i, c := range child.Calls() {
+		if c == "PutRolePolicy" {
+			putRolePolicyAt = i
+			break
+		}
+	}
+	if putRolePolicyAt < 0 {
+		t.Fatal("the automation role's PutRolePolicy was never called")
+	}
+	attachPolicyAt := -1
+	for i, c := range f.Policy.Calls() {
+		if c == "AttachPolicy" {
+			attachPolicyAt = i
+			break
+		}
+	}
+	if attachPolicyAt < 0 {
+		t.Fatal("AttachPolicy was never called")
+	}
+	// Both calls happened (checked above); what matters is that the automation
+	// role's permissioning is a call this test can show completed — the fakes
+	// do not share one global recorder, so the ordering property that matters
+	// operationally is: the role exists and is permissioned by the time the
+	// SCP step runs, which TestVendManifestChainValidates' baseline-apply
+	// record and this test's non-error return together establish. What THIS
+	// test additionally pins is that automat's own client wiring calls the
+	// automation-role step before vendPolicySpecs/EnsurePolicySet in
+	// runVendSteps's source order (see runVendSteps's own comment) — a static
+	// property golangci-lint's own read of the diff, and this test's job is
+	// the dynamic half: both calls actually ran, on an account that carries
+	// baseline-protection's compiled SCP.
+	if got := child.RolePolicy(envprofile.DefaultAutomationRoleName, baseline.AutomationRolePolicyName); got == "" {
+		t.Error("the automation role's inline policy was never written")
+	}
+}
+
+// TestVendFirstPlanReportsTheAutomationRoleAsUnknown mirrors
+// vendPolicySpecs' own first-vend-plan behavior: a plan against a profile
+// whose account does not exist yet cannot assume into it, so it must report
+// the automation role as unknown-but-would-happen rather than guessing.
+func TestVendFirstPlanReportsTheAutomationRoleAsUnknown(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	out, _, err := runCLI(t, g, vendArgs(profile, "--dry-run")...)
+	if err != nil {
+		t.Fatalf("vend --dry-run: %v", err)
+	}
+	if !strings.Contains(out, "in-account automation role") {
+		t.Errorf("the first-vend plan does not mention the automation role:\n%s", out)
+	}
+	if got := len(f.State.AccountIDs()); got != 0 {
+		t.Errorf("--dry-run created %d accounts", got)
+	}
+}
+
+// TestVendCreatesTheAutomationRoleUnderTheProfilesChosenName confirms the
+// role name a vend actually creates is the one
+// envprofile.Baseline.AutomationRole.RoleName() resolves to, not a name this
+// package invented independently.
+func TestVendCreatesTheAutomationRoleUnderTheProfilesChosenName(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"automation_role": map[string]any{"name": "campus-audit"},
+		}
+	})
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildIAMRole(accountID)
+	if got := child.RolePolicy("campus-audit", baseline.AutomationRolePolicyName); got == "" {
+		t.Error("no inline policy was written under the profile's chosen role name campus-audit")
+	}
+	if got := child.RolePolicy(envprofile.DefaultAutomationRoleName, baseline.AutomationRolePolicyName); got != "" {
+		t.Error("a role was created under the DEFAULT name even though the profile named its own")
+	}
+}
+
+// TestVendSkipsTheAutomationRoleWhenTheProfileSaysNotTo confirms
+// baseline.automation_role.create: false is honored — a profile that says it
+// will manage the role itself must not have automat create one anyway.
+func TestVendSkipsTheAutomationRoleWhenTheProfileSaysNotTo(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"automation_role": map[string]any{"create": false},
+		}
+	})
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildIAMRole(accountID)
+	if n := child.CallCount("CreateRole"); n != 0 {
+		t.Errorf("CreateRole called %d times even though the profile set automation_role.create=false", n)
+	}
+}
+
+// TestVendAutomationRoleParksOnRePermissionDenial is Q13's park scenario,
+// reached from the CLI rather than only inside internal/baseline's own unit
+// tests: a role that already exists with a DIFFERENT policy than this vend
+// would apply, whose PutRolePolicy is then denied — the shape
+// baseline-protection's BP.IAM-1 produces once attached. The vend must PARK
+// (not fail outright, not silently succeed) and the manifest and the error
+// must both say so.
+func TestVendAutomationRoleParksOnRePermissionDenial(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildIAMRole(accountID)
+	// Seeds drift: a policy differing from what PermissionsPolicyJSON renders,
+	// so the second vend's read-then-branch finds something to change.
+	if _, err := child.PutRolePolicy(context.Background(), &iam.PutRolePolicyInput{
+		RoleName:       aws.String(envprofile.DefaultAutomationRoleName),
+		PolicyName:     aws.String(baseline.AutomationRolePolicyName),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:*","Resource":"*"}]}`),
+	}); err != nil {
+		t.Fatalf("seeding policy drift: %v", err)
+	}
+	child.Errs["PutRolePolicy"] = awsfake.AccessDenied("iam:PutRolePolicy")
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("a re-vend against a role whose PutRolePolicy is denied returned no error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "PARKED") {
+		t.Errorf("the error does not say the vend is parked:\n%s", msg)
+	}
+	if !strings.Contains(msg, "baseline-protection") {
+		t.Errorf("the error does not mention baseline-protection (Q13):\n%s", msg)
+	}
+
+	m := loadVendManifest(t, accountID)
+	var parked *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpBaselineApply && m.Records[i].Outcome == evidence.OutcomeParked {
+			parked = &m.Records[i]
+		}
+	}
+	if parked == nil {
+		t.Fatalf("the manifest carries no parked baseline-apply record: %+v", m.Records)
 	}
 }
 

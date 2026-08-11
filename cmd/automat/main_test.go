@@ -81,6 +81,37 @@ type fakeWorld struct {
 	Verify  *awsfake.OrgVerify
 	Reclaim *awsfake.OrgReclaim
 	KMS     *awsfake.KMS
+
+	// childIAMRoles is one *awsfake.IAMRole per vended account, keyed by
+	// account id — the in-account automation role lives in the CHILD account
+	// vend.go's childIAMRoleClient assumes into, a different account than
+	// IAMRole above (the vendor role, always in the management account), so
+	// it cannot share that fake. Lazily created by ChildIAMRole, since an
+	// account id is not known until CreateAccount actually runs.
+	childIAMRoles map[string]*awsfake.IAMRole
+
+	// DenyChildAssume, when true, fails every AssumeRole
+	// vendAutomationRoleStep's childIAMRole function attempts — the shape a
+	// management account with no trust to itself would produce in reality,
+	// and a test's way of exercising the automation-role step's own error
+	// path without needing to predict a not-yet-created account's id.
+	DenyChildAssume bool
+}
+
+// ChildIAMRole returns the automation-role fake for accountID, creating it on
+// first use. Exported (capitalized) so a test can reach into it — e.g. to
+// inject a PutRolePolicy denial for the Q13 park scenario — the same way
+// f.IAMRole is already reached into for the vendor role.
+func (f *fakeWorld) ChildIAMRole(accountID string) *awsfake.IAMRole {
+	if f.childIAMRoles == nil {
+		f.childIAMRoles = map[string]*awsfake.IAMRole{}
+	}
+	r, ok := f.childIAMRoles[accountID]
+	if !ok {
+		r = awsfake.NewIAMRole(accountID)
+		f.childIAMRoles[accountID] = r
+	}
+	return r
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -193,6 +224,40 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 		},
 		newIAMRole: func(context.Context, string, string) (awsapi.IAMRoleAPI, error) {
 			return f.IAMRole, nil
+		},
+		// childIAMRoleClient's test seam: assumes OrganizationAccountAccessRole
+		// (or whatever roleName is passed) into accountID via the fake STS —
+		// EXACTLY the assumption vend.go's production childIAMRoleClient makes,
+		// with no ExternalId, matching that function's own reasoning for why
+		// OrganizationAccountAccessRole's default trust policy needs none — and
+		// returns a per-account IAMRole fake distinct from the vendor role's
+		// f.IAMRole, because the automation role lives in the CHILD account
+		// while the vendor role lives in the management account.
+		//
+		// Every vended account in this world is assumable by default
+		// (stsFake.Assumable seeded below, keyed by the role ARN
+		// childIAMRoleClient's production code builds), so a test that wants
+		// the vend-time automation-role step to fail has to do so explicitly —
+		// deleting from stsFake.Assumable, or setting an Errs entry on the
+		// returned *awsfake.IAMRole — the same opt-in-to-failure shape
+		// f.STS.Assumable already gives the vendor-role tests.
+		newChildIAMRole: func(ctx context.Context, region, _, partition, accountID,
+			roleName string) (awsapi.IAMRoleAPI, error) {
+			if f.DenyChildAssume {
+				return nil, awsapi.Denied(awsfake.AccessDenied("sts:AssumeRole"), "sts:AssumeRole",
+					accountID, "", "")
+			}
+			if partition == "" {
+				partition = "aws"
+			}
+			roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+			if _, ok := stsFake.Assumable[roleARN]; !ok {
+				stsFake.Assumable[roleARN] = ""
+			}
+			if _, err := broker.Assume(ctx, stsFake, roleARN, "", region); err != nil {
+				return nil, err
+			}
+			return f.ChildIAMRole(accountID), nil
 		},
 		newQuota: func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 			return quotaFake, nil
