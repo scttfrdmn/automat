@@ -107,7 +107,13 @@ func Narrow(m *Merged, opts NarrowOptions) (*Narrowed, error) {
 		axis.assign(narrowed)
 	}
 
-	out.Warnings = droppedWarnings(m, opts, source)
+	// m.Warnings carries the union's own disclosures — today, Q22's
+	// override-widening warnings (overrides.go) — which narrowing can only
+	// ever add to, never resolve, so they are copied forward rather than
+	// dropped. Placed before droppedWarnings' own additions so a caller
+	// reading the list top to bottom sees "what the union produced" before
+	// "what this narrowing step observed."
+	out.Warnings = append(append([]string(nil), m.Warnings...), droppedWarnings(m, opts, source)...)
 	sortStatements(out.Merged.Statements)
 	return out, nil
 }

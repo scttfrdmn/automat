@@ -90,6 +90,8 @@ func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string, overr
 		if err != nil {
 			if ov, ok := overrides.apply(rule.Identifier, name, current.Order); ok {
 				resolved = ov
+				m.Warnings = append(m.Warnings, overrideWideningWarnings(rule.Identifier, name,
+					current, incoming, resolved, existing.Origins, []string{origin})...)
 			} else {
 				return conflictReportFrom(err, rule.Identifier, name, existing.Origins, origin)
 			}
@@ -108,10 +110,16 @@ func (m *Merged) addOneConfigRule(rule artifact.ConfigRule, origin string, overr
 // nor aliases its inputs" contract (merge.go) — the property tests call
 // Combine repeatedly on the same operands, and an in-place fold would make
 // the second call see the first call's output.
-func combineConfigRules(a, b *Merged, overrides *Overrides) (map[string]*MergedConfigRule, *ConflictReport) {
+//
+// The returned warnings are Q22's override-widening disclosure (overrides.go)
+// for any conflict this fold resolved via an override; Combine appends them
+// to the result's own Warnings the same way it appends everything else this
+// fold produces.
+func combineConfigRules(a, b *Merged, overrides *Overrides) (map[string]*MergedConfigRule, []string, *ConflictReport) {
 	if len(a.ConfigRules) == 0 && len(b.ConfigRules) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
+	var warnings []string
 	out := map[string]*MergedConfigRule{}
 	for id, r := range a.ConfigRules {
 		out[id] = cloneConfigRule(r)
@@ -132,8 +140,10 @@ func combineConfigRules(a, b *Merged, overrides *Overrides) (map[string]*MergedC
 			if err != nil {
 				if ov, ok := overrides.apply(id, name, currentParam.Order); ok {
 					resolved = ov
+					warnings = append(warnings, overrideWideningWarnings(id, name,
+						currentParam, incomingParam, resolved, existing.Origins, incoming.Origins)...)
 				} else {
-					return nil, conflictReportFrom(err, id, name, existing.Origins, incoming.Origins...)
+					return nil, nil, conflictReportFrom(err, id, name, existing.Origins, incoming.Origins...)
 				}
 			}
 			existing.Parameters[name] = resolved
@@ -141,7 +151,7 @@ func combineConfigRules(a, b *Merged, overrides *Overrides) (map[string]*MergedC
 		existing.ResourceTypes = sortedUnique(append(existing.ResourceTypes, incoming.ResourceTypes...))
 		existing.Origins = sortedUnique(append(existing.Origins, incoming.Origins...))
 	}
-	return out, nil
+	return out, warnings, nil
 }
 
 func cloneConfigRule(r *MergedConfigRule) *MergedConfigRule {

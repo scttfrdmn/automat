@@ -84,7 +84,7 @@ func drawConfigRules(t *rapid.T, label string) map[string]*MergedConfigRule {
 // refuses.
 func combineConfig(rt *rapid.T, a, b map[string]*MergedConfigRule) (map[string]*MergedConfigRule, bool) {
 	ma, mb := &Merged{ConfigRules: a}, &Merged{ConfigRules: b}
-	out, cr := combineConfigRules(ma, mb, nil)
+	out, _, cr := combineConfigRules(ma, mb, nil)
 	if cr != nil {
 		rt.Skip("generated a genuine parameter conflict: " + cr.Error())
 		return nil, false

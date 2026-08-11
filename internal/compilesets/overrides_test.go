@@ -223,3 +223,91 @@ func TestOverrideResolvesAWithinArtifactConflict(t *testing.T) {
 		t.Errorf("RequireSymbols = %q, want %q", got, "false")
 	}
 }
+
+// TestOverrideWideningIsAcceptedAndWarned is Q22's own worked example
+// (docs/open-questions.md): a set-intersect conflict between "ami-1,ami-2"
+// and "ami-3,ami-4" — disjoint, so their meet is provably empty and no
+// clamp could resolve it — settled by an override naming
+// "ami-1,ami-2,ami-3,ami-4,ami-EVERYTHING", a value that includes a member,
+// ami-EVERYTHING, that neither conflicting side permitted.
+//
+// Two things must both be true, per Q22's decision: the override is still
+// accepted verbatim (unchanged behavior — DO NOT clamp), and a warning now
+// names ami-EVERYTHING specifically, not the whole override value
+// undifferentiated.
+func TestOverrideWideningIsAcceptedAndWarned(t *testing.T) {
+	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
+		Identifier: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED",
+		Parameters: map[string]artifact.RuleParameter{
+			"allowedAmis": {Value: "ami-1,ami-2", Order: artifact.OrderSetIntersect},
+		},
+	})
+	b := artifactWithConfigRule(t, "set-b", artifact.ConfigRule{
+		Identifier: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED",
+		Parameters: map[string]artifact.RuleParameter{
+			"allowedAmis": {Value: "ami-3,ami-4", Order: artifact.OrderSetIntersect},
+		},
+	})
+
+	// Without an override this is a disjoint set-intersect: a hard error,
+	// per artifact.RuleParameter.Resolve's own OrderSetIntersect case.
+	if _, err := Merge(a, b); err == nil {
+		t.Fatal("Merge succeeded despite a disjoint set-intersect with no override; the fixture is wrong")
+	}
+
+	overrides := &Overrides{Entries: []Override{
+		{Rule: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED", Parameter: "allowedAmis",
+			Value: "ami-1,ami-2,ami-3,ami-4,ami-EVERYTHING"},
+	}}
+	m, err := MergeWithOverrides(overrides, a, b)
+	if err != nil {
+		t.Fatalf("MergeWithOverrides: %v (the override must still be accepted verbatim per Q22)", err)
+	}
+	got := m.ConfigRules["EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED"].Parameters["allowedAmis"].Value
+	want := "ami-1,ami-2,ami-3,ami-4,ami-EVERYTHING"
+	if got != want {
+		t.Errorf("allowedAmis = %q, want %q (the override's value, untouched)", got, want)
+	}
+
+	if len(m.Warnings) == 0 {
+		t.Fatal("expected a warning naming the member neither side permitted, got none")
+	}
+	all := strings.Join(m.Warnings, "\n")
+	if !strings.Contains(all, "ami-EVERYTHING") {
+		t.Errorf("warning does not name ami-EVERYTHING specifically: %v", m.Warnings)
+	}
+	for _, member := range []string{"ami-1", "ami-2", "ami-3", "ami-4"} {
+		if strings.Contains(all, `"`+member+`"`) {
+			t.Errorf("warning names %s, a member at least one side already permitted — "+
+				"only ami-EVERYTHING should be named: %v", member, m.Warnings)
+		}
+	}
+}
+
+// TestOverrideNamingNoConflictWarns is Q22's second gap: an override entry
+// that names a (rule, parameter) with no actual conflict at that spot is
+// silently a no-op today, and the compile plan says nothing about it.
+func TestOverrideNamingNoConflictWarns(t *testing.T) {
+	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
+		Identifier: "IAM_PASSWORD_POLICY",
+		Parameters: map[string]artifact.RuleParameter{
+			"RequireSymbols": {Value: "true", Order: artifact.OrderExact},
+		},
+	})
+	overrides := &Overrides{Entries: []Override{
+		// No conflict exists at RequireSymbols (only one artifact binds it)
+		// or at RequireNumbers (nobody binds it at all).
+		{Rule: "IAM_PASSWORD_POLICY", Parameter: "RequireNumbers", Value: "true"},
+	}}
+	m, err := MergeWithOverrides(overrides, a)
+	if err != nil {
+		t.Fatalf("MergeWithOverrides: %v", err)
+	}
+	if len(m.Warnings) == 0 {
+		t.Fatal("expected a warning that the override was never applied, got none")
+	}
+	all := strings.Join(m.Warnings, "\n")
+	if !strings.Contains(all, "RequireNumbers") || !strings.Contains(all, "never applied") {
+		t.Errorf("warning does not name the unapplied override: %v", m.Warnings)
+	}
+}
