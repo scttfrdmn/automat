@@ -45,7 +45,7 @@ attributable logs. That reading is defensible, and second-guessing a mapping AWS
 publish is a different kind of act from filling a gap it leaves — the curated layer exists
 for the latter only. Recorded in the assignment table in `gen/MAPPING-NOTES.md`.
 
-### ~~Q4 — No OSCAL catalog exists upstream for 800-171 Rev 2~~ — RESOLVED, build deferred
+### ~~Q4 — No OSCAL catalog exists upstream for 800-171 Rev 2~~ — RESOLVED, steps 1-2 built, 3-5 deferred
 
 **Resolved.** The premise was right but incomplete: `usnistgov/oscal-content` publishes an
 OSCAL catalog for Rev 3 only, **but NIST's CPRT holds a complete legacy Rev 2 dataset**, so
@@ -58,31 +58,61 @@ no PDF extraction is needed. Verified during the Phase 0 review:
 - `…/type/family/elements` returns the family titles (3.1 "ACCESS CONTROL" … 3.10
   "PHYSICAL PROTECTION").
 
-The endpoints are the undocumented REST API behind the CPRT web UI, discovered from
-`csrc.nist.gov/extensions/nudppublic/main.js`. Undocumented means unstable, which is fine
-here: the retrieved JSON is hashed into `artifact.sources` and vendored, so the compile does
-not depend on the endpoint staying up. **Rev 2 is withdrawn and will never change**, so the
-extraction is frozen once reviewed — a one-time acquisition, not a refresh cycle.
+**The endpoint path above 404s as written; the working path is different, and this is worth
+flagging rather than silently reconciling.** The actual retrieval (2026-08-11) used
+`csrc.nist.gov/extensions/nudp/services/json/nudp/framework/version/sp_800_171_2_0_0/export/json?element=all`
+— note `nudp` not `nudppublic`, `services` not `service`, and one combined `export/json`
+endpoint rather than separate `type/requirement/elements` and `type/family/elements` calls.
+Confirmed by fetching the CURRENT `csrc.nist.gov/extensions/nudppublic/main.js` directly: it
+contains only the `service/rest/json/nudp/framework/version/{id}/type/{type}/elements` path
+shape this entry originally described, and every variation of that shape returns HTTP 404
+from this environment (tried with and without a session cookie, with browser-like headers, and
+via the `services.nvd.nist.gov` redirect target `main.js` names as `getContentServerName`'s
+resolution target). The working URL was instead found by searching public code for prior
+extractions of this exact framework version (`nealfennimore/cmmc`, a public GitHub repo doing
+the same CPRT extraction independently) rather than by re-deriving it from `main.js` a second
+time — so either the endpoint shape genuinely changed since this entry was first written, or
+this entry's original discovery process recorded the wrong path from the start. Not resolved
+which; noted here so a future re-derivation does not waste time re-trying the documented path.
+The response's shape also differs from what this entry implied: one JSON document containing
+`families`, `requirement_type`, `requirement`, and `discussion` elements together (236 elements
+total: 14 families + 110 requirements + 110 discussions + 2 requirement types), not two
+separately-fetched element-type lists.
 
-**Plan for the `800-171r2` build (not started; explicitly out of scope for this session).**
+The endpoint is undocumented, discovered via a third party's already-published reverse
+engineering rather than via this project's own retracing of `main.js` this time. Undocumented
+means unstable, which is fine here: the retrieved JSON is hashed into `artifact.sources` and
+vendored, so the compile does not depend on the endpoint staying up. **Rev 2 is withdrawn and
+will never change**, so the extraction is frozen once reviewed — a one-time acquisition, not a
+refresh cycle.
 
-1. Retrieve the CPRT requirement and family element sets; record each response's sha256,
-   `retrieved_at`, and URI in `artifact.sources` as `catalog` entries.
-2. Emit a reviewable `gen/` intermediate — the 110 requirements with family, number, and
-   verbatim text — for hand review before it becomes a catalog. Same shape as the curated
-   FAR source: a committed file a human has read, not a live fetch.
-3. AWS mappings come from two API-retrievable sources, recorded as `mapping` entries: the
-   **Security Hub NIST 800-171 Rev 2 standard** (control set + rule associations) and the
-   **Audit Manager 800-171 Rev 2 framework** (control-to-evidence-source mappings). Both
-   are richer and more current than a conformance pack, and both can be captured to a
-   vendored file the same way.
-4. Everything unmapped stays `procedural` with an attestation stub (ROADMAP Phase 0), and
-   the same orphan check applies: a mapping AWS publishes that no requirement claims fails
-   the compile.
-5. Expect the r2 catalog to bind the same parameterized rules as `cmmc-l1`
-   (`iam-password-policy`, `restricted-common-ports`, `vpc-sg-open-only-to-authorized-ports`).
-   That is the first real exercise of the union orders resolved in Q1, and where the
-   `blockedPort` re-slotting caveat will first matter.
+**Plan for the `800-171r2` build.**
+
+1. **Done (2026-08-11).** Retrieved the CPRT export in one call; response sha256
+   `7e4bae9b7df6ea0724416057a2ea1b972c03475c9fef066e0cb0568a9436597a`, retrieved_at
+   `2026-08-11T16:34:31Z`, recorded in `gen/sources/800-171r2.json`'s `source` block and
+   carried into `catalogs/800-171r2.json`'s `artifact.sources` as a `catalog` entry.
+2. **Done.** `gen/sources/800-171r2.json` is the reviewable intermediate — all 110
+   requirements with family, number, and verbatim text, plus the 14 family titles — in the
+   same shape as the curated FAR source: a committed file a human has read, not a live fetch.
+   Compiled via a new `compileFrom171r2` target in `gen/catalog` into `catalogs/800-171r2.json`
+   (golden-tested, deterministic, verified against `schema/control-artifact-v1.schema.json`
+   unchanged).
+3. **Not done, still deferred.** AWS mappings come from two API-retrievable sources, recorded
+   as `mapping` entries: the **Security Hub NIST 800-171 Rev 2 standard** (control set + rule
+   associations) and the **Audit Manager 800-171 Rev 2 framework** (control-to-evidence-source
+   mappings). Both are richer and more current than a conformance pack, and both can be
+   captured to a vendored file the same way.
+4. **Done, vacuously.** With no mapping compiled (step 3 deferred), every one of the 110
+   requirements is `procedural` with an attestation stub (ROADMAP Phase 0) — one stub per
+   family (14), not per requirement, since nothing in this pass distinguishes a requirement's
+   evidentiary shape from its family's siblings. The orphan check step 3 will need — a mapping
+   AWS publishes that no requirement claims fails the compile — has no work to do until a
+   mapping exists, so it is not yet exercised for this catalog.
+5. **Not done, follows from 3.** Expect the r2 catalog to bind the same parameterized rules as
+   `cmmc-l1` (`iam-password-policy`, `restricted-common-ports`,
+   `vpc-sg-open-only-to-authorized-ports`). That is the first real exercise of the union orders
+   resolved in Q1, and where the `blockedPort` re-slotting caveat will first matter.
 
 Adjacent CPRT datasets found while checking, potentially useful later:
 `SP-800-171-Rev-2-to-SP-800-171-Rev-3`, `NIST SP 800-171 r2 to CMMC L1`,

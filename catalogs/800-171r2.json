@@ -1,0 +1,1782 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": {
+    "id": "800-171r2",
+    "title": "NIST SP 800-171 Revision 2",
+    "description": "The 110 security requirements of NIST SP 800-171 Revision 2, across its 14 families, extracted from NIST's Cybersecurity and Privacy Reference Tool. Rev 2 is withdrawn and will never change, so this is a one-time acquisition. No AWS-side mapping is joined yet (docs/open-questions.md Q4 step 3 is deferred future work): every requirement here is procedural with an attestation stub.",
+    "sources": [
+      {
+        "catalog": "NIST SP 800-171 Revision 2",
+        "version": "Revision 2 (CPRT frameworkVersionIdentifier SP_800_171_2_0_0)",
+        "retrieved_at": "2026-08-11T16:34:31Z",
+        "uri": "https://csrc.nist.gov/extensions/nudp/services/json/nudp/framework/version/sp_800_171_2_0_0/export/json?element=all",
+        "sha256": "9bacc9073a10bb9726cc4b8b06e328aaf8a7f95ac278546ba74b8500c563d746",
+        "note": "verbatim requirement text, all 110 requirements. This entry's sha256 is of the curated file gen/sources/800-171r2.json, which is what the compiler read; it was transcribed from the CPRT export at https://csrc.nist.gov/extensions/nudp/services/json/nudp/framework/version/sp_800_171_2_0_0/export/json?element=all (upstream sha256 7e4bae9b7df6ea0724416057a2ea1b972c03475c9fef066e0cb0568a9436597a), which is what the uri points at. No AWS-side mapping is joined in this pass (docs/open-questions.md Q4 step 3 is deferred future work), so every requirement compiles as procedural."
+      }
+    ],
+    "compiled_at": "2026-08-11T16:34:31Z",
+    "content_sha256": "87a969b441e594260bc66a55e873c09f143f9240424518826531709a1fe686aa"
+  },
+  "controls": [
+    {
+      "id": "3.1.1",
+      "title": "Authorized Access Control",
+      "statement": "Limit system access to authorized users, processes acting on behalf of authorized users, and devices (including other systems).",
+      "crosswalk": {
+        "800-171r2": "3.1.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Authorized Access Control\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.10",
+      "title": "Session Lock",
+      "statement": "Use session lock with pattern-hiding displays to prevent access and viewing of data after a period of inactivity.",
+      "crosswalk": {
+        "800-171r2": "3.1.10"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Session Lock\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.11",
+      "title": "Session Termination",
+      "statement": "Terminate (automatically) a user session after a defined condition.",
+      "crosswalk": {
+        "800-171r2": "3.1.11"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Session Termination\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.12",
+      "title": "Control Remote Access",
+      "statement": "Monitor and control remote access sessions.",
+      "crosswalk": {
+        "800-171r2": "3.1.12"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Control Remote Access\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.13",
+      "title": "Remote Access Confidentiality",
+      "statement": "Employ cryptographic mechanisms to protect the confidentiality of remote access sessions.",
+      "crosswalk": {
+        "800-171r2": "3.1.13"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Remote Access Confidentiality\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.14",
+      "title": "Remote Access Routing",
+      "statement": "Route remote access via managed access control points.",
+      "crosswalk": {
+        "800-171r2": "3.1.14"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Remote Access Routing\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.15",
+      "title": "Privileged Remote Access",
+      "statement": "Authorize remote execution of privileged commands and remote access to security-relevant information.",
+      "crosswalk": {
+        "800-171r2": "3.1.15"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Privileged Remote Access\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.16",
+      "title": "Wireless Access Authorization",
+      "statement": "Authorize wireless access prior to allowing such connections.",
+      "crosswalk": {
+        "800-171r2": "3.1.16"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Wireless Access Authorization\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.17",
+      "title": "Wireless Access Protection",
+      "statement": "Protect wireless access using authentication and encryption.",
+      "crosswalk": {
+        "800-171r2": "3.1.17"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Wireless Access Protection\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.18",
+      "title": "Mobile Device Connection",
+      "statement": "Control connection of mobile devices.",
+      "crosswalk": {
+        "800-171r2": "3.1.18"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Mobile Device Connection\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.19",
+      "title": "Encrypt CUI on Mobile",
+      "statement": "Encrypt CUI on mobile devices and mobile computing platforms.",
+      "crosswalk": {
+        "800-171r2": "3.1.19"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Encrypt CUI on Mobile\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.2",
+      "title": "Transaction & Function Control",
+      "statement": "Limit system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "crosswalk": {
+        "800-171r2": "3.1.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Transaction & Function Control\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.20",
+      "title": "External Connections",
+      "statement": "Verify and control/limit connections to and use of external systems.",
+      "crosswalk": {
+        "800-171r2": "3.1.20"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"External Connections\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.21",
+      "title": "Portable Storage Use",
+      "statement": "Limit use of portable storage devices on external systems.",
+      "crosswalk": {
+        "800-171r2": "3.1.21"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Portable Storage Use\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.22",
+      "title": "Control Public Information",
+      "statement": "Control CUI posted or processed on publicly accessible systems.",
+      "crosswalk": {
+        "800-171r2": "3.1.22"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Control Public Information\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.3",
+      "title": "Control CUI Flow",
+      "statement": "Control the flow of CUI in accordance with approved authorizations.",
+      "crosswalk": {
+        "800-171r2": "3.1.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Control CUI Flow\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.4",
+      "title": "Separation of Duties",
+      "statement": "Separate the duties of individuals to reduce the risk of malevolent activity without collusion.",
+      "crosswalk": {
+        "800-171r2": "3.1.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Separation of Duties\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.5",
+      "title": "Least Privilege",
+      "statement": "Employ the principle of least privilege, including for specific security functions and privileged accounts.",
+      "crosswalk": {
+        "800-171r2": "3.1.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Least Privilege\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.6",
+      "title": "Non-Privileged Account Use",
+      "statement": "Use non-privileged accounts or roles when accessing nonsecurity functions.",
+      "crosswalk": {
+        "800-171r2": "3.1.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Non-Privileged Account Use\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.7",
+      "title": "Privileged Functions",
+      "statement": "Prevent non-privileged users from executing privileged functions and capture the execution of such functions in audit logs.",
+      "crosswalk": {
+        "800-171r2": "3.1.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Privileged Functions\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.8",
+      "title": "Unsuccessful Logon Attempts",
+      "statement": "Limit unsuccessful logon attempts.",
+      "crosswalk": {
+        "800-171r2": "3.1.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Unsuccessful Logon Attempts\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.1.9",
+      "title": "Privacy & Security Notices",
+      "statement": "Provide privacy and security notices consistent with applicable CUI rules.",
+      "crosswalk": {
+        "800-171r2": "3.1.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-access-control.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Privacy & Security Notices\" (family 3.1, ACCESS CONTROL) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.1",
+      "title": "Limit Physical Access",
+      "statement": "Limit physical access to organizational systems, equipment, and the respective operating environments to authorized individuals.",
+      "crosswalk": {
+        "800-171r2": "3.10.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Limit Physical Access\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.2",
+      "title": "Monitor Facility",
+      "statement": "Protect and monitor the physical facility and support infrastructure for organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.10.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Monitor Facility\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.3",
+      "title": "Escort Visitors",
+      "statement": "Escort visitors and monitor visitor activity.",
+      "crosswalk": {
+        "800-171r2": "3.10.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Escort Visitors\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.4",
+      "title": "Physical Access Logs",
+      "statement": "Maintain audit logs of physical access.",
+      "crosswalk": {
+        "800-171r2": "3.10.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Physical Access Logs\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.5",
+      "title": "Manage Physical Access",
+      "statement": "Control and manage physical access devices.",
+      "crosswalk": {
+        "800-171r2": "3.10.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Manage Physical Access\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.10.6",
+      "title": "Alternative Work Sites",
+      "statement": "Enforce safeguarding measures for CUI at alternate work sites.",
+      "crosswalk": {
+        "800-171r2": "3.10.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-physical-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Alternative Work Sites\" (family 3.10, PHYSICAL PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.11.1",
+      "title": "Risk Assessments",
+      "statement": "Periodically assess the risk to organizational operations (including mission, functions, image, or reputation), organizational assets, and individuals, resulting from the operation of organizational systems and the associated processing, storage, or transmission of CUI.",
+      "crosswalk": {
+        "800-171r2": "3.11.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-risk-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Risk Assessments\" (family 3.11, RISK ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.11.2",
+      "title": "Vulnerability Scan",
+      "statement": "Scan for vulnerabilities in organizational systems and applications periodically and when new vulnerabilities affecting those systems and applications are identified.",
+      "crosswalk": {
+        "800-171r2": "3.11.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-risk-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Vulnerability Scan\" (family 3.11, RISK ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.11.3",
+      "title": "Vulnerability Remediation",
+      "statement": "Remediate vulnerabilities in accordance with risk assessments.",
+      "crosswalk": {
+        "800-171r2": "3.11.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-risk-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Vulnerability Remediation\" (family 3.11, RISK ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.12.1",
+      "title": "Security Control Assessment",
+      "statement": "Periodically assess the security controls in organizational systems to determine if the controls are effective in their application.",
+      "crosswalk": {
+        "800-171r2": "3.12.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-security-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Control Assessment\" (family 3.12, SECURITY ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.12.2",
+      "title": "Plan of Action",
+      "statement": "Develop and implement plans of action designed to correct deficiencies and reduce or eliminate vulnerabilities in organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.12.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-security-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Plan of Action\" (family 3.12, SECURITY ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.12.3",
+      "title": "Security Control Monitoring",
+      "statement": "Monitor security controls on an ongoing basis to ensure the continued effectiveness of the controls.",
+      "crosswalk": {
+        "800-171r2": "3.12.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-security-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Control Monitoring\" (family 3.12, SECURITY ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.12.4",
+      "title": "System Security Plan",
+      "statement": "Develop, document, and periodically update system security plans that describe system boundaries, system environments of operation, how security requirements are implemented, and the relationships with or connections to other systems.",
+      "crosswalk": {
+        "800-171r2": "3.12.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-security-assessment.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System Security Plan\" (family 3.12, SECURITY ASSESSMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.1",
+      "title": "Boundary Protection",
+      "statement": "Monitor, control, and protect communications (i.e., information transmitted or received by organizational systems) at the external boundaries and key internal boundaries of organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.13.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Boundary Protection\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.10",
+      "title": "Key Management",
+      "statement": "Establish and manage cryptographic keys for cryptography employed in organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.13.10"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Key Management\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.11",
+      "title": "CUI Encryption",
+      "statement": "Employ FIPS-validated cryptography when used to protect the confidentiality of CUI.",
+      "crosswalk": {
+        "800-171r2": "3.13.11"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"CUI Encryption\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.12",
+      "title": "Collaborative Device Control",
+      "statement": "Prohibit remote activation of collaborative computing devices and provide indication of devices in use to users present at the device.",
+      "crosswalk": {
+        "800-171r2": "3.13.12"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Collaborative Device Control\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.13",
+      "title": "Mobile Code",
+      "statement": "Control and monitor the use of mobile code.",
+      "crosswalk": {
+        "800-171r2": "3.13.13"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Mobile Code\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.14",
+      "title": "Voice over Internet Protocol",
+      "statement": "Control and monitor the use of Voice over Internet Protocol (VoIP) technologies.",
+      "crosswalk": {
+        "800-171r2": "3.13.14"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Voice over Internet Protocol\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.15",
+      "title": "Communications Authenticity",
+      "statement": "Protect the authenticity of communications sessions.",
+      "crosswalk": {
+        "800-171r2": "3.13.15"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Communications Authenticity\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.16",
+      "title": "Data at Rest",
+      "statement": "Protect the confidentiality of CUI at rest.",
+      "crosswalk": {
+        "800-171r2": "3.13.16"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Data at Rest\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.2",
+      "title": "Security Engineering",
+      "statement": "Employ architectural designs, software development techniques, and systems engineering principles that promote effective information security within organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.13.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Engineering\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.3",
+      "title": "Role Separation",
+      "statement": "Separate user functionality from system management functionality.",
+      "crosswalk": {
+        "800-171r2": "3.13.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Role Separation\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.4",
+      "title": "Shared Resource Control",
+      "statement": "Prevent unauthorized and unintended information transfer via shared system resources.",
+      "crosswalk": {
+        "800-171r2": "3.13.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Shared Resource Control\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.5",
+      "title": "Public-Access System Separation",
+      "statement": "Implement subnetworks for publicly accessible system components that are physically or logically separated from internal networks.",
+      "crosswalk": {
+        "800-171r2": "3.13.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Public-Access System Separation\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.6",
+      "title": "Network Communication by Exception",
+      "statement": "Deny network communications traffic by default and allow network communications traffic by exception (i.e., deny all, permit by exception).",
+      "crosswalk": {
+        "800-171r2": "3.13.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Network Communication by Exception\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.7",
+      "title": "Split Tunneling",
+      "statement": "Prevent remote devices from simultaneously establishing non-remote connections with organizational systems and communicating via some other connection to resources in external networks (i.e., split tunneling).",
+      "crosswalk": {
+        "800-171r2": "3.13.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Split Tunneling\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.8",
+      "title": "Data in Transit",
+      "statement": "Implement cryptographic mechanisms to prevent unauthorized disclosure of CUI during transmission unless otherwise protected by alternative physical safeguards.",
+      "crosswalk": {
+        "800-171r2": "3.13.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Data in Transit\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.13.9",
+      "title": "Connections Termination",
+      "statement": "Terminate network connections associated with communications sessions at the end of the sessions or after a defined period of inactivity.",
+      "crosswalk": {
+        "800-171r2": "3.13.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-communications-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Connections Termination\" (family 3.13, SYSTEM AND COMMUNICATIONS PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.1",
+      "title": "Flaw Remediation",
+      "statement": "Identify, report, and correct system flaws in a timely manner.",
+      "crosswalk": {
+        "800-171r2": "3.14.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Flaw Remediation\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.2",
+      "title": "Malicious Code Protection",
+      "statement": "Provide protection from malicious code at designated locations within organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.14.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Malicious Code Protection\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.3",
+      "title": "Security Alerts & Advisories",
+      "statement": "Monitor system security alerts and advisories and take action in response.",
+      "crosswalk": {
+        "800-171r2": "3.14.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Alerts & Advisories\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.4",
+      "title": "Update Malicious Code Protection",
+      "statement": "Update malicious code protection mechanisms when new releases are available.",
+      "crosswalk": {
+        "800-171r2": "3.14.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Update Malicious Code Protection\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.5",
+      "title": "System & File Scanning",
+      "statement": "Perform periodic scans of organizational systems and real-time scans of files from external sources as files are downloaded, opened, or executed.",
+      "crosswalk": {
+        "800-171r2": "3.14.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System & File Scanning\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.6",
+      "title": "Monitor Communications for Attacks",
+      "statement": "Monitor organizational systems, including inbound and outbound communications traffic, to detect attacks and indicators of potential attacks.",
+      "crosswalk": {
+        "800-171r2": "3.14.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Monitor Communications for Attacks\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.14.7",
+      "title": "Identify Unauthorized Use",
+      "statement": "Identify unauthorized use of organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.14.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-system-information-integrity.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Identify Unauthorized Use\" (family 3.14, SYSTEM AND INFORMATION INTEGRITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.2.1",
+      "title": "Role-Based Risk Awareness",
+      "statement": "Ensure that managers, systems administrators, and users of organizational systems are made aware of the security risks associated with their activities and of the applicable policies, standards, and procedures related to the security of those systems.",
+      "crosswalk": {
+        "800-171r2": "3.2.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-awareness-training.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Role-Based Risk Awareness\" (family 3.2, AWARENESS AND TRAINING) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.2.2",
+      "title": "Role-Based Training",
+      "statement": "Ensure that personnel are trained to carry out their assigned information security-related duties and responsibilities.",
+      "crosswalk": {
+        "800-171r2": "3.2.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-awareness-training.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Role-Based Training\" (family 3.2, AWARENESS AND TRAINING) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.2.3",
+      "title": "Insider Threat Awareness",
+      "statement": "Provide security awareness training on recognizing and reporting potential indicators of insider threat.",
+      "crosswalk": {
+        "800-171r2": "3.2.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-awareness-training.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Insider Threat Awareness\" (family 3.2, AWARENESS AND TRAINING) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.1",
+      "title": "System Auditing",
+      "statement": "Create and retain system audit logs and records to the extent needed to enable the monitoring, analysis, investigation, and reporting of unlawful or unauthorized system activity.",
+      "crosswalk": {
+        "800-171r2": "3.3.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System Auditing\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.2",
+      "title": "User Accountability",
+      "statement": "Ensure that the actions of individual system users can be uniquely traced to those users, so they can be held accountable for their actions.",
+      "crosswalk": {
+        "800-171r2": "3.3.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"User Accountability\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.3",
+      "title": "Event Review",
+      "statement": "Review and update logged events.",
+      "crosswalk": {
+        "800-171r2": "3.3.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Event Review\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.4",
+      "title": "Audit Failure Alerting",
+      "statement": "Alert in the event of an audit logging process failure.",
+      "crosswalk": {
+        "800-171r2": "3.3.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Audit Failure Alerting\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.5",
+      "title": "Audit Correlation",
+      "statement": "Correlate audit record review, analysis, and reporting processes for investigation and response to indications of unlawful, unauthorized, suspicious, or unusual activity.",
+      "crosswalk": {
+        "800-171r2": "3.3.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Audit Correlation\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.6",
+      "title": "Reduction & Reporting",
+      "statement": "Provide audit record reduction and report generation to support on-demand analysis and reporting.",
+      "crosswalk": {
+        "800-171r2": "3.3.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Reduction & Reporting\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.7",
+      "title": "Authoritative Time Source",
+      "statement": "Provide a system capability that compares and synchronizes internal system clocks with an authoritative source to generate time stamps for audit records.",
+      "crosswalk": {
+        "800-171r2": "3.3.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Authoritative Time Source\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.8",
+      "title": "Audit Protection",
+      "statement": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion.",
+      "crosswalk": {
+        "800-171r2": "3.3.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Audit Protection\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.3.9",
+      "title": "Audit Management",
+      "statement": "Limit management of audit logging functionality to a subset of privileged users.",
+      "crosswalk": {
+        "800-171r2": "3.3.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-audit-accountability.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Audit Management\" (family 3.3, AUDIT AND ACCOUNTABILITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.1",
+      "title": "System Baselining",
+      "statement": "Establish and maintain baseline configurations and inventories of organizational systems (including hardware, software, firmware, and documentation) throughout the respective system development life cycles.",
+      "crosswalk": {
+        "800-171r2": "3.4.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System Baselining\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.2",
+      "title": "Security Configuration Enforcement",
+      "statement": "Establish and enforce security configuration settings for information technology products employed in organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.4.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Configuration Enforcement\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.3",
+      "title": "System Change Management",
+      "statement": "Track, review, approve or disapprove, and log changes to organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.4.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System Change Management\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.4",
+      "title": "Security Impact Analysis",
+      "statement": "Analyze the security impact of changes prior to implementation.",
+      "crosswalk": {
+        "800-171r2": "3.4.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Security Impact Analysis\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.5",
+      "title": "Access Restrictions for Change",
+      "statement": "Define, document, approve, and enforce physical and logical access restrictions associated with changes to organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.4.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Access Restrictions for Change\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.6",
+      "title": "Least Functionality",
+      "statement": "Employ the principle of least functionality by configuring organizational systems to provide only essential capabilities.",
+      "crosswalk": {
+        "800-171r2": "3.4.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Least Functionality\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.7",
+      "title": "Nonessential Functionality",
+      "statement": "Restrict, disable, or prevent the use of nonessential programs, functions, ports, protocols, and services.",
+      "crosswalk": {
+        "800-171r2": "3.4.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Nonessential Functionality\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.8",
+      "title": "Application Execution Policy",
+      "statement": "Apply deny-by-exception (blacklisting) policy to prevent the use of unauthorized software or deny-all, permit-by-exception (whitelisting) policy to allow the execution of authorized software.",
+      "crosswalk": {
+        "800-171r2": "3.4.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Application Execution Policy\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.4.9",
+      "title": "User-Installed Software",
+      "statement": "Control and monitor user-installed software.",
+      "crosswalk": {
+        "800-171r2": "3.4.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-configuration-management.md",
+        "frequency": "annual",
+        "guidance": "Record how \"User-Installed Software\" (family 3.4, CONFIGURATION MANAGEMENT) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.1",
+      "title": "Identification",
+      "statement": "Identify system users, processes acting on behalf of users, and devices.",
+      "crosswalk": {
+        "800-171r2": "3.5.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Identification\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.10",
+      "title": "Cryptographically-Protected Passwords",
+      "statement": "Store and transmit only cryptographically-protected passwords.",
+      "crosswalk": {
+        "800-171r2": "3.5.10"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Cryptographically-Protected Passwords\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.11",
+      "title": "Obscure Feedback",
+      "statement": "Obscure feedback of authentication information.",
+      "crosswalk": {
+        "800-171r2": "3.5.11"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Obscure Feedback\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.2",
+      "title": "Authentication",
+      "statement": "Authenticate (or verify) the identities of users, processes, or devices, as a prerequisite to allowing access to organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.5.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Authentication\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.3",
+      "title": "Multifactor Authentication",
+      "statement": "Use multifactor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "crosswalk": {
+        "800-171r2": "3.5.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Multifactor Authentication\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.4",
+      "title": "Replay-Resistant Authentication",
+      "statement": "Employ replay-resistant authentication mechanisms for network access to privileged and nonprivileged accounts.",
+      "crosswalk": {
+        "800-171r2": "3.5.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Replay-Resistant Authentication\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.5",
+      "title": "Identifier Reuse",
+      "statement": "Prevent reuse of identifiers for a defined period.",
+      "crosswalk": {
+        "800-171r2": "3.5.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Identifier Reuse\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.6",
+      "title": "Identifier Handling",
+      "statement": "Disable identifiers after a defined period of inactivity.",
+      "crosswalk": {
+        "800-171r2": "3.5.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Identifier Handling\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.7",
+      "title": "Password Complexity",
+      "statement": "Enforce a minimum password complexity and change of characters when new passwords are created.",
+      "crosswalk": {
+        "800-171r2": "3.5.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Password Complexity\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.8",
+      "title": "Password Reuse",
+      "statement": "Prohibit password reuse for a specified number of generations.",
+      "crosswalk": {
+        "800-171r2": "3.5.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Password Reuse\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.5.9",
+      "title": "Temporary Passwords",
+      "statement": "Allow temporary password use for system logons with an immediate change to a permanent password.",
+      "crosswalk": {
+        "800-171r2": "3.5.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-identification-authentication.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Temporary Passwords\" (family 3.5, IDENTIFICATION AND AUTHENTICATION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.6.1",
+      "title": "Incident Handling",
+      "statement": "Establish an operational incident-handling capability for organizational systems that includes preparation, detection, analysis, containment, recovery, and user response activities.",
+      "crosswalk": {
+        "800-171r2": "3.6.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-incident-response.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Incident Handling\" (family 3.6, INCIDENT RESPONSE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.6.2",
+      "title": "Incident Reporting",
+      "statement": "Track, document, and report incidents to designated officials and/or authorities both internal and external to the organization.",
+      "crosswalk": {
+        "800-171r2": "3.6.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-incident-response.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Incident Reporting\" (family 3.6, INCIDENT RESPONSE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.6.3",
+      "title": "Incident Response Testing",
+      "statement": "Test the organizational incident response capability.",
+      "crosswalk": {
+        "800-171r2": "3.6.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-incident-response.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Incident Response Testing\" (family 3.6, INCIDENT RESPONSE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.1",
+      "title": "Perform Maintenance",
+      "statement": "Perform maintenance on organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.7.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Perform Maintenance\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.2",
+      "title": "System Maintenance Control",
+      "statement": "Provide controls on the tools, techniques, mechanisms, and personnel used to conduct system maintenance.",
+      "crosswalk": {
+        "800-171r2": "3.7.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"System Maintenance Control\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.3",
+      "title": "Equipment Sanitization",
+      "statement": "Ensure equipment removed for off-site maintenance is sanitized of any CUI.",
+      "crosswalk": {
+        "800-171r2": "3.7.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Equipment Sanitization\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.4",
+      "title": "Media Inspection",
+      "statement": "Check media containing diagnostic and test programs for malicious code before the media are used in organizational systems.",
+      "crosswalk": {
+        "800-171r2": "3.7.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Inspection\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.5",
+      "title": "Nonlocal Maintenance",
+      "statement": "Require multifactor authentication to establish nonlocal maintenance sessions via external network connections and terminate such connections when nonlocal maintenance is complete.",
+      "crosswalk": {
+        "800-171r2": "3.7.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Nonlocal Maintenance\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.7.6",
+      "title": "Maintenance Personnel",
+      "statement": "Supervise the maintenance activities of maintenance personnel without required access authorization.",
+      "crosswalk": {
+        "800-171r2": "3.7.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-maintenance.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Maintenance Personnel\" (family 3.7, MAINTENANCE) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.1",
+      "title": "Media Protection",
+      "statement": "Protect (i.e., physically control and securely store) system media containing CUI, both paper and digital.",
+      "crosswalk": {
+        "800-171r2": "3.8.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Protection\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.2",
+      "title": "Media Access",
+      "statement": "Limit access to CUI on system media to authorized users.",
+      "crosswalk": {
+        "800-171r2": "3.8.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Access\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.3",
+      "title": "Media Disposal",
+      "statement": "Sanitize or destroy system media containing CUI before disposal or release for reuse.",
+      "crosswalk": {
+        "800-171r2": "3.8.3"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Disposal\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.4",
+      "title": "Media Markings",
+      "statement": "Mark media with necessary CUI markings and distribution limitations.",
+      "crosswalk": {
+        "800-171r2": "3.8.4"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Markings\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.5",
+      "title": "Media Accountability",
+      "statement": "Control access to media containing CUI and maintain accountability for media during transport outside of controlled areas.",
+      "crosswalk": {
+        "800-171r2": "3.8.5"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Media Accountability\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.6",
+      "title": "Portable Storage Encryption",
+      "statement": "Implement cryptographic mechanisms to protect the confidentiality of CUI stored on digital media during transport unless otherwise protected by alternative physical safeguards.",
+      "crosswalk": {
+        "800-171r2": "3.8.6"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Portable Storage Encryption\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.7",
+      "title": "Removable Media",
+      "statement": "Control the use of removable media on system components.",
+      "crosswalk": {
+        "800-171r2": "3.8.7"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Removable Media\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.8",
+      "title": "Shared Media",
+      "statement": "Prohibit the use of portable storage devices when such devices have no identifiable owner.",
+      "crosswalk": {
+        "800-171r2": "3.8.8"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Shared Media\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.8.9",
+      "title": "Protect Backups",
+      "statement": "Protect the confidentiality of backup CUI at storage locations.",
+      "crosswalk": {
+        "800-171r2": "3.8.9"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-media-protection.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Protect Backups\" (family 3.8, MEDIA PROTECTION) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.9.1",
+      "title": "Screen Individuals",
+      "statement": "Screen individuals prior to authorizing access to organizational systems containing CUI.",
+      "crosswalk": {
+        "800-171r2": "3.9.1"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-personnel-security.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Screen Individuals\" (family 3.9, PERSONNEL SECURITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    },
+    {
+      "id": "3.9.2",
+      "title": "Personnel Actions",
+      "statement": "Ensure that organizational systems containing CUI are protected during and after personnel actions such as terminations and transfers.",
+      "crosswalk": {
+        "800-171r2": "3.9.2"
+      },
+      "enforcement": [
+        "procedural"
+      ],
+      "attestation": {
+        "template": "800-171r2-personnel-security.md",
+        "frequency": "annual",
+        "guidance": "Record how \"Personnel Actions\" (family 3.9, PERSONNEL SECURITY) is implemented, and how that is evidenced. NIST SP 800-171A provides the assessment objectives for this requirement; automat's detective baseline contributes no machine evidence for it today — no AWS-side mapping is compiled into this catalog (docs/open-questions.md Q4 step 3 is deferred)."
+      }
+    }
+  ]
+}
