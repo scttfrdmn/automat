@@ -893,6 +893,90 @@ func TestVendSkipsTheAutomationRoleWhenTheProfileSaysNotTo(t *testing.T) {
 	}
 }
 
+// TestVendWritesAttestationStubs is ROADMAP's "internal/baseline, slice 6",
+// reached from the CLI rather than only inside internal/baseline's own unit
+// tests: vendProfileJSON's fixture profile compiles cmmc-l1, which carries
+// six procedural controls with no crosswalk collisions between them (see
+// catalogs/cmmc-l1.json), so a fresh vend must produce six stub files under
+// the schema's default attestations directory ("compliance", relative to
+// the working directory chdirTemp/vendWorld already moved this test into).
+func TestVendWritesAttestationStubs(t *testing.T) {
+	g, _ := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(".", "compliance"))
+	if err != nil {
+		t.Fatalf("read the attestations directory: %v", err)
+	}
+	if len(entries) != 6 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("got %d stub files, want 6: %v", len(entries), names)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(".", "compliance", e.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		if !strings.Contains(string(data), "DRAFT") {
+			t.Errorf("%s does not carry the DRAFT marking:\n%s", e.Name(), data)
+		}
+	}
+}
+
+// TestVendReVendDoesNotOverwriteAHandEditedAttestationStub is the idempotent
+// half of the same slice, exercised end to end: an operator's edit to a
+// stub a first vend created must survive a second vend of the same profile.
+func TestVendReVendDoesNotOverwriteAHandEditedAttestationStub(t *testing.T) {
+	g, _ := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(".", "compliance"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("first vend did not populate the attestations directory: %v", err)
+	}
+	stubPath := filepath.Join(".", "compliance", entries[0].Name())
+	custom := []byte("DRAFT — attestation not yet completed\n\nHand-written text.\n")
+	if werr := os.WriteFile(stubPath, custom, 0o600); werr != nil {
+		t.Fatalf("simulate a hand edit: %v", werr)
+	}
+
+	if _, _, rerr := runCLI(t, g, vendArgs(profile)...); rerr != nil {
+		t.Fatalf("second vend: %v", rerr)
+	}
+	got, err := os.ReadFile(stubPath)
+	if err != nil {
+		t.Fatalf("read stub after re-vend: %v", err)
+	}
+	if string(got) != string(custom) {
+		t.Fatalf("a re-vend overwrote a hand-edited attestation stub:\ngot:  %q\nwant: %q", got, custom)
+	}
+}
+
+// TestVendDryRunWritesNoAttestationStubs is CLAUDE.md rule 5 applied to the
+// new local-filesystem step: a plan must touch no disk, including not
+// creating the attestations directory.
+func TestVendDryRunWritesNoAttestationStubs(t *testing.T) {
+	g, _ := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile, "--dry-run")...); err != nil {
+		t.Fatalf("vend --dry-run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(".", "compliance")); !os.IsNotExist(err) {
+		t.Errorf("--dry-run created the attestations directory; stat error = %v", err)
+	}
+}
+
 // TestVendAutomationRoleParksOnRePermissionDenial is Q13's park scenario,
 // reached from the CLI rather than only inside internal/baseline's own unit
 // tests: a role that already exists with a DIFFERENT policy than this vend
