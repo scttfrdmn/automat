@@ -5,9 +5,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/scttfrdmn/automat/internal/awsfake"
 	"github.com/scttfrdmn/automat/internal/evidence"
 )
 
@@ -209,6 +211,100 @@ func TestWriteManifestWithRotationPrintsANoticeAndOpensASuccessor(t *testing.T) 
 	}
 	if got := dir.Path(successorKey); !strings.Contains(notice, got) {
 		t.Errorf("the notice must name the successor's path %q; got:\n%s", got, notice)
+	}
+}
+
+// TestMirrorUploadAfterRotationUsesTheClosedManifestsOwnKey is this task's
+// own audit finding, pinned as a regression: uploadToMirrors, called with
+// evidenceManifestKey(path) the way every real call site (vend.go, verify.go,
+// reclaim.go, assess.go) now does, must land the CLOSED (pre-rotation, just
+// rotated) manifest's mirror upload at ITS OWN object key — never at a key
+// that a later successor-manifest upload could collide with.
+//
+// Before this fix, evidence.Mirror.Upload derived the S3 key purely from
+// m.Meta.AccountID (which does not change across a rotation), so the closed
+// original's mirror upload and every later successor's mirror upload landed
+// at the SAME object key — the second write silently overwriting the
+// mirrored copy of the first. That defeats exactly the compensating control
+// ROADMAP.md's "Remote evidence mirror" slice 2 exists to read back from.
+func TestMirrorUploadAfterRotationUsesTheClosedManifestsOwnKey(t *testing.T) {
+	dir := openRotateTestDir(t)
+	orig := rotateThresholdRecords
+	rotateThresholdRecords = 2
+	t.Cleanup(func() { rotateThresholdRecords = orig })
+
+	m := evidence.NewManifest(rotateAcct, rotateAcct, "", rotateTS0)
+	if _, err := m.Append(rotateTestRecord(evidence.OpAccountCreate, rotateTS0), nil); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if _, err := m.Append(rotateTestRecord(evidence.OpVerify, rotateTS1), nil); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	var out bytes.Buffer
+	path, closed, err := writeManifestWithRotation(dir, rotateAcct, m, nil, rotateTS1, &out)
+	if err != nil {
+		t.Fatalf("writeManifestWithRotation: %v", err)
+	}
+	if !closed.Closed() {
+		t.Fatal("the manifest was not closed by rotation; nothing to regress-test")
+	}
+
+	fake := awsfake.NewS3()
+	mirror, merr := evidence.NewS3Mirror(fake, "automat-evidence-mirror", "")
+	if merr != nil {
+		t.Fatalf("NewS3Mirror: %v", merr)
+	}
+	key := evidenceManifestKey(path)
+	if key != rotateAcct {
+		t.Fatalf("evidenceManifestKey(%q) = %q, want %q", path, key, rotateAcct)
+	}
+	if warnings := uploadToMirrors(context.Background(), []evidence.Mirror{mirror}, key, closed); len(warnings) != 0 {
+		t.Fatalf("uploadToMirrors: %v", warnings)
+	}
+
+	// Now simulate the successor's own later mirror upload, once it has a
+	// first record and its own manifestPath.
+	successorKey := rotateAcct + "-2"
+	_, successor, oerr := openActiveManifest(dir, rotateAcct, "", rotateTS1)
+	if oerr != nil {
+		t.Fatalf("openActiveManifest: %v", oerr)
+	}
+	if _, aerr := successor.Append(rotateTestRecord(evidence.OpVerify, rotateTS1), nil); aerr != nil {
+		t.Fatalf("append to successor: %v", aerr)
+	}
+	successorPath, successorWritten, werr := writeManifestWithRotation(dir, successorKey, successor, nil, rotateTS1, &out)
+	if werr != nil {
+		t.Fatalf("writeManifestWithRotation (successor): %v", werr)
+	}
+	successorMirrorKey := evidenceManifestKey(successorPath)
+	if successorMirrorKey != successorKey {
+		t.Fatalf("evidenceManifestKey(%q) = %q, want %q", successorPath, successorMirrorKey, successorKey)
+	}
+	if warnings := uploadToMirrors(context.Background(), []evidence.Mirror{mirror}, successorMirrorKey, successorWritten); len(warnings) != 0 {
+		t.Fatalf("uploadToMirrors (successor): %v", warnings)
+	}
+
+	// The regression: both objects must exist, at DIFFERENT keys, each still
+	// holding its own manifest's content.
+	closedObj, ok := fake.Object("automat-evidence-mirror", rotateAcct+".json")
+	if !ok {
+		t.Fatal("the closed (pre-rotation) manifest's mirror object is missing")
+	}
+	successorObj, ok := fake.Object("automat-evidence-mirror", successorKey+".json")
+	if !ok {
+		t.Fatal("the successor's mirror object is missing")
+	}
+	if string(closedObj) == string(successorObj) {
+		t.Fatal("the closed manifest's mirror object and the successor's are identical bytes at " +
+			"different keys — suspicious for two manifests with different record counts, but not " +
+			"itself the bug this test targets")
+	}
+	// The actual bug reproduced literally: before the fix, both uploads
+	// landed at "444455556666.json" and the second overwrote the first.
+	if fake.CallCount("PutObject") != 2 {
+		t.Fatalf("PutObject called %d times, want 2 (one per manifest, at two distinct keys)",
+			fake.CallCount("PutObject"))
 	}
 }
 

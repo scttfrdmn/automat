@@ -142,7 +142,13 @@ func TestVerifyReportMatchesGolden(t *testing.T) {
 				t.Fatalf("verify.StructuralHonesty: %v", herr)
 			}
 			var sb strings.Builder
-			if err := renderVerifyReport(&sb, accountID, target, policy, freshness, honesty); err != nil {
+			// mirrorReports is nil in every existing scenario: none configures a
+			// mirror bucket, and renderVerifyReport omits the section entirely in
+			// that case (its own doc comment) — these golden files predate slice
+			// 2 and must stay byte-identical for an account with no mirror
+			// configured. TestVerifyReportMatchesGoldenWithMirror below covers the
+			// new section's own output shape.
+			if err := renderVerifyReport(&sb, accountID, target, policy, freshness, honesty, nil); err != nil {
 				t.Fatalf("renderVerifyReport: %v", err)
 			}
 			got := sb.String()

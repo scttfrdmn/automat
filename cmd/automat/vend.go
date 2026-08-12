@@ -283,7 +283,7 @@ func newVendCmd(g *globals) *cobra.Command {
 					mirrorWarnings = append(mirrorWarnings,
 						fmt.Sprintf("could not build the evidence mirror: %v", merr))
 				} else {
-					mirrorWarnings = uploadToMirrors(ctx, mirrors, writtenManifest)
+					mirrorWarnings = uploadToMirrors(ctx, mirrors, evidenceManifestKey(manifestPath), writtenManifest)
 				}
 			}
 

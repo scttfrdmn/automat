@@ -1109,6 +1109,35 @@ part (`internal/evidence/header_binding_test.go`): a signed chain, prefix-trunca
 its header rewritten to match, is still refused — the link-and-signature check catches
 it independently of the anchor.
 
+**Update: the read-and-diff half of the external mirror now exists (ROADMAP.md's "Remote
+evidence mirror" slice 2), and closes this residual FOR ACCOUNTS WITH A MIRROR
+CONFIGURED.** Everything above described the compensating control as something a human
+holding two copies had to notice by hand — "two copies of the header that disagree are
+noticeable to whoever holds both" was true but did nothing automated. `verify` now fetches
+the mirrored copy (`evidence.MirrorReader.Fetch`, `S3Mirror`'s second interface,
+`internal/awsapi.S3MirrorAPI`'s already-present `GetObject`) and compares it against the
+local manifest — `Meta` in full, `GenesisSHA` specifically named — via
+`evidence.MirrorDrift`, before this run's own record is appended (so the comparison is
+against the mirror's state as of the START of this run, not a copy this same run already
+overwrote). A rewrite that truncates records and recomputes `genesis_sha256` to match is
+internally consistent, exactly as described above — but it is no longer internally
+consistent WITH THE MIRROR unless the same rewrite was also applied there, and an editor
+who can rewrite the local file typically cannot also rewrite an S3 object in a bucket they
+were never granted `s3:PutObject` on twice, once for each copy, without the second write
+being independently detectable. `TestVerifyReportsDriftWhenMirrorBytesDiffer`
+(`cmd/automat/verify_mirror_test.go`) and `TestMirrorDriftDisagreement`
+(`internal/evidence/mirrordrift_test.go`) demonstrate the closure directly.
+
+This closes the residual only when a mirror is configured — `baseline.evidence.in_account_bucket`
+or `management_mirror_bucket`, still optional per DESIGN §11 and envprofile's schema — so
+the entry stays open, now narrowed: **for an account with no mirror bucket named in its
+environment profile, the residual described above is unchanged and this entry remains the
+correct description of it.** `verify` reports this state explicitly too — a
+"could not verify" mirror-drift finding when a mirror is configured but unreachable is
+kept distinct from both "no mirror configured" (the section is omitted entirely) and
+"checked, clean", so an operator reading a report can always tell which of the three
+states applies, rather than three states quietly collapsing into "no news".
+
 ### Q22 — May an override widen a Config-rule parameter past what every input artifact permitted?
 
 Raised at AUDIT-4's L1. `internal/compilesets.Overrides.apply` returns an override's value
