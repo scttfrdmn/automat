@@ -151,6 +151,127 @@ func goldenManifest(t *testing.T) *Manifest {
 
 const goldenPath = "testdata/golden/manifest.json"
 
+// goldenRotatedManifest builds the terminal record and successor a rotation
+// produces (Q23, docs/open-questions.md) — the sibling fixture to
+// goldenManifest's custody-transfer ending, pinning the rotate record's hash
+// the same way.
+//
+// Deliberately reuses goldenManifest's first two records rather than the whole
+// thing: rotation ends a chain the same way custody transfer does, and
+// starting from an independent two-record history keeps this fixture's own
+// terminal record the thing under test rather than a repeat of the custody
+// fixture's setup.
+func goldenRotatedManifest(t *testing.T) *Manifest {
+	t.Helper()
+	signer := testSigner(t)
+	const vended = "444455556666"
+	m := NewManifest(vended, vended, "o-abc1234567", "2026-08-05T00:00:00Z")
+
+	create := Record{
+		Timestamp: "2026-08-05T00:00:01Z",
+		Operation: OpAccountCreate,
+		Operator: Operator{
+			ARN:         "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+			AccountID:   "111122223333",
+			UserID:      "AROAEXAMPLEEXAMPLE:session",
+			AssumedRole: "automat-operator",
+		},
+		RequestID: "req-abc123",
+		Target: &Target{
+			AccountID:   "444455556666",
+			AccountName: "Physics CUI Enclave",
+			OUID:        "ou-abc1-12345678",
+			Region:      "us-east-1",
+		},
+		Artifact: &DocRef{ID: "cmmc-l1", ContentSHA256: someHash, SchemaVersion: "1.0.0"},
+		EnvProfile: &EnvProfileRef{
+			ID: "research-cui", ContentSHA256: otherHash, SchemaVersion: "1.0.0",
+			ReviewBy:           "2026-11-10",
+			VerifiedSignatures: []VerifiedSignature{},
+		},
+		ToolVersion: "0.1.0",
+	}
+	mustAppend(t, m, create, signer)
+
+	apply := Record{
+		Timestamp:   "2026-08-05T00:00:02Z",
+		Operation:   OpVerify,
+		Operator:    create.Operator,
+		Target:      &Target{AccountID: "444455556666", Region: "us-east-1"},
+		EnvProfile:  create.EnvProfile,
+		ToolVersion: "0.1.0",
+	}
+	mustAppend(t, m, apply, signer)
+
+	// Rotation closes this manifest at 3 records — a stand-in threshold, since a
+	// real 2,000-record fixture would be unreviewable, but the shape hashed is
+	// identical to what evidence.RotateThresholdRecords triggers in production.
+	_, _, err := m.Rotate("444455556666-2", "reached the configured record threshold",
+		"2026-08-05T00:00:03Z", signer)
+	if err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+	return m
+}
+
+const goldenRotatedPath = "testdata/golden/manifest-rotated.json"
+
+func TestRotatedManifestMatchesGolden(t *testing.T) {
+	m := goldenRotatedManifest(t)
+	got, err := m.MarshalIndented()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if updateGolden() {
+		if derr := os.MkdirAll(filepath.Dir(goldenRotatedPath), 0o755); derr != nil {
+			t.Fatal(derr)
+		}
+		if werr := os.WriteFile(goldenRotatedPath, got, 0o644); werr != nil { //nolint:gosec // reviewed, committed fixture
+			t.Fatalf("write %s: %v", goldenRotatedPath, werr)
+		}
+		t.Logf("updated %s (%d bytes)", goldenRotatedPath, len(got))
+		return
+	}
+
+	want, err := os.ReadFile(goldenRotatedPath) //nolint:gosec // fixed testdata path
+	if err != nil {
+		t.Fatalf("read %s: %v — run `AUTOMAT_UPDATE_GOLDEN=1 go test ./internal/evidence/`",
+			goldenRotatedPath, err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("the rotated manifest does not match %s.\n%s\n"+
+			"If a record_sha256 changed, canonicalization changed, and every manifest already on "+
+			"disk now fails VerifyChain. Decide that deliberately, then run "+
+			"`AUTOMAT_UPDATE_GOLDEN=1 go test ./internal/evidence/` and review the diff.",
+			goldenRotatedPath, firstDiff(string(want), string(got)))
+	}
+}
+
+// TestTheRotatedGoldenManifestVerifies is TestTheGoldenManifestVerifies's
+// counterpart: the committed bytes must load, verify, and end in a rotate
+// record rather than a custody transfer.
+func TestTheRotatedGoldenManifestVerifies(t *testing.T) {
+	data, err := os.ReadFile(goldenRotatedPath) //nolint:gosec // fixed testdata path
+	if err != nil {
+		t.Fatalf("read %s: %v", goldenRotatedPath, err)
+	}
+	m, err := Decode(data, testSigner(t).Verifier())
+	if err != nil {
+		t.Fatalf("the committed rotated golden manifest does not load and verify: %v", err)
+	}
+	if !m.Closed() {
+		t.Error("the rotated golden manifest does not end with a terminal record")
+	}
+	last := m.Last()
+	if last == nil || last.Operation != OpRotate {
+		t.Fatalf("the rotated golden manifest's last record is %v, want a rotate record", last)
+	}
+	if last.Rotation == nil || last.Rotation.SuccessorManifestID == "" {
+		t.Error("the rotated golden manifest's terminal record carries no successor manifest id")
+	}
+}
+
 // reMailbox matches something that could be a mailbox: a local part of at least two
 // characters, an @, and a dotted domain with a plausible TLD. The same shape
 // internal/bundle's golden test uses — loose enough to catch a real address that got

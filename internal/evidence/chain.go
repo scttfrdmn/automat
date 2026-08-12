@@ -11,13 +11,15 @@ import (
 )
 
 // ErrClosed is returned by Append against a manifest whose chain has already been
-// ended by a custody-transfer record.
+// ended by a terminal record — a custody transfer or a rotation.
 //
 // A distinguished error rather than a generic one because the caller's correct
-// response is specific: not retry, not park, but stop — the operator handed this
-// account's custody to somebody else, and automat writing another record would be
-// automat claiming to still manage it.
-var ErrClosed = errors.New("the chain has been closed by a custody-transfer record")
+// response is specific: not retry, not park, but stop. For a custody transfer,
+// the operator handed this account's custody to somebody else, and automat
+// writing another record would be automat claiming to still manage it. For a
+// rotation, the chain continues in the successor manifest named on the rotate
+// record — Append on the old one is simply the wrong file to write to.
+var ErrClosed = errors.New("the chain has been closed by a terminal record")
 
 // NewManifest starts a manifest with no records.
 //
@@ -60,11 +62,7 @@ func NewManifest(id, accountID, organizationID, createdAt string) *Manifest {
 // required is a policy decision above this package.
 func (m *Manifest) Append(rec Record, signer Signer) (*Record, error) {
 	if m.Closed() {
-		return nil, fmt.Errorf("cannot append a %s record to manifest %s: %w — custody passed to %s "+
-			"on %s. Appending would be automat claiming to still manage an account it handed over; "+
-			"if custody came back, that is a new manifest, not a continuation of this one",
-			rec.Operation, safe(m.Meta.ID), ErrClosed,
-			safe(m.Last().Custody.Transferee), m.Last().Custody.EffectiveDate)
+		return nil, closedChainError(rec.Operation, m)
 	}
 
 	rec.Sequence = len(m.Records)
@@ -127,6 +125,98 @@ func (m *Manifest) Append(rec Record, signer Signer) (*Record, error) {
 	m.Meta = candidateMeta
 	m.Records = append(m.Records, rec)
 	return &m.Records[len(m.Records)-1], nil
+}
+
+// Rotate closes m with a terminal OpRotate record and returns that record
+// alongside a fresh manifest that continues the chain under newManifestID
+// (Q23, docs/open-questions.md).
+//
+// It appends through the existing Append machinery rather than duplicating any
+// of its hashing, linking, or validation — Rotate's own job is only to build the
+// rotate record's content and to construct the successor. m is mutated in
+// place (the terminal record lands in m.Records, same as any other Append) and
+// the caller is responsible for writing both m and the returned manifest to
+// disk; Rotate performs no I/O.
+//
+// The successor's Meta.GenesisSHA is NOT set here. It is records[0].RecordSHA,
+// computed by Append when the successor's own first record lands — the same
+// rule NewManifest follows for every manifest, rotated or not. Nothing here
+// links the successor's genesis to the predecessor's final hash: that would be
+// Meta.PredecessorSHA, a distinct, later, also-needs-pre-approval change
+// (ROADMAP.md's Q23 entry) that this function deliberately does not build. The
+// two manifests are connected only by the named pointer —
+// RotationInfo.SuccessorManifestID on the terminal record — not by a
+// cryptographic link between them.
+func (m *Manifest) Rotate(newManifestID, reason string, now string, signer Signer) (*Record, *Manifest, error) {
+	rec := Record{
+		Timestamp: now,
+		Operation: OpRotate,
+		Operator:  m.rotationOperator(),
+		Rotation: &RotationInfo{
+			SuccessorManifestID: newManifestID,
+			Reason:              reason,
+			RecordCount:         len(m.Records) + 1,
+		},
+		ToolVersion: m.lastToolVersion(),
+	}
+	terminal, err := m.Append(rec, signer)
+	if err != nil {
+		return nil, nil, fmt.Errorf("rotate manifest %s: %w", safe(m.Meta.ID), err)
+	}
+	successor := NewManifest(newManifestID, m.Meta.AccountID, m.Meta.OrganizationID, now)
+	return terminal, successor, nil
+}
+
+// rotationOperator is who Rotate's own terminal record names as having
+// performed the operation.
+//
+// Rotation is automat's own housekeeping, triggered by a threshold rather than
+// by any principal's request, but every record's operator.arn is required
+// (validate.go) and an empty one would fail Append's own validation. The last
+// record's operator is the identity that was actually running when the
+// threshold was crossed — the same run that is about to call Rotate — so it is
+// the honest answer, not a guess at one.
+func (m *Manifest) rotationOperator() Operator {
+	if last := m.Last(); last != nil {
+		return last.Operator
+	}
+	return Operator{}
+}
+
+// lastToolVersion mirrors rotationOperator for tool_version, which is also
+// required on every record.
+func (m *Manifest) lastToolVersion() string {
+	if last := m.Last(); last != nil {
+		return last.ToolVersion
+	}
+	return ""
+}
+
+// closedChainError builds Append's refusal for a closed manifest, naming
+// whichever terminal kind actually closed it — a custody transfer or a
+// rotation — since the caller's correct next step differs between the two.
+func closedChainError(op Operation, m *Manifest) error {
+	last := m.Last()
+	switch {
+	case last.Operation == OpRotate && last.Rotation != nil:
+		return fmt.Errorf("cannot append a %s record to manifest %s: %w — rotated to %s "+
+			"(%s, at %d records). Appending here would leave a record filed in a chain nothing "+
+			"reads past its terminal record; continue at the successor manifest instead",
+			op, safe(m.Meta.ID), ErrClosed, safe(last.Rotation.SuccessorManifestID),
+			safe(last.Rotation.Reason), last.Rotation.RecordCount)
+	case last.Custody != nil:
+		return fmt.Errorf("cannot append a %s record to manifest %s: %w — custody passed to %s "+
+			"on %s. Appending would be automat claiming to still manage an account it handed over; "+
+			"if custody came back, that is a new manifest, not a continuation of this one",
+			op, safe(m.Meta.ID), ErrClosed, safe(last.Custody.Transferee), last.Custody.EffectiveDate)
+	default:
+		// Unreachable through Validate-gated writes: Closed() is true only when the
+		// last record IsTerminal(), and both terminal kinds are covered above. Kept
+		// as a safety net rather than a panic, because Append must never crash on a
+		// caller-supplied manifest.
+		return fmt.Errorf("cannot append a %s record to manifest %s: %w",
+			op, safe(m.Meta.ID), ErrClosed)
+	}
 }
 
 // refuseUnverifiedSignatures holds the writer to DESIGN §11a's honesty rule.

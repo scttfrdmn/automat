@@ -1587,3 +1587,56 @@ which is what `800-171r2` compiles — version `3.0.0` pairs with Rev 3 and is o
 documented endpoint shape worked on the first attempt, substituting `sp_800_171a_1_0_0` for
 `800-171r2`'s working `sp_800_171_2_0_0` — no third-party reference-implementation lookup was
 needed this time, unlike `800-171r2`'s own retrieval (docs/open-questions.md Q4).
+
+## evidence-manifest/v1 — `rotate` operation and `rotation` block (RATIFIED 2026-08-11)
+
+Widens the closed `operation` enum with a new terminal kind, closing Q23 (docs/open-questions.md
+— "`verify`'s evidence manifest has no rotation, and an hourly cron reaches the size ceiling in
+about a year"). **Approved by the maintainer 2026-08-11**, as part of the same Phase 0
+consolidated pre-approval ask that ratified `objectives-catalog/v1` above (ROADMAP.md's Phase 0
+section) — a rule-6 schema decision, not a draft.
+
+**Why a new operation and a new object, not a reuse of `custody_transfer`.**
+`custody_transfer.successor_manifest_id` is already schema-legal and, before this change,
+unused — reusing that shape for rotation was the first thing considered. It does not fit:
+`custody_transfer` requires `transferee`, `effective_date`, and `reason` fields that answer "who
+holds the chain now and from when", and rotation has no answer to that question. Nobody's
+custody changes when a manifest reaches its record-count threshold; the file is simply full and a
+fresh one continues it. A rotate record carrying an empty `transferee` would read as a transfer
+to nobody, which is not what happened. So `rotation` is a **separate** object
+(`successor_manifest_id`, `reason`, `record_count`), mirroring `custody_transfer`'s pairing
+discipline rather than its fields: required on a `rotate` record and forbidden on every other
+kind (the same `if`/`then`/`else` shape as `custody_transfer`'s own rule), and — unlike
+`custody_transfer.successor_manifest_id`, which is optional because a transfer may leave
+automat's scope entirely — `rotation.successor_manifest_id` is **required**: a rotation is
+automat's own housekeeping and always produces a successor.
+
+**The terminal-record rule generalizes to cover both kinds.** `records[]`'s "at most one, and it
+must be last" invariant — the half JSON Schema can state (`not`/`contains`/`minContains`) plus the
+half it structurally cannot (an array's final position, enforced only by
+`internal/evidence`'s chain validator, per the existing `custody_transfer` entry below) — now
+applies to `rotate` records too, via a new `is_rotate` `$def` mirroring `is_custody_transfer` and
+an added `allOf` clause. `internal/evidence.Record.IsCustodyTransfer` is renamed
+`IsTerminal` and returns true for either kind, with every call site (`chain.go`'s `Append`,
+`validate.go`'s chain-order check) updated to the one generalized check — there is no second,
+divergent "is this the end of the chain" test living alongside it.
+
+**Trigger: automatic, at a 2,000-record threshold** (`evidence.RotateThresholdRecords`), well
+under the ~8,971-record ceiling `MaxManifestBytes` implies at roughly 935 bytes per record —
+rotation is meant to happen long before a manifest is at risk of refusing a write, not as a
+last-resort recovery from one. Wired into `verify` (the command Q23 is actually about — a `verify`
+run on an hourly cron against one account is the shape that reaches the ceiling) and,
+defensively, into `vend` (far less likely to reach the threshold in one run, but cheap to guard).
+Neither rotates silently: both print an explicit notice ("Rotated evidence manifest: `<path>` is
+now closed (N records); continuing at `<path>`") — this project's stated preference for explicit,
+disclosed behavior over implicit magic (ROADMAP.md's Q23 entry).
+
+**`Meta.PredecessorSHA` — a cryptographic link between the closed manifest and its successor — is
+explicitly NOT part of this change.** ROADMAP.md's Q23 entry names it as "a distinct, later,
+also-needs-pre-approval ask" and is explicit that the two must not be bundled. This change
+connects the two manifests only by the named pointer (`rotation.successor_manifest_id`); the
+successor's own `genesis_sha256` is computed the ordinary way, by `Append`, when its first record
+lands — nothing here seeds it from the predecessor's final hash.
+
+No migration: every manifest written before this change has no `rotate` records and remains
+valid, since the new operation and block are additive to the closed sets they widen.

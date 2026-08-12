@@ -1176,7 +1176,7 @@ operator sees today changes as a result of this fix; it is groundwork for when
 parameter of a live detective control, at which point this warning is the operator's only
 present-day signal that it might be worth a second look before that day arrives.
 
-### Q23 — `verify`'s evidence manifest has no rotation, and an hourly cron reaches the size ceiling in about a year
+### Q23 — `verify`'s evidence manifest has no rotation, and an hourly cron reaches the size ceiling in about a year — **DECIDED AND DONE (2026-08-12)**
 
 Raised at AUDIT-4's M3. `writeVerifyEvidence` appends a record on every run, success or
 drift, with no pruning — the same unconditional-append shape `vend` uses, but `vend` runs
@@ -1185,21 +1185,49 @@ once per account while `verify` is meant to run repeatedly against the same acco
 .MaxManifestBytes`'s 8 MiB ceiling, an hourly cron reaches the ceiling in about a year, at
 which point every later run fails closed (`Write` refuses a manifest over the limit).
 
-**What the code assumes now:** the manifest grows forever and something else (an
-operator, a future command) prunes it before that matters.
+**What the code assumed before this landed:** the manifest grows forever and something
+else (an operator, a future command) prunes it before that matters.
 
-**Why this is not fixed rather than disclosed.** Every fix changes what the manifest means
-to a reader. Rotation (archiving old records elsewhere) breaks the hash chain's single
-linear history unless the archive is itself chained to the live manifest. Appending only
-on a change of finding (skip the write when this run's result matches the last one) would
-make "no record in the last N days" ambiguous between "checked and clean the whole time"
-and "not running" — exactly the silence DESIGN §11's evidence chain exists to prevent. A
-separate clean-run log alongside the manifest is a new document with its own review.
+**Decision (pre-approved by the maintainer 2026-08-11, Phase 0 — see ROADMAP.md): rotate,
+via a new terminal record kind, at a 2,000-record threshold.** Reusing
+`Custody.SuccessorManifestID`'s already-schema-legal shape was considered and rejected —
+`Custody` requires `transferee`/`reason` fields that answer "who has it now and from when",
+which rotation has no answer to, since nobody's custody changes when a manifest fills up.
+Instead: a new `OpRotate` operation, widening the closed `operation` enum, and a new
+`RotationInfo` type/`rotation` schema block (`successor_manifest_id`, `reason`,
+`record_count`) — the same pairing discipline `custody_transfer` already follows, at both
+the schema and the Go-validator layers.
 
-**Not blocking anything today.** No deployment has run `verify` on a cron long enough to
-approach the ceiling. Recorded so the fix, whichever shape it takes, is chosen
-deliberately rather than discovered as a production incident when a manifest first
-refuses a write.
+The existing terminal-record check (`Record.IsCustodyTransfer`) generalized to
+`Record.IsTerminal`, returning true for either terminal kind, with exactly one check used
+everywhere `Append`'s and `VerifyChain`'s "nothing may follow this" rule is enforced —
+there is no separate, divergent second check. `Manifest.Rotate` appends the terminal
+`rotate` record through the existing `Append` machinery (no duplicated hashing or linking)
+and constructs a fresh successor `*Manifest` via `NewManifest`. The successor's
+`Meta.GenesisSHA` is computed normally, the ordinary way, when its own first record is
+later appended — no `Meta.PredecessorSHA` or any other cross-manifest hash link was built.
+That remains a **distinct, later, also-needs-pre-approval ask**, named but explicitly not
+bundled with this one.
+
+Wired into both `verify` (`cmd/automat/verify.go`'s `writeVerifyEvidence` — the exact
+command this question is about) and, defensively, `vend` (`cmd/automat/vend.go`'s
+`writeVendEvidence` — far less likely to reach the threshold in one run, but cheap to
+guard against a heavily-resumed one). A shared `cmd/automat/evidencerotate.go` holds the
+naming scheme (`<accountID>-2.json`, `-3`, ... — the first name not already on disk) and
+the write sequence (write the record; if the threshold is crossed, close the manifest with
+the terminal record, rewrite it, and print an explicit, non-silent notice — "Rotated
+evidence manifest: `<path>` is now closed (N records); continuing at `<path>`" — never
+implicit magic). The next run for that account resolves the live file by following the
+rotation pointer (`openActiveManifest`) rather than assuming the account-named file is
+still current; a custody-transferred manifest's successor is deliberately NOT followed the
+same way, since custody having left automat's hands means automat has no further business
+writing to whatever continues it.
+
+**Status: done.** `schema/evidence-manifest-v1.schema.json` gained the `rotate` operation
+and `rotation` block (RATIFIED, not draft — schema/CHANGELOG.md's entry), `internal
+/evidence` gained the Go types, validation, `Manifest.Rotate`, and a golden fixture ending
+in a rotate record, and both write paths are wired. `Meta.PredecessorSHA` remains the
+recorded, separate, not-yet-approved residual.
 
 ### Q25 — three of the 110 DFARS SPRS weights are not a single scalar in the DoD's own source
 

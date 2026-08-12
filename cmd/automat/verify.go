@@ -164,7 +164,7 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			if serr != nil {
 				return serr
 			}
-			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer)
+			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer, out)
 			if werr != nil {
 				return werr
 			}
@@ -416,8 +416,19 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // Freshness is deliberately not part of this: a lapsed review_by is a warning
 // that changes no exit code (DESIGN §11a, §12), and a record marked failure for
 // a date would say the account drifted when nothing about it moved.
+//
+// # Rotation (Q23, docs/open-questions.md)
+//
+// `verify` is the command this project's own research backlog names as the one
+// that actually reaches evidence.RotateThresholdRecords in practice — run
+// hourly against the same account, it appends an OpVerify record every time,
+// success or drift, with no pruning (docs/open-questions.md's Q23 entry). So the
+// active manifest is resolved by following any rotation pointer already in
+// place (openActiveManifest), and after this run's record is appended, the
+// threshold is checked and a rotation performed if crossed
+// (writeManifestWithRotation) — visibly, via a notice on out, never silently.
 func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
-	policy *verify.PolicyReport, signer evidence.Signer) (string, *evidence.Manifest, error) {
+	policy *verify.PolicyReport, signer evidence.Signer, out io.Writer) (string, *evidence.Manifest, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
@@ -425,9 +436,9 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 		return "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
-	path := dir.Path(accountID)
 
-	m, err := dir.LoadOrNew(accountID, accountID, "", now.UTC().Format(time.RFC3339), nil)
+	nowStr := now.UTC().Format(time.RFC3339)
+	key, m, err := openActiveManifest(dir, accountID, "", nowStr)
 	if err != nil {
 		return "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"automat refuses to continue a chain it cannot read, because a manifest rewritten from "+
@@ -440,7 +451,7 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 		outcome, recErr = evidence.OutcomeFailure, verifyDriftError(policy)
 	}
 	rec := evidence.Record{
-		Timestamp: now.UTC().Format(time.RFC3339),
+		Timestamp: nowStr,
 		Operation: evidence.OpVerify,
 		Outcome:   outcome,
 		Operator:  evidence.Operator{ARN: callerARN},
@@ -456,10 +467,7 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 	if _, err := m.Append(rec, signer); err != nil {
 		return "", nil, fmt.Errorf("cannot append the verify record for account %s: %w", accountID, err)
 	}
-	if err := dir.Write(m, accountID); err != nil {
-		return "", nil, err
-	}
-	return path, m, nil
+	return writeManifestWithRotation(dir, key, m, signer, nowStr, out)
 }
 
 // verifyDriftError is the RecordError a drifted verify record carries.

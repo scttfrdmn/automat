@@ -33,14 +33,22 @@
     },
 
     "records": {
-      "description": "Append-only. records[0].previous_sha256 is 64 zeros; every later record chains to its predecessor's record_sha256. A custody-transfer record ends the chain: at most one may appear, and nothing may follow it. This schema can express the 'at most one' half; that it is the LAST record is a chain-level invariant a validator must enforce, because JSON Schema cannot refer to an array's final position.",
+      "description": "Append-only. records[0].previous_sha256 is 64 zeros; every later record chains to its predecessor's record_sha256. A custody-transfer or rotate record ends the chain: at most one of each may appear, and nothing may follow either. This schema can express the 'at most one' half for each kind; that a terminal record is the LAST record overall is a chain-level invariant a validator must enforce, because JSON Schema cannot refer to an array's final position.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/record" },
       "not": {
         "contains": { "$ref": "#/$defs/is_custody_transfer" },
         "minContains": 2
-      }
+      },
+      "allOf": [
+        {
+          "not": {
+            "contains": { "$ref": "#/$defs/is_rotate" },
+            "minContains": 2
+          }
+        }
+      ]
     }
   },
 
@@ -129,6 +137,13 @@
       "properties": { "operation": { "const": "custody-transfer" } }
     },
 
+    "is_rotate": {
+      "description": "Matches a record whose operation is rotate. Used only by the records[] uniqueness constraint; a manifest may be rotated once (Q23, docs/open-questions.md) — a rotated manifest is closed, so a second rotate record in the same file would mean the chain was reopened after it closed.",
+      "type": "object",
+      "required": ["operation"],
+      "properties": { "operation": { "const": "rotate" } }
+    },
+
     "custody_transfer": {
       "description": "Why and to whom custody of this manifest passed, and the artifact state at the moment it did. Required on a custody-transfer record and forbidden on every other kind, so a transfer cannot be smuggled onto an ordinary operation.",
       "type": "object",
@@ -161,6 +176,28 @@
         "successor_manifest_id": {
           "description": "Identity of the manifest that continues the record, when the successor keeps one. Optional: a transfer out of automat's scope entirely has no successor manifest, and inventing one would be a false claim of continuity. The round-trip field with the longest fuse: the person who follows this pointer is a successor auditor years later, holding nothing but this record.",
           "$ref": "#/$defs/round_trip_id"
+        }
+      }
+    },
+
+    "rotation": {
+      "description": "Why this manifest was closed by rotation and which manifest continues it (Q23, docs/open-questions.md). Required on a rotate record and forbidden on every other kind, mirroring custody_transfer's pairing rule. A SEPARATE object from custody_transfer, not a reuse of it with fields left empty: custody_transfer's transferee and effective_date answer 'who has it now and from when', which rotation has no answer to — nobody's custody changes when a manifest fills up, the file is just full. Unlike custody_transfer.successor_manifest_id, this one is REQUIRED: a rotation is automat's own housekeeping that always produces a successor, never a hand-off out of automat's scope.",
+      "type": "object",
+      "required": ["successor_manifest_id", "reason", "record_count"],
+      "additionalProperties": false,
+      "properties": {
+        "successor_manifest_id": {
+          "description": "Identity of the manifest that continues the chain. Required, unlike custody_transfer's own successor pointer: rotation always has one.",
+          "$ref": "#/$defs/round_trip_id"
+        },
+        "reason": {
+          "description": "Why the chain was rotated here. A chain that stops without a reason is indistinguishable from one that was truncated.",
+          "$ref": "#/$defs/prose"
+        },
+        "record_count": {
+          "description": "How many records were in the old manifest at the moment of rotation, including this terminal one.",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -198,7 +235,8 @@
             "verify",
             "assess",
             "reclaim",
-            "custody-transfer"
+            "custody-transfer",
+            "rotate"
           ]
         },
         "outcome": {
@@ -316,6 +354,7 @@
           }
         },
         "custody_transfer": { "$ref": "#/$defs/custody_transfer" },
+        "rotation": { "$ref": "#/$defs/rotation" },
         "tool_version": { "type": "string", "minLength": 1 },
         "previous_sha256": {
           "description": "record_sha256 of the preceding record; 64 zeros for the first.",
@@ -368,6 +407,27 @@
             }
           },
           "else": { "not": { "required": ["custody_transfer"] } }
+        },
+        {
+          "description": "rotation belongs to a rotate record and to nothing else, mirroring the custody_transfer pairing rule above. A rotation also carries no artifact, no enforcement, and no environment profile: it enforces nothing and runs under no profile, it only closes this manifest and points at its successor.",
+          "if": { "$ref": "#/$defs/is_rotate" },
+          "then": {
+            "required": ["rotation"],
+            "not": {
+              "anyOf": [
+                { "required": ["artifact"] },
+                { "required": ["enforcement"] },
+                { "required": ["environment_profile"] }
+              ]
+            },
+            "properties": {
+              "outcome": {
+                "description": "A rotation that did not happen does not end a chain. Record the failure as the operation that failed; the chain continues.",
+                "const": "success"
+              }
+            }
+          },
+          "else": { "not": { "required": ["rotation"] } }
         }
       ]
     }

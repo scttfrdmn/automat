@@ -106,6 +106,24 @@ func TestTheCommittedGoldenFileSatisfiesThePublishedSchema(t *testing.T) {
 	}
 }
 
+// TestTheCommittedRotatedGoldenFileSatisfiesThePublishedSchema is the rotation
+// sibling to TestTheCommittedGoldenFileSatisfiesThePublishedSchema, checking
+// the rotate/rotation shapes specifically (Q23).
+func TestTheCommittedRotatedGoldenFileSatisfiesThePublishedSchema(t *testing.T) {
+	sch := compileManifestSchema(t)
+	data, err := os.ReadFile(goldenRotatedPath) //nolint:gosec // fixed testdata path
+	if err != nil {
+		t.Fatalf("read %s: %v", goldenRotatedPath, err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("parse %s: %v", goldenRotatedPath, err)
+	}
+	if err := sch.Validate(doc); err != nil {
+		t.Errorf("%s violates the published schema:\n%v", goldenRotatedPath, err)
+	}
+}
+
 // validManifest is the base document the rejection cases mutate: two ordinary
 // records, every optional block absent, so each case introduces exactly one defect.
 func validManifest(t *testing.T) *Manifest {
@@ -423,6 +441,78 @@ func TestGoAndSchemaAgreeOnRejection(t *testing.T) {
 			relink(t, m)
 		}},
 
+		// Rotation (Q23). Both validators express these, for the same reason the
+		// custody-transfer cases above are duplicated: automat's writer never
+		// round-trips through the schema.
+		{"a rotation on an ordinary record", func(t *testing.T, m *Manifest) {
+			m.Records[1].Rotation = &RotationInfo{
+				SuccessorManifestID: acct + "-2", Reason: "reached 2000 records", RecordCount: 2,
+			}
+			relink(t, m)
+		}},
+		{"a rotate record with no payload", func(t *testing.T, m *Manifest) {
+			m.Records[1] = Record{
+				Timestamp: ts1, Operation: OpRotate,
+				Operator: Operator{ARN: operator}, ToolVersion: toolVer,
+			}
+			relink(t, m)
+		}},
+		{"a rotation with no successor manifest id", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Rotation.SuccessorManifestID = ""
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation with no reason", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Rotation.Reason = ""
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation whose successor id is not typeable", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Rotation.SuccessorManifestID = "444455556666-2; rm -rf ."
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation with a zero record count", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Rotation.RecordCount = 0
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a failed rotation", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Outcome = OutcomeFailure
+			r.Err = &RecordError{Message: "the rotation did not happen"}
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation carrying an artifact", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Artifact = &DocRef{ID: "cmmc-l1", ContentSHA256: otherHash}
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation carrying enforcement", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.Enforcement = &Enforcement{ConformancePackARN: "arn:aws:config:us-east-1:1:pack/x"}
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation carrying a profile", func(t *testing.T, m *Manifest) {
+			r := rotateRec(ts1)
+			r.EnvProfile = &EnvProfileRef{ID: "research-cui", ContentSHA256: otherHash,
+				VerifiedSignatures: []VerifiedSignature{}}
+			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"two rotations", func(t *testing.T, m *Manifest) {
+			m.Records[0] = rotateRec(ts0)
+			m.Records[1] = rotateRec(ts1)
+			relink(t, m)
+		}},
+
 		// Signature.
 		{"a signature with an unknown algorithm", func(t *testing.T, m *Manifest) {
 			relink(t, m)
@@ -571,6 +661,10 @@ func TestTheSchemaAcceptsWhatGoAccepts(t *testing.T) {
 			r := transferRec(ts1)
 			r.Custody.SuccessorManifestID = ""
 			m.Records[1] = r
+			relink(t, m)
+		}},
+		{"a rotation closing the chain", func(t *testing.T, m *Manifest) {
+			m.Records[1] = rotateRec(ts1)
 			relink(t, m)
 		}},
 		{"a signed record", func(t *testing.T, m *Manifest) {
@@ -772,6 +866,31 @@ func TestTheSchemaStillCannotSayCustodyTransferIsLast(t *testing.T) {
 	err := m.Validate()
 	if err == nil {
 		t.Fatal("internal/evidence accepted a record after a custody transfer, which the schema " +
+			"structurally cannot catch — this is the only thing standing there")
+	}
+	if !strings.Contains(err.Error(), "JSON Schema cannot state this") {
+		t.Errorf("the error must say why the rule lives in Go:\n%v", err)
+	}
+}
+
+// TestTheSchemaStillCannotSayRotateIsLast is
+// TestTheSchemaStillCannotSayCustodyTransferIsLast's counterpart for the other
+// terminal kind (Q23): the schema's records[] rule can say "at most one rotate
+// record" but not "and it must be last", so a hand-edited document with a
+// record after one is rejected only by the Go-side IsTerminal check.
+func TestTheSchemaStillCannotSayRotateIsLast(t *testing.T) {
+	sch := compileManifestSchema(t)
+	m := validManifest(t)
+	m.Records[0] = rotateRec(ts0)
+	relink(t, m)
+
+	if err := sch.Validate(asGeneric(t, m)); err != nil {
+		t.Fatalf("the published schema now rejects a record after a rotate record. That is an "+
+			"improvement, not a failure — update this test alongside its custody-transfer sibling:\n%v", err)
+	}
+	err := m.Validate()
+	if err == nil {
+		t.Fatal("internal/evidence accepted a record after a rotate record, which the schema " +
 			"structurally cannot catch — this is the only thing standing there")
 	}
 	if !strings.Contains(err.Error(), "JSON Schema cannot state this") {

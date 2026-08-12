@@ -228,6 +228,7 @@ func (r *Record) validate(path string, p *problems) {
 	r.Signature.validate(path+".signature", p)
 	r.validateOutcomePairing(path, p)
 	r.validateCustodyPairing(path, p)
+	r.validateRotationPairing(path, p)
 }
 
 // validateOutcomePairing holds the error block and the outcome to each other.
@@ -257,7 +258,7 @@ func (r *Record) validateOutcomePairing(path string, p *problems) {
 // types and never round-trips them through the JSON Schema on the write path, so a
 // rule that lives only in schema/ is a rule automat's own writer is not held to.
 func (r *Record) validateCustodyPairing(path string, p *problems) {
-	if !r.IsCustodyTransfer() {
+	if r.Operation != OpCustodyTransfer {
 		if r.Custody != nil {
 			p.add(path+".custody_transfer", fmt.Sprintf("is present on a %s record", r.Operation),
 				"a transfer must be the operation, not a passenger on one: on any other record "+
@@ -293,6 +294,46 @@ func (r *Record) validateCustodyPairing(path string, p *problems) {
 		p.add(path+".environment_profile", "is present on a custody-transfer record",
 			"a transfer runs under no environment profile; the artifact in force is "+
 				"custody_transfer.final_artifact")
+	}
+}
+
+// validateRotationPairing enforces the rotation pairing rules in Go, mirroring
+// validateCustodyPairing for the other terminal kind (Q23).
+//
+// Duplicated from the schema for the same reason validateCustodyPairing is:
+// automat writes manifests with these types and never round-trips them through
+// the JSON Schema on the write path.
+func (r *Record) validateRotationPairing(path string, p *problems) {
+	if r.Operation != OpRotate {
+		if r.Rotation != nil {
+			p.add(path+".rotation", fmt.Sprintf("is present on a %s record", r.Operation),
+				"a rotation must be the operation, not a passenger on one: on any other record "+
+					"nothing reads for it, and the chain would end where no reader looks")
+		}
+		return
+	}
+	if r.Rotation == nil {
+		p.add(path+".rotation", "is absent on a rotate record",
+			"name the successor manifest, the reason, and the record count; a chain that ends "+
+				"without them is indistinguishable from one that was truncated")
+	} else {
+		r.Rotation.validate(path+".rotation", p)
+	}
+	if r.Outcome != "" && r.Outcome != OutcomeSuccess {
+		p.add(path+".outcome", fmt.Sprintf("is %s on a rotate record", r.Outcome),
+			"a rotation that did not happen does not end a chain; record the failure as the "+
+				"operation that failed and let the chain continue")
+	}
+	if r.Artifact != nil {
+		p.add(path+".artifact", "is present on a rotate record",
+			"a rotation enforces nothing; it only closes this manifest and points at its successor")
+	}
+	if r.Enforcement != nil && !r.Enforcement.empty() {
+		p.add(path+".enforcement", "is present on a rotate record", "a rotation deploys nothing")
+	}
+	if r.EnvProfile != nil {
+		p.add(path+".environment_profile", "is present on a rotate record",
+			"a rotation runs under no environment profile")
 	}
 }
 
@@ -481,6 +522,32 @@ func (c *Custody) validate(path string, p *problems) {
 	}
 }
 
+// validate checks a RotationInfo block, mirroring Custody.validate's structure
+// for the fields the two share (a required round-trip successor id, a required
+// prose reason) and adding the record count, which Custody has no analogue of.
+func (ri *RotationInfo) validate(path string, p *problems) {
+	if ri == nil {
+		return
+	}
+	if ri.SuccessorManifestID == "" || !reRoundTripID.MatchString(ri.SuccessorManifestID) {
+		p.add(path+".successor_manifest_id",
+			fmt.Sprintf("%s is not a usable manifest id", safe(ri.SuccessorManifestID)),
+			"use letters, digits, dot, dash, and underscore: this is the pointer a reader follows "+
+				"years from now to find where the chain continues, so it has to be a thing they can "+
+				"type. Unlike a custody transfer, a rotation always has a successor — omitting it "+
+				"is not a legitimate case here")
+	}
+	if ri.Reason == "" || !reProse.MatchString(ri.Reason) || len(ri.Reason) > maxProse {
+		p.add(path+".reason", fmt.Sprintf("%s is empty or not printable single-line text", safe(ri.Reason)),
+			"say why the manifest was rotated here; a chain that stops without a reason is "+
+				"indistinguishable from one that was truncated")
+	}
+	if ri.RecordCount < 1 {
+		p.add(path+".record_count", fmt.Sprintf("is %d", ri.RecordCount),
+			"the count includes this terminal record, so it is never less than 1")
+	}
+}
+
 func (s *Signature) validate(path string, p *problems) {
 	if s == nil {
 		return
@@ -511,10 +578,11 @@ func (s *Signature) validate(path string, p *problems) {
 //     isolation, so it accepts a chain whose records are numbered 0, 0, 7.
 //  2. The links hold: records[0].previous_sha256 is 64 zeros, and every later
 //     record's link is its predecessor's record_sha256. This is the chain.
-//  3. A custody-transfer record is LAST. The schema can say "at most one" and
-//     cannot say "last", because JSON Schema cannot refer to an array's final
-//     position — so this is the half that lives here, pinned from the other side
-//     by artifact.TestTheSchemaCannotSayCustodyTransferIsLast.
+//  3. A terminal record — custody-transfer or rotate — is LAST. The schema can
+//     say "at most one" and cannot say "last", because JSON Schema cannot refer
+//     to an array's final position — so this is the half that lives here,
+//     pinned from the other side by
+//     artifact.TestTheSchemaCannotSayCustodyTransferIsLast.
 //
 // Not enforced: that timestamps increase. See the package comment — an NTP
 // correction between two vends is not tampering, and refusing the manifest would
@@ -543,12 +611,16 @@ func (m *Manifest) validateChain(p *problems) {
 						"between these two")
 			}
 		}
-		if r.IsCustodyTransfer() && i != len(m.Records)-1 {
-			p.add(path, fmt.Sprintf("is a custody-transfer record with %d record(s) after it",
-				len(m.Records)-1-i),
-				"custody passes out of automat's hands once and the chain ends there; a record "+
-					"after a transfer means either the transfer was false or the chain was "+
-					"reopened after it closed. JSON Schema cannot state this, which is why it is "+
+		if r.IsTerminal() && i != len(m.Records)-1 {
+			why := "custody passes out of automat's hands once and the chain ends there"
+			if r.Operation == OpRotate {
+				why = "a rotation closes this manifest once and the chain ends there; the successor " +
+					"manifest is where it continues"
+			}
+			p.add(path, fmt.Sprintf("is a %s record with %d record(s) after it",
+				r.Operation, len(m.Records)-1-i),
+				why+"; a record after it means either the terminal record was false or the chain "+
+					"was reopened after it closed. JSON Schema cannot state this, which is why it is "+
 					"checked here")
 		}
 	}
