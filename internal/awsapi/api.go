@@ -38,6 +38,14 @@ type STSAPI interface {
 // even by mistake. DescribeResourcePolicy is here because it is the only
 // documented way to see a delegation policy from a member account, and per
 // DESIGN §16 how much of it is visible from that side is still an open question.
+//
+// ListAccounts is here for preflight's account-count check: the
+// accounts-per-organization quota (L-29A0C5DF) is meaningless without knowing
+// how many accounts already occupy it, and a SUSPENDED (reclaim'd) account
+// still counts against it for at least the 90-day reinstatement window
+// (docs/reclaim-design.md, docs/open-questions.md Q26) — so this must list
+// every account regardless of status, unlike OrgVendAPI.ListAccountsForParent
+// which scopes to a subtree for a different purpose (inventory under one OU).
 type OrgAPI interface {
 	DescribeOrganization(ctx context.Context, in *organizations.DescribeOrganizationInput,
 		optFns ...func(*organizations.Options)) (*organizations.DescribeOrganizationOutput, error)
@@ -49,6 +57,8 @@ type OrgAPI interface {
 		optFns ...func(*organizations.Options)) (*organizations.DescribeOrganizationalUnitOutput, error)
 	DescribeResourcePolicy(ctx context.Context, in *organizations.DescribeResourcePolicyInput,
 		optFns ...func(*organizations.Options)) (*organizations.DescribeResourcePolicyOutput, error)
+	ListAccounts(ctx context.Context, in *organizations.ListAccountsInput,
+		optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
 }
 
 // The mutating half of Organizations is THREE interfaces, not one, and the split

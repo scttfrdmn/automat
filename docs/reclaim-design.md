@@ -138,6 +138,14 @@ tightened SCP instead of closing it — is not an alternative to `reclaim` for m
 quota either.** Holding does not free a slot any more than reclaiming does; the two commands
 answer different questions about an account's disposition, and neither moves this quota.
 
+**`preflight`'s `checkQuota` now reads the current account count (`organizations:ListAccounts`,
+every status, not only `ACTIVE`) alongside the quota value, and reports whichever of the two it
+can read** (`internal/preflight/preflight.go`) — an operator gets "7 of 10 accounts" or, in
+exactly the new-payer-account shape this section describes, "5 accounts exist; the ceiling
+could not be read" instead of a bare, uncomparable number. This closes part of the gap above:
+an operator now has some visibility before vending rather than discovering the wall mid-vend.
+Q26's own question — exactly how long a closed account's slot stays occupied — remains open.
+
 ## Evidence-record shape
 
 **A plain `OpReclaim` record, not a variant of custody-transfer.** `evidence.OpReclaim` is

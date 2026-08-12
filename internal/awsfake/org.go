@@ -5,6 +5,7 @@ package awsfake
 
 import (
 	"context"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -244,6 +245,53 @@ func (f *Org) DescribeResourcePolicy(_ context.Context, _ *organizations.Describ
 			},
 		},
 	}, nil
+}
+
+// ListAccounts implements awsapi.OrgAPI.
+//
+// Unlike ListAccountsForParent's fake (orgvend.go), which hardcodes
+// AccountStatusActive because a vend only ever creates active accounts, this
+// reports each account's REAL status, including SUSPENDED — preflight's
+// account-count check exists precisely because a closed account still
+// occupies a slot against the accounts-per-organization quota (at least
+// within reclaim's 90-day reinstatement window; docs/reclaim-design.md,
+// docs/open-questions.md Q26), and a fake that only ever returned ACTIVE
+// accounts would hide the one bug this check was written to catch.
+//
+// f.Accounts is nil unless a test wires it to the shared *OrgState the write
+// fakes use (see Accounts's own doc comment) — a read-only Org fake built
+// with NewOrg alone has no accounts to report, the same "no accounts known"
+// answer ListParents gives an unlinked fake for an unknown child.
+func (f *Org) ListAccounts(_ context.Context, in *organizations.ListAccountsInput,
+	_ ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error) {
+	f.Record("ListAccounts")
+	if err := f.err("ListAccounts"); err != nil {
+		return nil, err
+	}
+	if f.Accounts == nil {
+		return &organizations.ListAccountsOutput{}, nil
+	}
+	s := f.Accounts
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.accounts))
+	for id := range s.accounts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	ids, next := page(s, ids, in.NextToken, in.MaxResults)
+	out := make([]orgtypes.Account, 0, len(ids))
+	for _, id := range ids {
+		a := s.accounts[id]
+		out = append(out, orgtypes.Account{
+			Id:     aws.String(a.ID),
+			Arn:    aws.String(s.accountARN(a.ID)),
+			Name:   aws.String(a.Name),
+			Email:  aws.String(a.Email),
+			Status: a.Status,
+		})
+	}
+	return &organizations.ListAccountsOutput{Accounts: out, NextToken: next}, nil
 }
 
 var _ awsapi.OrgAPI = (*Org)(nil)

@@ -1285,3 +1285,11 @@ rediscovering the first and guessing at the second.
 not free or avoid consuming this quota either — an active held account counts exactly like
 any other active account. `hold` and `reclaim` are not alternative quota-management
 strategies; neither one moves this number.
+
+**Partial mitigation landed:** `preflight`'s `checkQuota` now also reads the current account
+count via `organizations:ListAccounts` (every status, since this is exactly the fact this
+question is about) and reports it alongside the quota value whenever either is readable
+(`internal/preflight/preflight.go`). An operator can now see "9 of 10, one more vend is fine"
+versus "10 of 10, the next vend fails outright" before running `vend`, rather than finding out
+mid-vend — but this only reports the count, not how long a `SUSPENDED` account keeps occupying
+its slot, so the question above is unaffected.

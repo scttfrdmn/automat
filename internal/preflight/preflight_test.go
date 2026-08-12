@@ -5,6 +5,7 @@ package preflight
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -506,7 +507,7 @@ func TestPreflightIssuesNoMutatingCall(t *testing.T) {
 		"DescribeOrganization": true, "ListRoots": true, "ListParents": true,
 		"DescribeOrganizationalUnit": true, "DescribeResourcePolicy": true,
 		"GetCallerIdentity": true, "AssumeRole": true, "SimulatePrincipalPolicy": true,
-		"GetServiceQuota": true,
+		"GetServiceQuota": true, "ListAccounts": true,
 	}
 	for _, calls := range [][]string{org.Calls(), stsFake.Calls()} {
 		for _, c := range calls {
@@ -640,5 +641,149 @@ func TestNilOptionalClientsAreSkipped(t *testing.T) {
 		if strings.Contains(c.Name, "quota") || c.Name == "permission simulation" {
 			t.Errorf("check %q was emitted with no client configured", c.Name)
 		}
+	}
+}
+
+// TestQuotaAndCountBothReadable covers outcome (a): both are known, headroom
+// remains, and the report states both the count and the percentage.
+func TestQuotaAndCountBothReadable(t *testing.T) {
+	org := awsfake.NewOrg(testOrg, managementAccount)
+	state := awsfake.NewOrgState(testOrg, managementAccount)
+	for i := 0; i < 7; i++ {
+		state.SeedAccount(fmt.Sprintf("acct-%d", i), fmt.Sprintf("acct-%d@example.edu", i), state.RootID)
+	}
+	org.Accounts = state
+
+	rep := run(t, &Runner{
+		STS: awsfake.NewSTS(managementAccount), Org: org, Quota: awsfake.NewQuota(),
+	})
+	if !rep.AccountQuotaKnown || rep.AccountQuota != 10 {
+		t.Errorf("AccountQuota = %v (known=%v), want 10/true", rep.AccountQuota, rep.AccountQuotaKnown)
+	}
+	if !rep.AccountCountKnown || rep.AccountCount != 7 {
+		t.Errorf("AccountCount = %v (known=%v), want 7/true", rep.AccountCount, rep.AccountCountKnown)
+	}
+	c := find(t, rep, "accounts-per-organization quota")
+	if c.Result != Pass {
+		t.Errorf("with headroom remaining, result = %s, want pass", c.Result)
+	}
+	if !strings.Contains(c.Detail, "7 of 10") {
+		t.Errorf("detail %q does not state both the count and the ceiling", c.Detail)
+	}
+}
+
+// TestQuotaAtCeilingEscalates covers the loud half of outcome (a): the count
+// meeting the quota is the exact difference between "one more vend is fine"
+// and "the next vend fails outright" that motivated this whole change, and it
+// must not be reported identically to a report with headroom to spare.
+func TestQuotaAtCeilingEscalates(t *testing.T) {
+	org := awsfake.NewOrg(testOrg, managementAccount)
+	state := awsfake.NewOrgState(testOrg, managementAccount)
+	for i := 0; i < 10; i++ {
+		state.SeedAccount(fmt.Sprintf("acct-%d", i), fmt.Sprintf("acct-%d@example.edu", i), state.RootID)
+	}
+	org.Accounts = state
+
+	rep := run(t, &Runner{
+		STS: awsfake.NewSTS(managementAccount), Org: org, Quota: awsfake.NewQuota(),
+	})
+	c := find(t, rep, "accounts-per-organization quota")
+	if c.Result != Fail {
+		t.Errorf("at the ceiling, result = %s, want fail (a loud, visible warning)", c.Result)
+	}
+	if strings.TrimSpace(c.Grant) == "" {
+		t.Error("a failing check must name its remediation (CLAUDE.md rule 7)")
+	}
+	if !strings.Contains(c.Grant, "90-day") {
+		t.Errorf("grant %q should warn that closing an account will not free the slot within the "+
+			"90-day reinstatement window", c.Grant)
+	}
+}
+
+// TestQuotaKnownCountUnknown covers outcome (b): ListAccounts is denied, so the
+// count must be reported unknown rather than silently omitted, while the quota
+// value already read is still reported.
+func TestQuotaKnownCountUnknown(t *testing.T) {
+	org := awsfake.NewOrg(testOrg, managementAccount)
+	org.Errs["ListAccounts"] = awsfake.AccessDenied("organizations:ListAccounts")
+
+	rep := run(t, &Runner{
+		STS: awsfake.NewSTS(managementAccount), Org: org, Quota: awsfake.NewQuota(),
+	})
+	if !rep.AccountQuotaKnown || rep.AccountQuota != 10 {
+		t.Errorf("AccountQuota = %v (known=%v), want 10/true", rep.AccountQuota, rep.AccountQuotaKnown)
+	}
+	if rep.AccountCountKnown {
+		t.Error("AccountCountKnown = true after ListAccounts was denied")
+	}
+	c := find(t, rep, "accounts-per-organization quota")
+	if c.Result != Unknown {
+		t.Errorf("result = %s, want unknown: the count could not be read", c.Result)
+	}
+	if !strings.Contains(c.Detail, "10") || !strings.Contains(c.Detail, "unknown") {
+		t.Errorf("detail %q must state the known quota AND that the count is unknown, not omit it", c.Detail)
+	}
+	if !strings.Contains(c.Grant, "organizations:ListAccounts") {
+		t.Errorf("grant %q must name the newly-needed permission", c.Grant)
+	}
+}
+
+// TestCountKnownQuotaUnknown covers outcome (c) — the exact scenario hit live:
+// GetServiceQuota returns NoSuchResourceException on a new payer account, while
+// ListAccounts works fine. This must report the count with a clear statement
+// that the ceiling itself is unknown, which is itself useful information.
+func TestCountKnownQuotaUnknown(t *testing.T) {
+	org := awsfake.NewOrg(testOrg, managementAccount)
+	state := awsfake.NewOrgState(testOrg, managementAccount)
+	for i := 0; i < 5; i++ {
+		state.SeedAccount(fmt.Sprintf("acct-%d", i), fmt.Sprintf("acct-%d@example.edu", i), state.RootID)
+	}
+	org.Accounts = state
+	// NoSuchResourceException, exactly as awsfake.Quota returns when a quota
+	// code is absent from Values — the same shape a brand-new payer account
+	// produced live for L-29A0C5DF.
+	quota := &awsfake.Quota{Values: map[string]float64{}}
+
+	rep := run(t, &Runner{
+		STS: awsfake.NewSTS(managementAccount), Org: org, Quota: quota,
+	})
+	if rep.AccountQuotaKnown {
+		t.Error("AccountQuotaKnown = true after GetServiceQuota returned NoSuchResourceException")
+	}
+	if !rep.AccountCountKnown || rep.AccountCount != 5 {
+		t.Errorf("AccountCount = %v (known=%v), want 5/true", rep.AccountCount, rep.AccountCountKnown)
+	}
+	c := find(t, rep, "accounts-per-organization quota")
+	if c.Result != Unknown {
+		t.Errorf("result = %s, want unknown: the ceiling could not be read", c.Result)
+	}
+	if !strings.Contains(c.Detail, "5 accounts") {
+		t.Errorf("detail %q must state the known count", c.Detail)
+	}
+	if !strings.Contains(c.Detail, "new-payer-specific ceiling") {
+		t.Errorf("detail %q should explain that a new payer account can carry an unpublished, "+
+			"lower ceiling — the live finding this case exists to surface", c.Detail)
+	}
+}
+
+// TestNeitherQuotaNorCountReadable covers outcome (d): today's original
+// fallback, unchanged — both reads fail and the check says so without
+// inventing either number.
+func TestNeitherQuotaNorCountReadable(t *testing.T) {
+	org := awsfake.NewOrg(testOrg, managementAccount)
+	org.Errs["ListAccounts"] = awsfake.AccessDenied("organizations:ListAccounts")
+	quota := awsfake.NewQuota()
+	quota.Err = awsfake.AccessDenied("servicequotas:GetServiceQuota")
+
+	rep := run(t, &Runner{
+		STS: awsfake.NewSTS(managementAccount), Org: org, Quota: quota,
+	})
+	if rep.AccountQuotaKnown || rep.AccountCountKnown {
+		t.Errorf("expected both unknown, got quotaKnown=%v countKnown=%v",
+			rep.AccountQuotaKnown, rep.AccountCountKnown)
+	}
+	c := find(t, rep, "accounts-per-organization quota")
+	if c.Result != Unknown || c.Certainty != Undetermined {
+		t.Errorf("result/certainty = %s/%s, want unknown/undetermined", c.Result, c.Certainty)
 	}
 }

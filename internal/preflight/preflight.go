@@ -140,6 +140,18 @@ type Report struct {
 	AccountQuota      float64
 	AccountQuotaKnown bool
 
+	// AccountCount is how many accounts currently exist in the organization —
+	// every status (ACTIVE, SUSPENDED, PENDING_CLOSURE), not only ACTIVE ones,
+	// because a closed account still occupies a slot against AccountQuota for
+	// at least the 90-day reinstatement window (docs/reclaim-design.md's "A
+	// closed account still counts against the account-count quota",
+	// docs/open-questions.md Q26). AccountCountKnown is whether automat could
+	// read it. This is read independently of AccountQuota and can succeed or
+	// fail on its own: a brand-new payer account has been observed exposing
+	// ListAccounts but not GetServiceQuota for L-29A0C5DF.
+	AccountCount      int
+	AccountCountKnown bool
+
 	// DelegationVisible reports whether automat could read the org's delegation
 	// policy. In MEMBER state this is usually Unknown — see DESIGN §16, still an
 	// open question pending live testing.
@@ -528,44 +540,168 @@ func (r *Runner) checkDelegationVisibility(ctx context.Context, rep *Report) {
 	}
 }
 
-// checkQuota reads the accounts-per-organization quota.
+// quotaListPageCap bounds the ListAccounts pagination loop, mirroring
+// internal/org's listPageCap: a stop against a service that returns the same
+// NextToken forever, or a fake with a paging bug, not a real limit on account
+// count.
+const quotaListPageCap = 500
+
+// checkQuota reads the accounts-per-organization quota AND the current account
+// count, and reports on whatever combination of the two it could read.
 //
-// Reported because the default is low and raising it is a support request with
-// lead time (DESIGN §3, fact 11) — a fact worth learning while planning rather
-// than three accounts into a vend. An unreadable quota stays unknown; inventing
-// the documented default would be a confident wrong number.
+// The quota alone was the whole check until a live sandbox org exposed why that
+// is not enough: it was refused CreateAccount at only 5 total accounts because a
+// new-payer-account org can carry a temporary, lower, unpublished ceiling below
+// the standard default — and separately, GetServiceQuota for L-29A0C5DF returned
+// NoSuchResourceException for that same account, meaning a new payer account may
+// not expose this quota code via Service Quotas at all
+// (docs/reclaim-design.md's "A closed account still counts against the
+// account-count quota", docs/open-questions.md Q26). A quota with no count next
+// to it cannot tell an operator "one more vend is fine" from "the next vend
+// fails outright", so the two reads are independent and each degrades on its
+// own: this function reports whichever pair of {known, unknown} it ends up
+// with, rather than collapsing four situations into the single "could not read
+// the quota" case that used to be the only kind of failure here.
+//
+// The count is every account regardless of status — ACTIVE, SUSPENDED,
+// PENDING_CLOSURE — because a SUSPENDED account closed by `reclaim` still
+// occupies its slot against this same quota for at least the 90-day
+// reinstatement window; counting only ACTIVE accounts would under-report
+// exactly the number an operator most needs before deciding whether headroom
+// exists for one more vend.
 func (r *Runner) checkQuota(ctx context.Context, rep *Report) {
 	if r.Quota == nil {
 		return
 	}
+
+	quotaVal, quotaOK, quotaErr := r.readAccountQuota(ctx)
+	count, countOK, countErr := r.readAccountCount(ctx)
+
+	switch {
+	case quotaOK && countOK:
+		rep.AccountQuota = quotaVal
+		rep.AccountQuotaKnown = true
+		rep.AccountCount = count
+		rep.AccountCountKnown = true
+		var pct float64
+		if quotaVal > 0 {
+			pct = float64(count) / quotaVal * 100
+		}
+		// count >= quota, not a 90%-style early-warning threshold: the motivating
+		// case is "9 of 10, one more vend is fine" versus "10 of 10, the next vend
+		// fails outright" (this function's own doc comment), and only the second
+		// is a state where CreateAccount will actually be refused. A lower
+		// threshold would put a loud warning on the first case, which is not a
+		// problem yet and should not be reported as though it already is one.
+		if quotaVal > 0 && float64(count) >= quotaVal {
+			rep.Add(Check{
+				Name: "accounts-per-organization quota", Result: Fail, Certainty: Observed,
+				Detail: fmt.Sprintf("%d of %.0f accounts (%.0f%%) — at the ceiling; the next "+
+					"organizations:CreateAccount call will be refused outright", count, quotaVal, pct),
+				Grant: "raising L-29A0C5DF is a Service Quotas increase request to AWS Support, " +
+					"with lead time; closing an unused account will not help within the 90-day " +
+					"reinstatement window, because a SUSPENDED account still occupies its slot " +
+					"(docs/reclaim-design.md)",
+			})
+			return
+		}
+		rep.Add(Check{
+			Name: "accounts-per-organization quota", Result: Pass, Certainty: Observed,
+			Detail: fmt.Sprintf("%d of %.0f accounts (%.0f%%); raising the quota is a Service Quotas "+
+				"request with lead time", count, quotaVal, pct),
+		})
+
+	case quotaOK && !countOK:
+		rep.AccountQuota = quotaVal
+		rep.AccountQuotaKnown = true
+		rep.Add(Check{
+			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,
+			Detail: fmt.Sprintf("the quota is %.0f accounts; the current count is unknown — could "+
+				"not read it: %s", quotaVal, countErr.Error()),
+			Grant: "optional: grant organizations:ListAccounts so preflight can compare the current " +
+				"count against the quota before a vend, rather than discovering the limit mid-vend",
+		})
+
+	case !quotaOK && countOK:
+		rep.AccountCount = count
+		rep.AccountCountKnown = true
+		detail := fmt.Sprintf("%d accounts exist; the ceiling to compare against could not be read: %s",
+			count, quotaErr.Error())
+		grant := "optional: grant servicequotas:GetServiceQuota so automat can compare the count " +
+			"against the ceiling before a vend"
+		if awsapi.APIErrorCode(quotaErr) == "NoSuchResourceException" {
+			detail += " — this account may have a new-payer-specific ceiling below the standard " +
+				"default (docs/reclaim-design.md), which Service Quotas may not expose at all"
+			grant = "no grant fixes this: a brand-new payer account has been observed not exposing " +
+				"L-29A0C5DF via Service Quotas at all; ask AWS Support directly what this " +
+				"organization's account-count ceiling is"
+		}
+		rep.Add(Check{
+			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,
+			Detail: detail, Grant: grant,
+		})
+
+	default:
+		rep.Add(Check{
+			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,
+			Detail: fmt.Sprintf("could not read the quota (%s) or the current account count (%s)",
+				quotaErr.Error(), countErr.Error()),
+			Grant: "optional: grant servicequotas:GetServiceQuota and organizations:ListAccounts so " +
+				"automat can warn you before a vend hits the account limit; the default limit is low " +
+				"and raising it takes a support request",
+		})
+	}
+}
+
+// readAccountQuota is the GetServiceQuota half of checkQuota, split out so the
+// two reads can fail independently — exactly what happened live, where this
+// call returned NoSuchResourceException on an account that ListAccounts worked
+// fine against.
+func (r *Runner) readAccountQuota(ctx context.Context) (value float64, ok bool, err error) {
 	out, err := r.Quota.GetServiceQuota(ctx, &servicequotas.GetServiceQuotaInput{
 		ServiceCode: aws.String(quotaServiceOrganizations),
 		QuotaCode:   aws.String(quotaCodeAccountsPerOrg),
 	})
 	if err != nil {
-		rep.Add(Check{
-			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,
-			Detail: "could not read the quota: " + err.Error(),
-			Grant: "optional: grant servicequotas:GetServiceQuota so automat can warn you before a vend " +
-				"hits the account limit; the default limit is low and raising it takes a support request",
-		})
-		return
+		return 0, false, err
 	}
 	if out.Quota == nil || out.Quota.Value == nil {
-		rep.Add(Check{
-			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,
-			Detail: "the quota API returned no value",
-			Grant:  "retry; if this persists, check the quota in the Service Quotas console",
-		})
-		return
+		return 0, false, errors.New("the quota API returned no value")
 	}
-	rep.AccountQuota = *out.Quota.Value
-	rep.AccountQuotaKnown = true
-	rep.Add(Check{
-		Name: "accounts-per-organization quota", Result: Pass, Certainty: Observed,
-		Detail: fmt.Sprintf("%.0f accounts; raising it is a Service Quotas request with lead time",
-			rep.AccountQuota),
-	})
+	return *out.Quota.Value, true, nil
+}
+
+// readAccountCount pages through ListAccounts and counts every account
+// regardless of status.
+//
+// Paginated the same defensive way internal/org's own list loops are
+// (internal/org/ou.go's findOU, internal/org/ensure.go's listPageCap): a
+// bounded loop that refuses a repeated NextToken, because a service that never
+// terminates its own pagination is worse silently accepted than loudly refused
+// — an ensure operation that hangs mid-vend leaves an account half-configured
+// with no record of how far it got, and this read is no different.
+func (r *Runner) readAccountCount(ctx context.Context) (count int, ok bool, err error) {
+	var token *string
+	seen := map[string]bool{}
+	for i := 0; i < quotaListPageCap; i++ {
+		out, err := r.Org.ListAccounts(ctx, &organizations.ListAccountsInput{NextToken: token})
+		if err != nil {
+			return 0, false, err
+		}
+		count += len(out.Accounts)
+		next := out.NextToken
+		if next == nil || aws.ToString(next) == "" {
+			return count, true, nil
+		}
+		if seen[aws.ToString(next)] {
+			return 0, false, errors.New("listing accounts: the same pagination token came back " +
+				"twice, so the list does not terminate; automat stopped rather than looping")
+		}
+		seen[aws.ToString(next)] = true
+		token = next
+	}
+	return 0, false, fmt.Errorf("listing accounts: stopped after %d pages without reaching the end "+
+		"of the list", quotaListPageCap)
 }
 
 // vendActions are the Organizations actions a vend needs, paired with which
