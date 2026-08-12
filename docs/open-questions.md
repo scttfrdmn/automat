@@ -1183,3 +1183,46 @@ separate clean-run log alongside the manifest is a new document with its own rev
 approach the ceiling. Recorded so the fix, whichever shape it takes, is chosen
 deliberately rather than discovered as a production incident when a manifest first
 refuses a write.
+
+### Q25 — three of the 110 DFARS SPRS weights are not a single scalar in the DoD's own source
+
+Raised while transcribing the weight table Q10 already decided the sourcing procedure for
+(pass 1, 2026-08-11, against the DoD's own "NIST SP 800-171 DoD Assessment Methodology,
+Version 1.2.1, June 24, 2020" — `www.acq.osd.mil`). 107 of the 110 requirements have a
+fixed weight (5, 3, or 1) that subtracts cleanly from the starting score of 110. Three do
+not, and the source itself — not a transcription ambiguity — is why:
+
+- **3.5.3** (multifactor authentication): the DoD document assigns **5** if MFA is not
+  implemented at all, **3** if MFA is implemented for privileged/remote access but not for
+  general network access — a conditional value depending on a fact automat's own scoring
+  arithmetic (`docs/open-questions.md`'s "Assessment Stages 1-2" backlog track, ROADMAP.md)
+  has nowhere to read from a plain operator determination of "satisfied" or "not satisfied".
+- **3.13.11** (FIPS-validated cryptography): the same 5-or-3 shape — 5 if no cryptography is
+  employed at all, 3 if cryptography is employed but not FIPS-validated.
+- **3.12.4** (system security plan): the source does not assign a point value at all. It is
+  marked **NA** — the absence of an SSP is documented as blocking the assessment from
+  proceeding, not as a deduction alongside the other 109.
+
+**What the code assumes now:** nothing yet — no scoring code exists (`internal/assess`
+Stage 2 is not built; see ROADMAP.md's "Assessment Stages 1-2" backlog track). The weight
+table itself, as a document, has three entries that cannot be a bare integer the way the
+other 107 are.
+
+**Why this is not decided here.** It is a real design question about what `assess`'s
+determination vocabulary and scoring arithmetic need to express, not a transcription
+question — a perfect, disagreement-free second pass through the same DoD document
+reproduces exactly these three non-scalar entries, because the ambiguity is the source's,
+not the transcriber's. Two shapes are visible without having picked one: (a) model these
+three as a small, closed sub-vocabulary the operator determination selects among (e.g.
+`3.5.3` admits `not-implemented` (weight 5), `partial` (weight 3), or `satisfied` (weight
+0) rather than the binary satisfied/not-satisfied every other requirement uses), or (b)
+treat `3.12.4`'s NA specifically as a hard precondition — no SSP, no score at all, distinct
+from every other requirement's ordinary deduction — while resolving `3.5.3`/`3.13.11` as
+(a). Whichever is chosen has to be decided before Stage 2's scoring code is written, not
+discovered partway through it.
+
+**Not blocking anything today.** No scoring code exists yet to get this wrong. Recorded
+now, ahead of Stage 2, so the weight table's own schema/type (still to be drafted; see
+ROADMAP.md, "Assessment Stages 1-2," items 2 and 5) is designed to hold these three
+correctly from the start rather than retrofitted once a `null`/scalar mismatch surfaces in
+code.
