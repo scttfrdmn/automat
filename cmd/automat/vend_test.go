@@ -102,7 +102,7 @@ func vendProfileJSON(t *testing.T, mutate func(map[string]any)) string {
 			"iam_user_access_to_billing": "DENY",
 		},
 		"baseline": map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 		},
 	}
 	if mutate != nil {
@@ -122,6 +122,18 @@ func vendProfileJSON(t *testing.T, mutate func(map[string]any)) string {
 // testVendOU is the OU a vend places accounts into. Seeded with a fixed id so the
 // profile document can name it, which is what a real profile does.
 const testVendOU = "ou-exam-vendtest1"
+
+// testConfigRecorderBucket is the pre-existing, operator-named delivery
+// bucket every fixture profile below names — internal/baseline's
+// EnsureDeliveryChannel scope cut requires one whenever
+// baseline.config_recorder.enabled is true (ROADMAP.md's "internal/
+// baseline, slices 2-9" item 3: automat does not provision the bucket
+// itself). Without it, vendConfigRecorderStep's own EnsureDeliveryChannel
+// call refuses at what is effectively plan time, before any AWS call — see
+// internal/baseline/configrecorder_test.go's
+// TestEnsureDeliveryChannelRefusesWithNoBucket for that refusal in
+// isolation.
+const testConfigRecorderBucket = "campus-config-evidence"
 
 // packageDir is where this test file lives, captured before any test can chdir.
 //
@@ -288,23 +300,22 @@ func TestVendFromMemberBrokersAccountAndOUOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vend from MEMBER: %v", err)
 	}
-	if n := f.STS.CallCount("AssumeRole"); n != 3 {
-		// Three assumptions, not one: the vendor role is assumed ONCE and
+	if n := f.STS.CallCount("AssumeRole"); n != 4 {
+		// Four assumptions, not one: the vendor role is assumed ONCE and
 		// shared across the plan and apply passes (one client built at
 		// vendOrgClient, before either runs), but vendAutomationRoleStep
 		// assumes OrganizationAccountAccessRole into the just-created CHILD
-		// account for the automation role, and vendConformancePackStep
-		// assumes it AGAIN for a separate awsapi.ConfigAPI client (a third
-		// role ARN — same role name, but childConfigClient builds its own
-		// session rather than sharing childIAMRoleClient's) — both only in
-		// the apply pass (the plan pass reports each as unknown rather than
-		// assuming anything, matching vendPolicySpecs' own first-vend plan
-		// behavior). Asserted so a future change that rebuilds the
-		// vendor-role client per pass, or that skips either child
-		// assumption, updates this rather than silently changing the count
-		// either direction.
-		t.Errorf("AssumeRole called %d times, want 3 (vendor role once, automation role once, "+
-			"conformance pack once)", n)
+		// account for the automation role, and vendConformancePackStep and
+		// vendConfigRecorderStep each assume it AGAIN for their own
+		// awsapi.ConfigAPI client (childConfigClient builds a fresh session
+		// per call rather than sharing one) — all three only in the apply
+		// pass (the plan pass reports each as unknown rather than assuming
+		// anything, matching vendPolicySpecs' own first-vend plan behavior).
+		// Asserted so a future change that rebuilds the vendor-role client
+		// per pass, or that skips a child assumption, updates this rather
+		// than silently changing the count either direction.
+		t.Errorf("AssumeRole called %d times, want 4 (vendor role once, automation role once, "+
+			"conformance pack once, Config recorder once)", n)
 	}
 	if got := aws.ToString(f.STS.LastAssumeRole.ExternalId); got != "" {
 		// The LAST AssumeRole is the automation-role one, which carries NO
@@ -485,10 +496,14 @@ func TestVendDryRunWritesNothing(t *testing.T) {
 	if !strings.Contains(out, "Plan:") {
 		t.Errorf("--dry-run printed no plan:\n%s", out)
 	}
-	// The plan must also carry step 5's absence and the unknown policy set, because
-	// the plan is the only thing a --dry-run operator sees.
+	// The plan must also carry the Config recorder step and the unknown
+	// policy set, because the plan is the only thing a --dry-run operator
+	// sees. Step 5 is now fully performed for this default profile (it names
+	// no disable_org_access_role_after_vend), so there is no "in-child
+	// baseline (DESIGN §7 step 5)" unknown to check for — see
+	// stepFiveMissingPieces' own doc comment.
 	for _, want := range []string{
-		"in-child baseline (DESIGN §7 step 5)",
+		"Config recorder and delivery channel",
 		"the account does not exist yet",
 	} {
 		if !strings.Contains(out, want) {
@@ -724,28 +739,21 @@ func TestVendManifestChainValidates(t *testing.T) {
 		evidence.OpAccountCreate,
 		evidence.OpAccountMove,
 		evidence.OpSCPEnsure,
-		// The one that must be present precisely because the work was NOT done.
-		evidence.OpBaselineApply,
 	} {
 		if !ops[want] {
 			t.Errorf("the manifest carries no %s record: %v", want, ops)
 		}
 	}
 
-	// The baseline record is parked, not successful, and that is the honesty gate
-	// for this whole commit: a manifest with account-create and scp-ensure and no
-	// baseline-apply reads as a baseline that happened.
-	for _, r := range m.Records {
-		if r.Operation != evidence.OpBaselineApply {
-			continue
-		}
-		if r.Outcome != evidence.OutcomeParked {
-			t.Errorf("the baseline-apply record's outcome is %q; this build performs no in-child "+
-				"baseline work, so it must be parked", r.Outcome)
-		}
-		if r.Err == nil || !strings.Contains(r.Err.Message, "step 5") {
-			t.Errorf("the baseline-apply record does not say which step was skipped: %+v", r.Err)
-		}
+	// No parked baseline-apply record: the default profile names no
+	// disable_org_access_role_after_vend, so stepFiveMissingPieces reports
+	// nothing outstanding, and recordBaselineIsMissing's own doc comment
+	// says a parked record naming nothing missing would be dishonest in the
+	// opposite direction — DESIGN §7 step 5 is fully performed for this
+	// profile, so there is nothing for a baseline-apply record to disclose.
+	if ops[evidence.OpBaselineApply] {
+		t.Errorf("the manifest carries a baseline-apply record even though step 5 is fully "+
+			"performed for this profile: %v", ops)
 	}
 
 	// The enforcement summary names the policies as ARNs, not ids.
@@ -860,7 +868,7 @@ func TestVendCreatesTheAutomationRoleUnderTheProfilesChosenName(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"automation_role": map[string]any{"name": "campus-audit"},
 		}
 	})
@@ -885,7 +893,7 @@ func TestVendSkipsTheAutomationRoleWhenTheProfileSaysNotTo(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"automation_role": map[string]any{"create": false},
 		}
 	})
@@ -1048,7 +1056,7 @@ func TestVendEnablesAndDisablesTheProfilesRegions(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
 		}
 	})
@@ -1063,7 +1071,7 @@ func TestVendEnablesAndDisablesTheProfilesRegions(t *testing.T) {
 
 	profile2 := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"regions":         map[string]any{"disable": []any{"ap-northeast-1"}},
 		}
 	})
@@ -1084,7 +1092,7 @@ func TestVendFirstPlanReportsRegionEnablementAsUnknown(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
 		}
 	})
@@ -1165,7 +1173,7 @@ func TestVendRegionEnablementParksOnDenial(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
 		}
 	})
@@ -1178,7 +1186,7 @@ func TestVendRegionEnablementParksOnDenial(t *testing.T) {
 
 	profile2 := vendProfileJSON(t, func(doc map[string]any) {
 		doc["baseline"] = map[string]any{
-			"config_recorder": map[string]any{"enabled": true},
+			"config_recorder": map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
 			"regions":         map[string]any{"enable": []any{"ap-south-1"}},
 		}
 	})
@@ -1330,6 +1338,141 @@ func TestVendConformancePackParksOnPutDenial(t *testing.T) {
 	}
 	if !strings.Contains(msg, "baseline-protection") {
 		t.Errorf("the error does not mention baseline-protection (BP.CFG-3):\n%s", msg)
+	}
+
+	m := loadVendManifest(t, accountID)
+	var parked *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpBaselineApply && m.Records[i].Outcome == evidence.OutcomeParked {
+			parked = &m.Records[i]
+		}
+	}
+	if parked == nil {
+		t.Fatalf("the manifest carries no parked baseline-apply record: %+v", m.Records)
+	}
+}
+
+// TestVendDeploysTheConfigRecorderAndDeliveryChannel is this slice's own
+// CLI-level headline test — the exact parallel
+// TestVendDeploysTheConformancePackFromTheCompiledControlSets draws for the
+// conformance pack: a fresh vend against vendProfileJSON's default profile
+// (config_recorder.enabled: true, delivery_bucket set) must both configure
+// AND start the recorder, and create the delivery channel pointed at the
+// fixture bucket.
+func TestVendDeploysTheConfigRecorderAndDeliveryChannel(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+
+	if n := child.CallCount("PutConfigurationRecorder"); n != 1 {
+		t.Errorf("PutConfigurationRecorder called %d times, want 1", n)
+	}
+	if n := child.CallCount("StartConfigurationRecorder"); n != 1 {
+		t.Errorf("StartConfigurationRecorder called %d times, want 1", n)
+	}
+	if !child.RecorderRunning["default"] {
+		t.Error("the recorder is not marked running after a fresh vend")
+	}
+	if n := child.CallCount("PutDeliveryChannel"); n != 1 {
+		t.Errorf("PutDeliveryChannel called %d times, want 1", n)
+	}
+	ch, ok := child.DeliveryChannels["default"]
+	if !ok {
+		t.Fatal("no delivery channel named \"default\" was created")
+	}
+	if got := *ch.S3BucketName; got != testConfigRecorderBucket {
+		t.Errorf("delivery channel bucket = %q, want %q", got, testConfigRecorderBucket)
+	}
+}
+
+// TestVendFirstPlanReportsTheConfigRecorderAsUnknown mirrors
+// TestVendFirstPlanReportsTheConformancePackAsUnknown: a plan against a
+// profile whose account does not exist yet cannot assume into it, so it
+// must report the Config recorder and delivery channel as
+// unknown-but-would-happen.
+func TestVendFirstPlanReportsTheConfigRecorderAsUnknown(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	out, _, err := runCLI(t, g, vendArgs(profile, "--dry-run")...)
+	if err != nil {
+		t.Fatalf("vend --dry-run: %v", err)
+	}
+	if !strings.Contains(out, "Config recorder and delivery channel") {
+		t.Errorf("the first-vend plan does not mention the Config recorder:\n%s", out)
+	}
+	if got := len(f.State.AccountIDs()); got != 0 {
+		t.Errorf("--dry-run created %d accounts", got)
+	}
+}
+
+// TestVendConfigRecorderReRunIsIdempotent is CLAUDE.md rule 4: a second
+// vend against an unchanged recorder and delivery channel must issue no
+// further write.
+func TestVendConfigRecorderReRunIsIdempotent(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+	child.Reset()
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("second vend: %v", err)
+	}
+	for _, op := range []string{"PutConfigurationRecorder", "StartConfigurationRecorder", "PutDeliveryChannel"} {
+		if n := child.CallCount(op); n != 0 {
+			t.Errorf("%s called %d times on an unchanged re-vend, want 0", op, n)
+		}
+	}
+}
+
+// TestVendConfigRecorderParksOnPutDenial is BP.CFG-1's own Q13-shaped
+// scenario reached from the CLI, mirroring
+// TestVendConformancePackParksOnPutDenial: config:PutConfigurationRecorder
+// denied on a re-vend must PARK, not fail outright or silently succeed, and
+// the manifest and the error must both say so.
+func TestVendConfigRecorderParksOnPutDenial(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{
+				"enabled":         true,
+				"delivery_bucket": testConfigRecorderBucket,
+				// Narrower than the schema default, so the second vend
+				// (naming no override) finds drift to correct — the same
+				// technique TestEnsureConfigRecorderDriftTriggersUpdate uses
+				// at the package level.
+				"all_supported_resources": false,
+			},
+		}
+	})
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+	child.PutConfigurationRecorderErr = awsfake.AccessDenied("config:PutConfigurationRecorder")
+
+	profile2 := vendProfileJSON(t, nil)
+	_, _, err := runCLI(t, g, vendArgs(profile2, "--name", "Genomics")...)
+	if err == nil {
+		t.Fatal("a re-vend against a recorder whose PutConfigurationRecorder is denied returned no error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "PARKED") {
+		t.Errorf("the error does not say the vend is parked:\n%s", msg)
+	}
+	if !strings.Contains(msg, "baseline-protection") {
+		t.Errorf("the error does not mention baseline-protection (BP.CFG-1):\n%s", msg)
 	}
 
 	m := loadVendManifest(t, accountID)
@@ -2040,18 +2183,56 @@ func TestVendBirthCertificateCarriesTheHashes(t *testing.T) {
 		"cmmc-l1 sha256:",
 		"baseline-protection sha256:",
 		"dfars-7012 sha256:",
-		"PARTLY APPLIED",
 		"evidence",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the birth certificate does not carry %q:\n%s", want, out)
 		}
 	}
+	// The default profile names no baseline.disable_org_access_role_after_vend
+	// (the one remaining, deliberately deferred piece of step 5), so this
+	// profile's step 5 is FULLY performed — no "PARTLY APPLIED" line should
+	// appear, unlike before this slice landed.
+	if strings.Contains(out, "PARTLY APPLIED") {
+		t.Errorf("the birth certificate reports step 5 as partly applied even though this "+
+			"profile's baseline is fully performed:\n%s", out)
+	}
 	// Every control set the vend compiled, including the one the profile did not
 	// name: baseline-protection is always compiled in (DESIGN §10), so a birth
 	// certificate that omitted it would understate what the account is subject to.
 	if strings.Count(out, "sha256:") < 4 {
 		t.Errorf("the birth certificate carries fewer hashes than the vend compiled:\n%s", out)
+	}
+}
+
+// TestVendBirthCertificateReportsThePartlyAppliedCaseForDisableOrgAccessRole
+// is stepFiveMissingPieces' own remaining case, now that the automation
+// role, region enablement, attestation stubs, the Config recorder and
+// delivery channel, and the conformance pack are all established: a profile
+// that also sets baseline.disable_org_access_role_after_vend (ROADMAP's
+// slice 8, deliberately not built — the mechanism is a real open design
+// question DESIGN §7 does not settle) must still see "PARTLY APPLIED" and a
+// parked baseline-apply record, the disclosure TestVendBirthCertificateCarriesTheHashes
+// confirms is ABSENT for a profile that asks for nothing more.
+func TestVendBirthCertificateReportsThePartlyAppliedCaseForDisableOrgAccessRole(t *testing.T) {
+	g, _ := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder":                    map[string]any{"enabled": true, "delivery_bucket": testConfigRecorderBucket},
+			"disable_org_access_role_after_vend": true,
+		}
+	})
+
+	out, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	if !strings.Contains(out, "PARTLY APPLIED") {
+		t.Errorf("the birth certificate does not report step 5 as partly applied for a profile "+
+			"naming disable_org_access_role_after_vend:\n%s", out)
+	}
+	if !strings.Contains(out, "disabling further use of") {
+		t.Errorf("the birth certificate does not name the missing piece:\n%s", out)
 	}
 }
 

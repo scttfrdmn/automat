@@ -347,14 +347,15 @@ func grantSentence(action, resource, principal string) string {
 
 // automationRoleActions is the automation role's own IAM permissions,
 // translated one for one from every method on awsapi.ConfigAPI and
-// awsapi.AccountAPI — the two in-child interfaces the REMAINING slices of
-// DESIGN §7 step 5 (a Config recorder and delivery channel, a conformance
+// awsapi.AccountAPI — the two in-child interfaces DESIGN §7 step 5's
+// remaining slices (a Config recorder and delivery channel, a conformance
 // pack, opt-in region enablement — ROADMAP.md's "internal/baseline, slices
-// 3-6") drive. EnsureRegions (regions.go) is now one of those callers; the
-// Config recorder, delivery channel, and conformance pack pieces remain
-// unbuilt.
+// 3-6") drive. EnsureRegions (regions.go), EnsureConformancePack
+// (conformance.go), and EnsureConfigRecorder/EnsureDeliveryChannel
+// (configrecorder.go) are all callers now — every method named below is
+// exercised by some Ensurer method in this package.
 //
-// Widened now, ahead of the slices that will actually call these actions,
+// Widened ahead of the slices that actually called these actions,
 // deliberately: option (b) of this task's two choices, over leaving the
 // policy minimal with a comment to come back later. The reason is Q13 rather
 // than convenience — once baseline-protection attaches to the OU, BP.IAM-1
@@ -362,10 +363,25 @@ func grantSentence(action, resource, principal string) string {
 // automat's own automation role, with no exemption. A later slice that needed
 // to WIDEN this policy would hit exactly the park this package exists to
 // detect, on a vend that had already completed and moved on. Rendering the
-// full policy now, while the role is still being created for the first time
+// full policy while the role was still being created for the first time
 // (iam:CreateRole and iam:TagRole are absent from BP.IAM-1's deny list, but
-// iam:PutRolePolicy is not), means slices 3-5 find the grant already in place
-// rather than discovering they need a migration to get it.
+// iam:PutRolePolicy is not) meant every later slice found the grant already
+// in place rather than discovering it needed a migration to get it — the
+// property this comment claimed in advance, now proven true across every
+// slice that has landed since.
+//
+// config:DescribeConfigurationRecorderStatus was NOT part of the original
+// widening — it was added when EnsureConfigRecorder (this package's own
+// slice 3) needed it to distinguish "recorder exists" from "recorder exists
+// AND is recording" (ConfigurationRecorderStatus.Recording), a read
+// awsapi.ConfigAPI's own "read-before-write triplet" did not originally
+// include. Appending a genuinely NEW action here, after baseline-protection
+// may already be attached to an account this role was created in, is
+// itself a live instance of the widen-after-attach problem the paragraph
+// above describes — but the action is a plain Describe*, absent from every
+// BP.CFG deny list (catalogs/baseline-protection.json), so re-permissioning
+// this role with it can never be denied by baseline-protection the way
+// widening a Put/Start action could be.
 var automationRoleActions = []string{
 	// awsapi.ConfigAPI
 	"config:DescribeConfigurationRecorders",
@@ -376,6 +392,7 @@ var automationRoleActions = []string{
 	"config:PutConformancePack",
 	"config:DescribeConformancePackStatus",
 	"config:StartConfigurationRecorder",
+	"config:DescribeConfigurationRecorderStatus",
 	// awsapi.AccountAPI
 	"account:ListRegions",
 	"account:EnableRegion",

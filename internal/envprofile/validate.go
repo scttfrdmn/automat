@@ -550,6 +550,15 @@ func (b *Baseline) validate(p *problems) {
 			"enable the recorder, or drop the bucket; as written the bucket would never be written to, "+
 				"and a profile naming one reads as though the detective baseline were deployed")
 	}
+	// The reverse case — enabled with no bucket named at all — is NOT checked
+	// here, deliberately: internal/baseline's EnsureDeliveryChannel refuses
+	// it at `vend`'s own plan time (vendConfigRecorderStep, cmd/automat/vend.go),
+	// which is the one caller that actually deploys the delivery channel.
+	// Adding it here would apply retroactively to every OTHER command and
+	// test that merely loads or validates a profile with the recorder
+	// enabled (verify, catalog resolution, schema-conformance fixtures), most
+	// of which have no reason to care about the delivery channel's own
+	// scope-cut at all.
 	b.Regions.validate(p)
 	// Naming a role automat will not create is legitimate — the operator made it
 	// themselves — so create:false with a name is not an error here. Whether the role

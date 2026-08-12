@@ -66,14 +66,15 @@ type Config struct {
 	// returned in place of the named call's ordinary result. AccessDenied and
 	// Throttled (recorder.go) construct the two shapes automat's remediation
 	// text and retry logic branch on.
-	DescribeConfigurationRecordersErr error
-	DescribeDeliveryChannelsErr       error
-	DescribeConformancePacksErr       error
-	PutConfigurationRecorderErr       error
-	PutDeliveryChannelErr             error
-	PutConformancePackErr             error
-	DescribeConformancePackStatusErr  error
-	StartConfigurationRecorderErr     error
+	DescribeConfigurationRecordersErr      error
+	DescribeDeliveryChannelsErr            error
+	DescribeConformancePacksErr            error
+	PutConfigurationRecorderErr            error
+	PutDeliveryChannelErr                  error
+	PutConformancePackErr                  error
+	DescribeConformancePackStatusErr       error
+	StartConfigurationRecorderErr          error
+	DescribeConfigurationRecorderStatusErr error
 }
 
 // NewConfig returns a Config fake with no recorder, channel, or conformance
@@ -289,6 +290,38 @@ func (f *Config) StartConfigurationRecorder(_ context.Context, in *configservice
 	}
 	f.RecorderRunning[name] = true
 	return &configservice.StartConfigurationRecorderOutput{}, nil
+}
+
+// DescribeConfigurationRecorderStatus implements awsapi.ConfigAPI.
+//
+// Recording reflects RecorderRunning directly — the fake's own half of the
+// "created but not enabled" trap (RecorderRunning's own doc comment): a
+// recorder present in Recorders but absent from RecorderRunning reports
+// Recording: false, exactly the state a Put-without-Start leaves a real
+// recorder in. A name absent from Recorders entirely is filtered out of the
+// response rather than erroring — DescribeConfigurationRecorderStatus's own
+// documented behavior for an unspecified name is "status for the customer
+// managed configuration recorder configured for the account", and this fake
+// has at most one, so naming it explicitly or not produces the same result.
+func (f *Config) DescribeConfigurationRecorderStatus(_ context.Context, in *configservice.DescribeConfigurationRecorderStatusInput,
+	_ ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecorderStatusOutput, error) {
+	f.Record("DescribeConfigurationRecorderStatus")
+	if f.DescribeConfigurationRecorderStatusErr != nil {
+		return nil, f.DescribeConfigurationRecorderStatusErr
+	}
+	names := in.ConfigurationRecorderNames
+	var out []configtypes.ConfigurationRecorderStatus
+	for name, rec := range f.Recorders {
+		if len(names) > 0 && !containsString(names, name) {
+			continue
+		}
+		out = append(out, configtypes.ConfigurationRecorderStatus{
+			Name:      aws.String(name),
+			Arn:       rec.Arn,
+			Recording: f.RecorderRunning[name],
+		})
+	}
+	return &configservice.DescribeConfigurationRecorderStatusOutput{ConfigurationRecordersStatus: out}, nil
 }
 
 func containsString(list []string, want string) bool {

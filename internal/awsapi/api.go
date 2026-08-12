@@ -413,10 +413,18 @@ type SSOOIDCAPI interface {
 // enabled" trap org.EnsureSCPEnabled's doc comment describes for
 // EnablePolicyType — a freshly created organization has the SCP policy type
 // off by default, so CreatePolicy and AttachPolicy both succeed and nothing
-// is enforced until EnablePolicyType runs. A future baseline.EnsureRecorder
+// is enforced until EnablePolicyType runs. internal/baseline.EnsureConfigRecorder
 // has to call Start after Put for the same reason org.EnsureSCPEnabled calls
 // EnablePolicyType after (or instead of, once already on) create — the write
 // that makes the resource exist is not the write that makes it active.
+//
+// DescribeConfigurationRecorderStatus is that same method's OWN read-first
+// half: without it, EnsureConfigRecorder would have no way to tell "already
+// started" from "never started" and would call StartConfigurationRecorder on
+// every apply forever, which is idempotent in the sense that it never fails
+// but is not idempotent in CLAUDE.md rule 4's sense — a re-run of an
+// unchanged desired state must issue no write, not merely a harmless one.
+// ConfigurationRecorderStatus.Recording is the field this reads.
 //
 // # What is deliberately absent
 //
@@ -470,6 +478,9 @@ type ConfigAPI interface {
 
 	StartConfigurationRecorder(ctx context.Context, in *configservice.StartConfigurationRecorderInput,
 		optFns ...func(*configservice.Options)) (*configservice.StartConfigurationRecorderOutput, error)
+
+	DescribeConfigurationRecorderStatus(ctx context.Context, in *configservice.DescribeConfigurationRecorderStatusInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecorderStatusOutput, error)
 }
 
 // AccountAPI is opt-in region enablement, performed in-child via the Account
