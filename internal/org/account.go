@@ -419,10 +419,11 @@ func (e *Ensurer) createFailed(st *orgtypes.CreateAccountStatus, spec AccountSpe
 			"root address must be a real deliverable mailbox, because AWS sends password resets to it",
 			reqID, spec.Email)
 	case orgtypes.CreateAccountFailureReasonAccountLimitExceeded:
-		return fmt.Errorf("create-account request %s failed: the organization is at its accounts quota. "+
-			"Raising it is a support request with real lead time, not a setting — open one for "+
-			"\"Organizations / accounts per organization\" (quota L-29A0C5DF) from the management "+
-			"account; `automat preflight` reports the current limit so this is visible before a vend "+
+		return fmt.Errorf("create-account request %s failed: the organization is at its accounts quota "+
+			"(\"Maximum number of accounts\", quota L-E619E033). File a quota increase request from the "+
+			"management account — `aws service-quotas request-service-quota-increase "+
+			"--service-code organizations --quota-code L-E619E033 --desired-value <n>`, no AWS Support "+
+			"case needed; `automat preflight` reports the current limit so this is visible before a vend "+
 			"rather than during one", reqID)
 	case orgtypes.CreateAccountFailureReasonMissingPaymentInstrument,
 		orgtypes.CreateAccountFailureReasonInvalidPaymentInstrument:

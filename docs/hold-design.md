@@ -376,7 +376,8 @@ prominence here.**
 
 **Holding an account does NOT free, avoid consuming, or otherwise interact with any AWS
 account-count quota slot.** An account that is `ACTIVE` and held counts against
-`L-29A0C5DF` (accounts-per-organization) exactly the same as any other `ACTIVE` account —
+`L-E619E033` ("Maximum number of accounts", the organizations service quota) exactly the
+same as any other `ACTIVE` account —
 there is no distinct AWS account status for "held," because AWS itself has no concept of
 `hold` at all; from AWS's point of view a held account is simply an ordinary `ACTIVE` account
 whose attached SCPs happen to deny almost everything. A `RECLAIMED` (closed, `SUSPENDED`)
@@ -387,7 +388,7 @@ and possibly longer — Q26 leaves exactly how much longer as an open, unconfirm
 
 **The consequence stated as bluntly as possible: choosing `hold` over `reclaim` for a given
 account changes nothing about that account's quota cost, in either direction.** The account
-was already consuming a slot against `L-29A0C5DF` before anyone decided whether to hold or
+was already consuming a slot against `L-E619E033` before anyone decided whether to hold or
 reclaim it — that decision happens no earlier than account creation, by which point the slot
 is already spent. `hold` does not return the slot (the account stays `ACTIVE`, unambiguously
 counted). `reclaim` does not return the slot either, at least not promptly (the newly

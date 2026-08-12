@@ -1310,7 +1310,20 @@ Confirmed live (2026-08-13), not inferred: a sandbox org with one `ACTIVE` accou
 status counted, already at the ceiling. `docs/reclaim-design.md`'s new "A closed account
 still counts against the account-count quota" section records the confirmed fact:
 `reclaim` changes an account's *status*, not whether it occupies a slot against
-`L-29A0C5DF`.
+`L-E619E033` ("Maximum number of accounts").
+
+**Correction (2026-08-12):** this entry originally theorized that the account's
+`GetServiceQuota` call failing with `NoSuchResourceException` meant a brand-new payer
+account might not expose its account-count quota via Service Quotas at all, carrying a
+temporary, unpublished ceiling below the standard default. That theory was wrong. The
+failure was caused by automat itself using `L-29A0C5DF`, a quota code that has never
+existed for the `organizations` service — confirmed by listing every quota AWS actually
+publishes for the service. The real code, `L-E619E033`, was readable and CLI-adjustable
+the whole time, and its value (5.0) exactly matched the observed ceiling: this was always
+the ordinary default, not a special new-payer throttle. See
+`docs/reclaim-design.md`'s "A closed account still counts against the account-count quota"
+section for the full correction. The temporal question below is unaffected by this
+correction and remains open.
 
 **What is not confirmed, and cannot be from one observation:** whether that slot frees
 exactly when the 90-day grace window (during which AWS can reinstate a closed account on
@@ -1323,12 +1336,12 @@ found, so this is exactly the class of live-org fact `docs/smoke.md`'s checklist
 answer and is not yet on that checklist.
 
 **What would settle it:** a sandbox account closed on a known date, with the account-count
-quota polled periodically afterward (`aws organizations list-accounts` plus whatever
-quota-check `preflight` can perform when it's not blocked by the same new-payer-account
-`NoSuchResourceException` gap Q24/`docs/reclaim-design.md` already describe) until the slot
-is observed to free — or a definitive answer from AWS Support, if a quota-increase case is
-already open for the same org (see the "A closed account still counts" section for why one
-was needed).
+quota polled periodically afterward (`aws organizations list-accounts` plus
+`aws service-quotas get-service-quota --service-code organizations --quota-code
+L-E619E033`) until the slot is observed to free — or a definitive answer from AWS Support,
+if a quota-increase case is filed for the same org in the meantime (see the "A closed
+account still counts" section for the CLI command that opens one; no support case is
+strictly required to raise the ceiling itself, only to learn the exact release schedule).
 
 **Not blocking anything today** beyond the immediate, already-hit inconvenience: this
 sandbox org cannot create another account until either the quota is raised or enough

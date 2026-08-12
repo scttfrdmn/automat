@@ -147,8 +147,8 @@ type Report struct {
 	// closed account still counts against the account-count quota",
 	// docs/open-questions.md Q26). AccountCountKnown is whether automat could
 	// read it. This is read independently of AccountQuota and can succeed or
-	// fail on its own: a brand-new payer account has been observed exposing
-	// ListAccounts but not GetServiceQuota for L-29A0C5DF.
+	// fail on its own — ListAccounts and GetServiceQuota are separate calls
+	// against separate permissions, so either can be denied without the other.
 	AccountCount      int
 	AccountCountKnown bool
 
@@ -223,7 +223,7 @@ type Runner struct {
 // localized and change; this pair is stable.
 const (
 	quotaServiceOrganizations = "organizations"
-	quotaCodeAccountsPerOrg   = "L-29A0C5DF"
+	quotaCodeAccountsPerOrg   = "L-E619E033"
 )
 
 // Run classifies the caller and builds the report.
@@ -550,18 +550,27 @@ const quotaListPageCap = 500
 // count, and reports on whatever combination of the two it could read.
 //
 // The quota alone was the whole check until a live sandbox org exposed why that
-// is not enough: it was refused CreateAccount at only 5 total accounts because a
-// new-payer-account org can carry a temporary, lower, unpublished ceiling below
-// the standard default — and separately, GetServiceQuota for L-29A0C5DF returned
-// NoSuchResourceException for that same account, meaning a new payer account may
-// not expose this quota code via Service Quotas at all
-// (docs/reclaim-design.md's "A closed account still counts against the
-// account-count quota", docs/open-questions.md Q26). A quota with no count next
-// to it cannot tell an operator "one more vend is fine" from "the next vend
-// fails outright", so the two reads are independent and each degrades on its
-// own: this function reports whichever pair of {known, unknown} it ends up
-// with, rather than collapsing four situations into the single "could not read
-// the quota" case that used to be the only kind of failure here.
+// is not enough: it was refused CreateAccount at 5 of 5 accounts, which is the
+// standard default for L-E619E033 ("Maximum number of accounts"), confirmed
+// live via `aws service-quotas get-service-quota --service-code organizations
+// --quota-code L-E619E033` — 2026-08-12. A quota with no count next to it
+// cannot tell an operator "one more vend is fine" from "the next vend fails
+// outright", so the two reads are independent and each degrades on its own:
+// this function reports whichever pair of {known, unknown} it ends up with,
+// rather than collapsing four situations into the single "could not read the
+// quota" case that used to be the only kind of failure here.
+//
+// quotaCodeAccountsPerOrg was previously "L-29A0C5DF", a code that has never
+// existed for the organizations service — every GetServiceQuota call against
+// it returned NoSuchResourceException, which was misread as an AWS-side
+// new-payer-account throttle (docs/open-questions.md Q26, now corrected) rather
+// than a wrong constant in this codebase. The real code was found by listing
+// every quota AWS actually publishes for the service — `aws service-quotas
+// list-service-quotas --service-code organizations` — not guessed or carried
+// over from a prior draft. Any AWS resource id, quota code, or ARN pattern
+// hand-written into this codebase must be confirmed the same way, against a
+// live `list-*`/`describe-*` call or the service's own current documentation,
+// before it is trusted — see CLAUDE.md's rule on this.
 //
 // The count is every account regardless of status — ACTIVE, SUSPENDED,
 // PENDING_CLOSURE — because a SUSPENDED account closed by `reclaim` still
@@ -598,10 +607,12 @@ func (r *Runner) checkQuota(ctx context.Context, rep *Report) {
 				Name: "accounts-per-organization quota", Result: Fail, Certainty: Observed,
 				Detail: fmt.Sprintf("%d of %.0f accounts (%.0f%%) — at the ceiling; the next "+
 					"organizations:CreateAccount call will be refused outright", count, quotaVal, pct),
-				Grant: "raising L-29A0C5DF is a Service Quotas increase request to AWS Support, " +
-					"with lead time; closing an unused account will not help within the 90-day " +
-					"reinstatement window, because a SUSPENDED account still occupies its slot " +
-					"(docs/reclaim-design.md)",
+				Grant: "raising the quota (L-E619E033) is a Service Quotas increase request, " +
+					"filed with `aws service-quotas request-service-quota-increase " +
+					"--service-code organizations --quota-code L-E619E033 --desired-value <n>` " +
+					"or the console — no AWS Support case needed; closing an unused account will " +
+					"not help within the 90-day reinstatement window, because a SUSPENDED account " +
+					"still occupies its slot (docs/reclaim-design.md)",
 			})
 			return
 		}
@@ -630,11 +641,13 @@ func (r *Runner) checkQuota(ctx context.Context, rep *Report) {
 		grant := "optional: grant servicequotas:GetServiceQuota so automat can compare the count " +
 			"against the ceiling before a vend"
 		if awsapi.APIErrorCode(quotaErr) == "NoSuchResourceException" {
-			detail += " — this account may have a new-payer-specific ceiling below the standard " +
-				"default (docs/reclaim-design.md), which Service Quotas may not expose at all"
-			grant = "no grant fixes this: a brand-new payer account has been observed not exposing " +
-				"L-29A0C5DF via Service Quotas at all; ask AWS Support directly what this " +
-				"organization's account-count ceiling is"
+			detail += " — servicequotas:GetServiceQuota returned NoSuchResourceException for " +
+				"L-E619E033, which should not happen for a valid, current quota code; treat this " +
+				"as a possible defect in automat itself (a stale or wrong quota code) before " +
+				"assuming an AWS-side cause"
+			grant = "re-run `aws service-quotas list-service-quotas --service-code organizations` " +
+				"and compare the codes it returns against the one this check uses; if they differ, " +
+				"that is a bug in automat to report, not an AWS Support matter"
 		}
 		rep.Add(Check{
 			Name: "accounts-per-organization quota", Result: Unknown, Certainty: Undetermined,

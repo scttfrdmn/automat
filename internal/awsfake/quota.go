@@ -30,9 +30,13 @@ type Quota struct {
 
 // NewQuota returns a Quota fake reporting the default accounts-per-organization
 // quota, which is the low value that makes this call worth making at all
-// (DESIGN §3, fact 11).
+// (DESIGN §3, fact 11). The key uses L-E619E033, the real, current
+// "Maximum number of accounts" code for the organizations service, confirmed
+// live via `aws service-quotas list-service-quotas --service-code
+// organizations` — 2026-08-12 (see internal/preflight/preflight.go's
+// checkQuota doc comment for the full story of the code this replaced).
 func NewQuota() *Quota {
-	return &Quota{Values: map[string]float64{"organizations/L-29A0C5DF": 10}}
+	return &Quota{Values: map[string]float64{"organizations/L-E619E033": 10}}
 }
 
 // GetServiceQuota implements awsapi.QuotaAPI.

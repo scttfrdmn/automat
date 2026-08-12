@@ -527,7 +527,7 @@ func TestCreateFailedRemediationPerReason(t *testing.T) {
 		{orgtypes.CreateAccountFailureReasonEmailAlreadyExists, []string{"already exists"}},
 		{orgtypes.CreateAccountFailureReasonInvalidEmail, []string{"root email", "deliverable mailbox"}},
 		{orgtypes.CreateAccountFailureReasonAccountLimitExceeded,
-			[]string{"L-29A0C5DF", "support request", "lead time"}},
+			[]string{"L-E619E033", "quota increase", "request-service-quota-increase"}},
 		{orgtypes.CreateAccountFailureReasonMissingPaymentInstrument,
 			[]string{"payment method", "owns the AWS bill"}},
 		{orgtypes.CreateAccountFailureReasonInvalidPaymentInstrument,

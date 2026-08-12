@@ -40,8 +40,9 @@ type STSAPI interface {
 // DESIGN §16 how much of it is visible from that side is still an open question.
 //
 // ListAccounts is here for preflight's account-count check: the
-// accounts-per-organization quota (L-29A0C5DF) is meaningless without knowing
-// how many accounts already occupy it, and a SUSPENDED (reclaim'd) account
+// accounts-per-organization quota (L-E619E033, "Maximum number of accounts")
+// is meaningless without knowing how many accounts already occupy it, and a
+// SUSPENDED (reclaim'd) account
 // still counts against it for at least the 90-day reinstatement window
 // (docs/reclaim-design.md, docs/open-questions.md Q26) — so this must list
 // every account regardless of status, unlike OrgVendAPI.ListAccountsForParent

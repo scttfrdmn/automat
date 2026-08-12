@@ -82,8 +82,9 @@ once the primary source is in hand).
 
 **`reclaim` does not attempt to compute this quota client-side before acting.** There is no
 `servicequotas` code covering the close-account limit the way `preflight.checkQuota`
-covers `L-29A0C5DF` (accounts-per-organization) — Service Quotas does not expose
-"close-account rate" as a queryable quota code at all, only the account-count ceiling.
+covers `L-E619E033` (accounts-per-organization, "Maximum number of accounts") — Service
+Quotas does not expose "close-account rate" as a queryable quota code at all, only the
+account-count ceiling.
 Inventing a client-side counter (tracking closures against a rolling window from local
 evidence manifests) would be assuming the quota's exact shape from prose and enforcing a
 guess. Instead, `reclaim` calls `CloseAccount` and handles the AWS-side rejection
@@ -101,36 +102,51 @@ one it can.
 org with exactly one `ACTIVE` account and four `SUSPENDED` ones (all four closed by earlier
 `reclaim` runs) refused a sixth `CreateAccount` with `ConstraintViolationException`,
 `ACCOUNT_NUMBER_LIMIT_EXCEEDED` — five total accounts, all statuses, was already at the
-ceiling. `reclaim` had changed each account's *status*; it had not freed the *slot* `L-29A0C5DF`
-counts against, at least not within the 90-day grace window AWS holds a closed account in
-before it can be reinstated (this design's own earlier section). This is worth stating
-plainly because it contradicts the natural reading of "reclaim" as a word: closing an
-account is not the same operation as returning its slot to the pool, and nothing in this
-tool's own text said so until this was hit live.
+ceiling. `reclaim` had changed each account's *status*; it had not freed the *slot* the
+account-count quota counts against, at least not within the 90-day grace window AWS holds
+a closed account in before it can be reinstated (this design's own earlier section). This
+is worth stating plainly because it contradicts the natural reading of "reclaim" as a word:
+closing an account is not the same operation as returning its slot to the pool, and nothing
+in this tool's own text said so until this was hit live.
+
+**A separate, previously-undiscovered defect in automat's own code was found and fixed
+while investigating this (2026-08-12), and it is worth recording so the same mistake is not
+repeated:** `preflight.checkQuota` and every remediation string that named the quota code
+used `L-29A0C5DF`, which is not, and has never been, a valid quota code for the
+`organizations` service — confirmed by listing every quota AWS actually publishes for the
+service (`aws service-quotas list-service-quotas --service-code organizations`), which
+does not contain it at all. Every `GetServiceQuota`/`RequestServiceQuotaIncrease` call
+against it returned `NoSuchResourceException`, which had been misread as an AWS-side
+"new-payer-account throttle" — the account carrying a temporary, unpublished ceiling below
+the standard default, invisible to Service Quotas. That theory is **wrong** and is retracted
+here. The real, current code is `L-E619E033` ("Maximum number of accounts"); querying it
+returns `Adjustable: true` and a value of exactly 5.0, matching the observed ceiling exactly
+— this was always the ordinary, standard default quota, readable and CLI-adjustable the
+whole time. `automat` never checked the real code, so it never actually observed whether the
+account's quota was exposed via Service Quotas at all — the fix is in
+`internal/preflight/preflight.go`, `internal/org/account.go`, and
+`internal/awsfake/quota.go`. **Any AWS resource id, quota code, or ARN pattern hand-written
+into this codebase must be confirmed against a live `list-*`/`describe-*` call or the
+service's own current documentation before it is trusted or written down as fact** — see
+CLAUDE.md.
 
 **Consequence for anyone running the live smoke checklist (`docs/smoke.md`) or otherwise
 exercising `vend`+`reclaim` repeatedly against one sandbox org:** every account ever
 created, whether currently `ACTIVE` or long since `SUSPENDED`, keeps consuming headroom
 against the account-count ceiling until AWS actually purges it past the 90-day window (an
 opaque, automat-uninvolved process). A sandbox used for repeated testing accumulates this
-debt silently — `preflight`'s own `checkQuota` (covering `L-29A0C5DF`) reports the current
-count correctly when it can read the quota at all, but a brand-new payer account (as this
-one was) does not even expose `L-29A0C5DF` via Service Quotas
-(`NoSuchResourceException` — the same gap `preflight`'s own report already discloses,
-"could not read the quota") and can carry a **temporary, lower, unpublished ceiling** below
-the standard default while its billing history is still new. Neither figure — the real
-ceiling nor the current count against it — is reliably queryable in that state, which is
-exactly the "this tool cannot pre-check it" situation the close-account rate limit already
-described above, now confirmed to apply to account *creation* as well as account
-*closure*.
+debt silently. `preflight`'s own `checkQuota` (covering `L-E619E033`) reports the current
+count and ceiling correctly once both are readable; a quota increase is a normal, CLI-driven
+Service Quotas request (`aws service-quotas request-service-quota-increase --service-code
+organizations --quota-code L-E619E033 --desired-value <n>`), not an AWS Support case.
 
 **What this does not change:** `reclaim`'s own design (durable-by-default, detach-then-close,
 no ephemeral mode) is unaffected — this is a fact about AWS's account bookkeeping, not a
 defect in what `reclaim` does. It does mean a sandbox intended for repeated smoke-testing
-needs either headroom budgeted well above what a single test pass will create, or an AWS
-Support quota-increase request filed proactively rather than discovered mid-run — and that a
-"just close it when you're done" mental model is not actually free of a live-org resource
-that automat's own account-count quota check may not be able to see.
+needs either headroom budgeted well above what a single test pass will create, or a
+quota-increase request filed proactively rather than discovered mid-run — and that a "just
+close it when you're done" mental model is not actually free of a live-org resource that
+stays consumed for at least 90 days after closure.
 
 **See `docs/hold-design.md`'s "Explicit interaction with Q26 and the quota finding" for why
 `automat hold` — a separate, later capability that keeps an account `ACTIVE` under a

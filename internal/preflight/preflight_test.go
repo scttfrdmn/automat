@@ -728,10 +728,16 @@ func TestQuotaKnownCountUnknown(t *testing.T) {
 	}
 }
 
-// TestCountKnownQuotaUnknown covers outcome (c) — the exact scenario hit live:
-// GetServiceQuota returns NoSuchResourceException on a new payer account, while
-// ListAccounts works fine. This must report the count with a clear statement
-// that the ceiling itself is unknown, which is itself useful information.
+// TestCountKnownQuotaUnknown covers outcome (c): GetServiceQuota returns
+// NoSuchResourceException while ListAccounts works fine. This must report the
+// count with a clear statement that the ceiling itself is unknown, which is
+// itself useful information.
+//
+// A NoSuchResourceException here means the quota code this check uses is
+// wrong or stale — L-E619E033 is a real, current, adjustable quota for every
+// account observed live (confirmed via `aws service-quotas
+// get-service-quota` — 2026-08-12) — not an AWS-side account peculiarity, and
+// the remediation must say so rather than theorize about the account.
 func TestCountKnownQuotaUnknown(t *testing.T) {
 	org := awsfake.NewOrg(testOrg, managementAccount)
 	state := awsfake.NewOrgState(testOrg, managementAccount)
@@ -740,8 +746,7 @@ func TestCountKnownQuotaUnknown(t *testing.T) {
 	}
 	org.Accounts = state
 	// NoSuchResourceException, exactly as awsfake.Quota returns when a quota
-	// code is absent from Values — the same shape a brand-new payer account
-	// produced live for L-29A0C5DF.
+	// code is absent from Values.
 	quota := &awsfake.Quota{Values: map[string]float64{}}
 
 	rep := run(t, &Runner{
@@ -760,9 +765,9 @@ func TestCountKnownQuotaUnknown(t *testing.T) {
 	if !strings.Contains(c.Detail, "5 accounts") {
 		t.Errorf("detail %q must state the known count", c.Detail)
 	}
-	if !strings.Contains(c.Detail, "new-payer-specific ceiling") {
-		t.Errorf("detail %q should explain that a new payer account can carry an unpublished, "+
-			"lower ceiling — the live finding this case exists to surface", c.Detail)
+	if !strings.Contains(c.Detail, "possible defect in automat") {
+		t.Errorf("detail %q should treat NoSuchResourceException on a valid quota code as a possible "+
+			"bug in automat, not an AWS-side account peculiarity", c.Detail)
 	}
 }
 
