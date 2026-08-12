@@ -259,9 +259,10 @@ proceed.
 5. Q20's live-IAM smoke subtest — see below. Small, `internal/smoke`-only, needs nothing else.
 
 Running in parallel with all five, but not as agent work — human-paced, started now, blocking
-nothing else: the **DFARS weight table's dual-transcription** (Q10's already-decided procedure)
-and the **Q5/Q8/Q9/Q13 cluster's manual AWS setup** (second permanent sandbox account, bundle
-deployment, CFN apply, delegation-policy apply).
+nothing else: the **DFARS weight table's dual-transcription** (Q10's already-decided procedure —
+**done, 2026-08-12**; see "Assessment Stages 1-2" below) and the **Q5/Q8/Q9/Q13 cluster's manual
+AWS setup** (second permanent sandbox account, bundle deployment, CFN apply, delegation-policy
+apply — still outstanding).
 
 **Phase 2 — depends on Phase 1's baseline skeleton; schema-gated items depend on Phase 0's answer:**
 1. `internal/baseline` slices 3, 5, 6 — parallel-safe against each other (disjoint `Ensure*`
@@ -338,10 +339,19 @@ Strict prerequisite chain, not parallelizable at the start:
    with a per-family attestation stub: no AWS-side mapping is joined (docs/open-questions.md
    Q4 step 3, Security Hub's 800-171 Rev 2 standard and Audit Manager's 800-171 Rev 2
    framework, remains deferred future work, not attempted in this pass).
-2. **The DFARS weight table** (Q10's already-decided dual-transcription procedure: two
-   independent passes, diffed, disagreement goes to review, never resolved by picking one). This
-   is human-only, off-computer work with a commit at the end — not something to dispatch to a
-   coding agent.
+2. **Done (2026-08-12).** The DFARS weight table — Q10's dual-transcription procedure, carried
+   out for real: two independent passes against the DoD's *NIST SP 800-171 DoD Assessment
+   Methodology, Version 1.2.1*, zero disagreements across all 110 requirements, source currency
+   separately confirmed against the operative DFARS 252.204-7019/7020 clauses. Vendored at
+   `gen/sources/dfars-800-171r2-weights.json`, hashed, and named by that hash in
+   `catalogs/obligations/dfars-7012.json`'s `scoring.weight_table` (no longer the all-zero
+   placeholder). `TestWeightTableHashMatchesTheFileOnDisk`
+   (`internal/artifact/obligation_profile_test.go`) is the new sibling test keeping this hash
+   from drifting, since the existing `TestProfileSourceHashesMatchTheFilesOnDisk` only walks
+   `p.Sources`, not `scoring.weight_table`. **Three requirements (`3.5.3`, `3.13.11`, `3.12.4`)
+   have no single scalar weight in the source itself** — recorded as `docs/open-questions.md`
+   Q25, a real scoring-model design question Stage 2 (item 5, below) will need to answer, not a
+   transcription gap either pass could have resolved.
 3. **Done.** The 800-171A objectives catalog (single-pass retrieval + hash, unlike the weight
    table — don't conflate the two transcription disciplines) — `catalogs/objectives/
    800-171a-objectives.json`, 320 assessment-objective determination statements across the same
@@ -368,9 +378,9 @@ Strict prerequisite chain, not parallelizable at the start:
 **Approved by the maintainer 2026-08-11 (Phase 0, above).** A `worksheet_summary` sibling field
 and a `score` sibling field on `assessment-result-v1` are cleared to build when Stage 1/2 code is
 written (item 4/5 above); `schema/objectives-catalog-v1.schema.json` is ratified (item 3 above,
-already built and merged). The weight-table schema remains undrafted — it's cleared to build once
-someone drafts it, but the DFARS weight table itself (item 2) is still mid-transcription, so
-there's nothing yet to shape a schema around.
+already built and merged). The weight-table schema remains undrafted, but is cleared to build —
+the DFARS weight table itself (item 2) is now done (2026-08-12), so there's real, ratified data
+to shape a schema around whenever Stage 2 code is written.
 
 ### Remote evidence mirror
 

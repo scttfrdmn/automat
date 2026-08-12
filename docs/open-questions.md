@@ -501,7 +501,7 @@ these, because no sandbox run answers them. Kept here rather than deleted once d
 the reasoning is the part that has to survive, since the decision looks like unnecessary
 ceremony to anyone who has not read why.
 
-### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively? — **DECIDED**
+### Q10 — Where do the DFARS per-requirement assessment weights come from, authoritatively? — **DECIDED AND DONE (2026-08-12)**
 
 Phase 4's score computation (`docs/assessment-reporting.md`) needs the DoD assessment
 methodology's per-requirement weights: 5, 3, or 1 subtracted from 110 for each
@@ -551,16 +551,33 @@ What gets recorded with the table:
 And the renderer states which weight table it used, by hash, in the report — so a wrong
 weight is discoverable from the output rather than only from the source tree.
 
-**Status: decided, not yet done.** The transcription is a Phase 4 deliverable.
-`catalogs/obligations/dfars-7012.json` carries the weight-table reference with a
-deliberately all-zero hash and a note saying so; `TestNoUnresolvedHashInARenderableProfile`
-asserts no profile automat may render holds an unresolved hash, so the placeholder cannot
-quietly become load-bearing. The table is deliberately **not** pre-filled with plausible
-weights: a plausible wrong weight is worse than an obvious absent one, because it produces
-output.
+**Status: done.** The dual-pass transcription was carried out 2026-08-12 against the DoD's
+own *NIST SP 800-171 DoD Assessment Methodology, Version 1.2.1 (June 24, 2020)*
+(`www.acq.osd.mil`), with the two passes produced in genuinely independent order — the
+second pass was fully constructed from the source before the first pass was ever opened,
+not checked against it line by line, which is the distinction that makes agreement between
+them real evidence rather than a proofreading pass over one document. **Result: zero
+disagreements across all 110 requirements.** The currency of the source was separately
+confirmed the same day: the current DFARS 252.204-7019/7020 clauses (`acquisition.gov`)
+still name this exact Version 1.2.1 document and URL as the operative methodology; DoD's
+Rev 3 preparation work is not a superseding edition of this scoring methodology.
+
+Vendored at `gen/sources/dfars-800-171r2-weights.json`, hashed, and named by that hash in
+`catalogs/obligations/dfars-7012.json`'s `scoring.weight_table` (no longer the all-zero
+placeholder). `TestWeightTableHashMatchesTheFileOnDisk`
+(`internal/artifact/obligation_profile_test.go`) keeps the profile's cited hash from
+drifting from the vendored file's real bytes, the same discipline
+`TestProfileSourceHashesMatchTheFilesOnDisk` already applies to `p.Sources` — that older
+test does not cover `scoring.weight_table` (a bare identifier, not a `gen/`-prefixed path),
+which is why this is a new, sibling test rather than an extension of the old one.
+
+**Three requirements have no single scalar weight in the source itself: see Q25, below.**
+This is not a transcription gap — both independent passes reproduced the same three
+non-scalar entries, because the DoD document itself assigns them a conditional or
+non-numeric value. No Stage 2 scoring code exists yet to decide how to model them.
 
 Note that **CMMC Level 1 needs none of this**: L1 is MET/NOT MET with no scoring, so Q10
-gates only the 800-171 renderer and must not be allowed to hold up the L1 path.
+never gated the L1 path.
 
 ### Q11 — Does FAR Case 2017-016 become a fourth obligation profile? — **NOT YET; ASK AGAIN IF FINALIZED**
 

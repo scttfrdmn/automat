@@ -88,9 +88,9 @@
     "weight_table": {
       "id": "dfars-800-171r2-weights",
       "title": "NIST SP 800-171 DoD Assessment Methodology — per-requirement value table",
-      "version": "PENDING — see docs/open-questions.md Q10",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "note": "NOT YET VENDORED. Q10 is decided (dual independent transcription, hashed, named by the report) but the transcription itself is a Phase 4 deliverable and has not been performed. This entry is present so the profile's shape is reviewable; the hash is 64 zeros, and a test asserts no profile with an unresolved weight-table hash can be used for scoring. Deliberately NOT filled with plausible weights: a wrong weight is confidently wrong in the same direction on every regeneration, and no test catches a false input to correct arithmetic."
+      "version": "Version 1.2.1, June 24, 2020",
+      "sha256": "34de6512122b923e3ffe5861bc1bcc7b19e8f28ca1313bb70f8af5484e0aaf75",
+      "note": "RATIFIED. docs/open-questions.md Q10's decided procedure (two independent human transcriptions, diffed, disagreement goes to review) was carried out 2026-08-12 against the DoD's own Annex A scoring template — zero disagreements across all 110 requirements. Vendored at gen/sources/dfars-800-171r2-weights.json; the sha256 above is of that file. Three requirements (3.5.3, 3.13.11, 3.12.4) carry no single scalar weight in the source itself and are recorded as null there — see docs/open-questions.md Q25 for the open scoring-model question this raises. No Stage 2 scoring code exists yet to consume this table."
     }
   },
 

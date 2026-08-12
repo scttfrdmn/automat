@@ -500,6 +500,53 @@ func TestProfileSourceHashesMatchTheFilesOnDisk(t *testing.T) {
 	}
 }
 
+// TestWeightTableHashMatchesTheFileOnDisk is TestProfileSourceHashesMatchTheFilesOnDisk's
+// counterpart for scoring.weight_table: that test only walks p.Sources, and a
+// weight table's id is a bare identifier ("dfars-800-171r2-weights"), not a
+// gen/-prefixed path, so it was never covered by the loop there. Q10's whole
+// point was redundant transcription NOW so a wrong weight cannot be caught
+// LATER by any hash; the one thing a hash can still catch is this file
+// silently changing under a profile that still cites the old bytes.
+func TestWeightTableHashMatchesTheFileOnDisk(t *testing.T) {
+	// Maps a weight table's id to the gen/sources file it was vendored into.
+	// A second weight table (e.g. for a future 800-171r3 profile) adds an
+	// entry here rather than growing a naming convention this test would
+	// have to guess at.
+	knownWeightTables := map[string]string{
+		"dfars-800-171r2-weights": "gen/sources/dfars-800-171r2-weights.json",
+	}
+
+	var checked int
+	for name, p := range loadProfiles(t) {
+		t.Run(name, func(t *testing.T) {
+			wt := p.Scoring.WeightTable
+			if wt == nil || isZeroHash(wt.SHA256) {
+				return
+			}
+			path, ok := knownWeightTables[wt.ID]
+			if !ok {
+				t.Fatalf("weight table %q has a resolved (non-zero) hash but this test does not know "+
+					"which gen/sources file it names — add an entry to knownWeightTables", wt.ID)
+			}
+			data, err := os.ReadFile(filepath.Join("../..", path)) //nolint:gosec // path is an in-repo source id
+			if err != nil {
+				t.Fatalf("weight table %q names %s, which does not exist: %v", wt.ID, path, err)
+			}
+			sum := sha256.Sum256(data)
+			got := hex.EncodeToString(sum[:])
+			if got != wt.SHA256 {
+				t.Errorf("weight table %q hash drift:\n  profile: %s\n  on disk: %s\n\n"+
+					"The file changed without the profile being updated, so the profile now cites "+
+					"weights nobody has.", wt.ID, wt.SHA256, got)
+			}
+			checked++
+		})
+	}
+	if checked == 0 {
+		t.Skip("no shipped profile has a resolved weight_table hash yet")
+	}
+}
+
 // TestNoProfileFormatsForSubmission guards the field that would turn a draft into
 // something submittable. It defaults false and is expected to stay false: a
 // document formatted for submission is a document that can be submitted, and
