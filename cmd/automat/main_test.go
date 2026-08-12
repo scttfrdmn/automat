@@ -96,6 +96,11 @@ type fakeWorld struct {
 	// created by ChildAccount.
 	childAccounts map[string]*awsfake.Account
 
+	// childConfigs is ChildIAMRole's exact sibling for the conformance-pack
+	// step: one *awsfake.Config per vended account, lazily created by
+	// ChildConfig.
+	childConfigs map[string]*awsfake.Config
+
 	// DenyChildAssume, when true, fails every AssumeRole
 	// vendAutomationRoleStep's childIAMRole function attempts — the shape a
 	// management account with no trust to itself would produce in reality,
@@ -132,6 +137,20 @@ func (f *fakeWorld) ChildAccount(accountID string) *awsfake.Account {
 		f.childAccounts[accountID] = a
 	}
 	return a
+}
+
+// ChildConfig returns the conformance-pack fake for accountID, creating it
+// on first use — ChildIAMRole's exact sibling for vendConformancePackStep.
+func (f *fakeWorld) ChildConfig(accountID string) *awsfake.Config {
+	if f.childConfigs == nil {
+		f.childConfigs = map[string]*awsfake.Config{}
+	}
+	c, ok := f.childConfigs[accountID]
+	if !ok {
+		c = awsfake.NewConfig()
+		f.childConfigs[accountID] = c
+	}
+	return c
 }
 
 // fakeSet is fakes() with the whole world returned rather than three of it.
@@ -300,6 +319,27 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 				return nil, err
 			}
 			return f.ChildAccount(accountID), nil
+		},
+		// childConfigClient's test seam — ChildIAMRole's exact sibling, same
+		// assumption, same DenyChildAssume opt-in-to-failure knob, a
+		// per-account *awsfake.Config instead of *awsfake.IAMRole.
+		newChildConfig: func(ctx context.Context, region, _, partition, accountID,
+			roleName string) (awsapi.ConfigAPI, error) {
+			if f.DenyChildAssume {
+				return nil, awsapi.Denied(awsfake.AccessDenied("sts:AssumeRole"), "sts:AssumeRole",
+					accountID, "", "")
+			}
+			if partition == "" {
+				partition = "aws"
+			}
+			roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+			if _, ok := stsFake.Assumable[roleARN]; !ok {
+				stsFake.Assumable[roleARN] = ""
+			}
+			if _, err := broker.Assume(ctx, stsFake, roleARN, "", region); err != nil {
+				return nil, err
+			}
+			return f.ChildConfig(accountID), nil
 		},
 		newQuota: func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 			return quotaFake, nil

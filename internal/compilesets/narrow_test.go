@@ -296,6 +296,117 @@ func TestNarrowWarnsOnlyWhenTheControlSetsConstrainedTheAxis(t *testing.T) {
 	}
 }
 
+// TestNarrowCarriesForwardTheUnionsOwnConfigRules confirms
+// Narrow copies m.ConfigRules into Narrowed.Merged.ConfigRules.
+//
+// THIS WAS A REAL, CONFIRMED GAP, not a pre-existing behavior being
+// verified: before this test's own fix (narrow.go), Narrow's constructed
+// out.Merged literal named Statements/RegionAllowlist/ServiceAllowlist/
+// RegionDenyExemptServices and NOTHING ELSE — ConfigRules was silently left
+// at its zero value (nil) on every Narrow call, regardless of how many
+// Config rules the union bound. internal/baseline.EnsureConformancePack
+// (ROADMAP.md's "internal/baseline, slices 2-9" item 4) is the first
+// caller that ever reads Narrowed.Merged.ConfigRules — every prior use of
+// Merged.ConfigRules read the pre-Narrow value directly — so nothing
+// exercised the gap until this slice tried to wire a real vend through
+// Narrow's own output and got an empty rule set for every profile.
+func TestNarrowCarriesForwardTheUnionsOwnConfigRules(t *testing.T) {
+	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
+		Identifier: "IAM_PASSWORD_POLICY",
+		Parameters: map[string]artifact.RuleParameter{
+			"MinimumPasswordLength": {Value: "14", Order: artifact.OrderMax},
+		},
+	})
+	merged, err := Merge(a)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if len(merged.ConfigRules) == 0 {
+		t.Fatal("the merge itself bound no Config rule; the fixture is wrong, not the property under test")
+	}
+
+	got, err := Narrow(withGlobalExemptions(merged), NarrowOptions{})
+	if err != nil {
+		t.Fatalf("Narrow: %v", err)
+	}
+	if len(got.Merged.ConfigRules) != len(merged.ConfigRules) {
+		t.Fatalf("Narrow dropped the Config-rule map: merged had %d rule(s), narrowed has %d",
+			len(merged.ConfigRules), len(got.Merged.ConfigRules))
+	}
+	if _, ok := got.Merged.ConfigRules["IAM_PASSWORD_POLICY"]; !ok {
+		t.Errorf("narrowed ConfigRules does not carry IAM_PASSWORD_POLICY: %+v", got.Merged.ConfigRules)
+	}
+
+	// And it is a COPY, not a shared reference: mutating the narrowed map
+	// must not reach back into the Merged the caller may still hold, the
+	// same aliasing guarantee every other field on Narrowed.Merged already
+	// has (TestNarrowDoesNotMutateItsOperand covers the rest).
+	got.Merged.ConfigRules["IAM_PASSWORD_POLICY"].Parameters["MinimumPasswordLength"] =
+		artifact.RuleParameter{Value: "99", Order: artifact.OrderMax}
+	if merged.ConfigRules["IAM_PASSWORD_POLICY"].Parameters["MinimumPasswordLength"].Value == "99" {
+		t.Error("mutating the narrowed Config-rule map reached back into the original Merged")
+	}
+}
+
+// TestNarrowCarriesForwardTheUnionsOwnWarnings confirms Q22's
+// override-widening disclosure (Merged.Warnings, populated by
+// overrideWideningWarnings when an override resolves a real Config-rule
+// conflict — see overrides_test.go's TestOverrideWideningIsAcceptedAndWarned,
+// whose fixture this test mirrors) survives Narrow's own step into
+// Narrowed.Warnings.
+//
+// This is the property internal/baseline's EnsureConformancePack slice
+// (ROADMAP.md's "internal/baseline, slices 2-9" item 4) depends on: Q22's
+// own text says the warning is "carried forward by Narrow into
+// Narrowed.Warnings so cmd/automat/vend.go's existing renderVendWarnings
+// prints them with no changes to that function" — a claim this test checks
+// directly rather than trusting the doc comment that states it
+// (narrow.go's own comment on the `out.Warnings = append(...)` line).
+// Confirmed, on inspection before writing this test, that the WARNINGS
+// carry-forward specifically was ALREADY present and correct — this is a
+// verification test for an existing behavior. The sibling gap
+// (TestNarrowCarriesForwardTheUnionsOwnConfigRules, immediately above) is
+// the one that was actually missing.
+func TestNarrowCarriesForwardTheUnionsOwnWarnings(t *testing.T) {
+	a := artifactWithConfigRule(t, "set-a", artifact.ConfigRule{
+		Identifier: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED",
+		Parameters: map[string]artifact.RuleParameter{
+			"allowedAmis": {Value: "ami-1,ami-2", Order: artifact.OrderSetIntersect},
+		},
+	})
+	b := artifactWithConfigRule(t, "set-b", artifact.ConfigRule{
+		Identifier: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED",
+		Parameters: map[string]artifact.RuleParameter{
+			"allowedAmis": {Value: "ami-3,ami-4", Order: artifact.OrderSetIntersect},
+		},
+	})
+	overrides := &Overrides{Entries: []Override{
+		{Rule: "EC2_MANAGEDINSTANCE_APPLICATIONS_BLACKLISTED", Parameter: "allowedAmis",
+			Value: "ami-1,ami-2,ami-3,ami-4,ami-EVERYTHING"},
+	}}
+	merged, err := MergeWithOverrides(overrides, a, b)
+	if err != nil {
+		t.Fatalf("MergeWithOverrides: %v (Q22: an override must still be accepted verbatim)", err)
+	}
+	if len(merged.Warnings) == 0 {
+		t.Fatal("the merge itself produced no warning; the fixture is wrong, not the property under test")
+	}
+
+	got, err := Narrow(withGlobalExemptions(merged), NarrowOptions{})
+	if err != nil {
+		t.Fatalf("Narrow: %v", err)
+	}
+	if len(got.Warnings) != len(merged.Warnings) {
+		t.Fatalf("Narrow changed the warning count: merged had %d, narrowed has %d — %v vs %v",
+			len(merged.Warnings), len(got.Warnings), merged.Warnings, got.Warnings)
+	}
+	all := strings.Join(got.Warnings, "\n")
+	if !strings.Contains(all, "ami-EVERYTHING") {
+		t.Errorf("Narrowed.Warnings does not carry the union's own override-widening disclosure: %v",
+			got.Warnings)
+	}
+}
+
 // TestNarrowDoesNotMutateItsOperand.
 //
 // A narrowing that wrote through the Merged would make the SECOND vend from one

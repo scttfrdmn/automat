@@ -214,6 +214,17 @@ func (f *Config) PutConformancePack(_ context.Context, in *configservice.PutConf
 		ConformancePackArn:  aws.String(arn),
 		ConformancePackId:   aws.String("cp-fake"),
 		ConformancePackName: aws.String(name),
+		// Persisted, matching real AWS Config: DescribeConformancePacks'
+		// own ConformancePackDetail.ConformancePackInputParameters echoes
+		// back exactly what PutConformancePack was last called with
+		// (API_ConformancePackDetail's own field list) — the ONE field
+		// AWS's read side ever returns for a deployed pack, since neither
+		// this API nor any other hands the deployed TemplateBody back to a
+		// caller. Without this, a caller cannot detect drift at all, which
+		// is exactly the fidelity internal/baseline.EnsureConformancePack
+		// (its first production consumer) depends on for its own
+		// read-then-branch.
+		ConformancePackInputParameters: in.ConformancePackInputParameters,
 	}
 	f.ConformancePackStatuses[name] = configtypes.ConformancePackStateCreateInProgress
 	return &configservice.PutConformancePackOutput{ConformancePackArn: aws.String(arn)}, nil

@@ -47,11 +47,19 @@ type Ensurer struct {
 	// closing section.
 	Role awsapi.IAMRoleAPI
 
-	// Account carries opt-in region enablement (EnsureRegions), the second
+	// Account carries opt-in region enablement (EnsureRegions), another
 	// in-child surface this package drives. nil for a caller that only needs
 	// EnsureAutomationRole — the same "field absent means capability absent"
 	// discipline internal/org.Ensurer's own Init/Setup fields follow.
 	Account awsapi.AccountAPI
+
+	// Config carries the Config recorder/delivery-channel/conformance-pack
+	// surface (awsapi.ConfigAPI) — the same "built against a session assumed
+	// into the CHILD account" rule Role's own doc comment states, for the
+	// slice that first uses it: EnsureConformancePack (conformance.go). Nil
+	// for a caller that never calls a Config-backed method, the same way
+	// org.Ensurer.Init is nil for every command but `automat init`.
+	Config awsapi.ConfigAPI
 
 	// Mode is plan or apply, reusing org.Mode rather than a parallel enum.
 	// The zero value is org.ModePlan, deliberately: a forgotten field must not
@@ -61,34 +69,41 @@ type Ensurer struct {
 	// Principal is the identity automat is speaking as, for error text.
 	Principal string
 
-	// PollInterval and MaxPolls bound EnsureRegions' wait for
-	// EnableRegion/DisableRegion's asynchronous completion. Zero means the
-	// defaults below — the SAME shape internal/org.Ensurer gives its own
-	// account-creation poll, reused rather than reinvented (ROADMAP's
-	// "internal/baseline, slices 2-9", item 5).
+	// PollInterval and MaxPolls bound every asynchronous wait this Ensurer
+	// performs — EnsureRegions' wait for EnableRegion/DisableRegion's
+	// completion, and EnsureConformancePack's wait for its deployment
+	// (conformance.go's pollConformancePackStatus). Zero means the defaults
+	// below — the SAME field names, zero-means-default convention, and
+	// values internal/org.Ensurer's own poll loop (internal/org/account.go's
+	// pollCreate) uses for DescribeCreateAccountStatus, reused rather than
+	// reinvented for the reason this package's doc comment gives for reusing
+	// org.Action: one poll vocabulary for the whole vend pipeline.
 	PollInterval time.Duration
 	MaxPolls     int
 
 	// Sleep is how the poll loop waits. Injected so tests do not, and so a
 	// cancelled context ends a vend promptly rather than after the current
-	// interval. Nil means a context-aware sleep. Mirrors
-	// internal/org.Ensurer.Sleep exactly.
+	// interval — org.Ensurer.Sleep's own doc comment, verbatim, for the
+	// identical reason. Nil means a context-aware sleep.
 	Sleep func(context.Context, time.Duration) error
 
 	// actions accumulates every Action this Ensurer produced, in order.
 	actions []org.Action
 }
 
-// Default poll bounds for EnsureRegions: five minutes of five-second polls,
-// the same numbers internal/org.Ensurer's defaultPollInterval/defaultMaxPolls
-// use for account creation. Region opt-in/opt-out is documented as taking
-// "a few minutes... [or] several hours" (EnableRegionInput's own doc
-// comment), so the ceiling is generous for the same reason account creation's
-// is: giving up early on a region enablement that then succeeds leaves an
-// account whose evidence manifest disagrees with what AWS is actually doing.
+// Default poll bounds shared by every asynchronous wait this Ensurer
+// performs — EnsureRegions' EnableRegion/DisableRegion completion and
+// EnsureConformancePack's deployment wait alike — five minutes of
+// five-second polls, the same numbers internal/org.Ensurer's own default
+// poll bounds use for account creation (internal/org/ensure.go). Region
+// opt-in/opt-out is documented as taking "a few minutes... [or] several
+// hours" (EnableRegionInput's own doc comment), so the ceiling is generous
+// for the same reason account creation's is: giving up early on an
+// operation that then succeeds leaves an account whose evidence manifest
+// disagrees with what AWS is actually doing.
 const (
-	defaultRegionPollInterval = 5 * time.Second
-	defaultRegionMaxPolls     = 60
+	defaultPollInterval = 5 * time.Second
+	defaultMaxPolls     = 60
 )
 
 // Actions returns every action this Ensurer produced so far, in order.
@@ -106,14 +121,14 @@ func (e *Ensurer) pollInterval() time.Duration {
 	if e.PollInterval > 0 {
 		return e.PollInterval
 	}
-	return defaultRegionPollInterval
+	return defaultPollInterval
 }
 
 func (e *Ensurer) maxPolls() int {
 	if e.MaxPolls > 0 {
 		return e.MaxPolls
 	}
-	return defaultRegionMaxPolls
+	return defaultMaxPolls
 }
 
 func (e *Ensurer) sleep(ctx context.Context, d time.Duration) error {

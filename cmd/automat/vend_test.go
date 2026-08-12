@@ -18,6 +18,7 @@ import (
 
 	"github.com/scttfrdmn/automat/internal/awsfake"
 	"github.com/scttfrdmn/automat/internal/baseline"
+	"github.com/scttfrdmn/automat/internal/config"
 	"github.com/scttfrdmn/automat/internal/envprofile"
 	"github.com/scttfrdmn/automat/internal/evidence"
 )
@@ -287,18 +288,23 @@ func TestVendFromMemberBrokersAccountAndOUOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vend from MEMBER: %v", err)
 	}
-	if n := f.STS.CallCount("AssumeRole"); n != 2 {
-		// Two assumptions, not one: the vendor role is assumed ONCE and shared
-		// across the plan and apply passes (one client built at vendOrgClient,
-		// before either runs), but vendAutomationRoleStep assumes
-		// OrganizationAccountAccessRole into the just-created CHILD account —
-		// a SECOND role, a second ARN, only in the apply pass (the plan pass
-		// reports the automation role as unknown rather than assuming anything,
-		// matching vendPolicySpecs' own first-vend plan behavior). Asserted so
-		// a future change that rebuilds the vendor-role client per pass, or
-		// that skips the automation-role assumption, updates this rather than
-		// silently changing the count either direction.
-		t.Errorf("AssumeRole called %d times, want 2 (vendor role once, automation role once)", n)
+	if n := f.STS.CallCount("AssumeRole"); n != 3 {
+		// Three assumptions, not one: the vendor role is assumed ONCE and
+		// shared across the plan and apply passes (one client built at
+		// vendOrgClient, before either runs), but vendAutomationRoleStep
+		// assumes OrganizationAccountAccessRole into the just-created CHILD
+		// account for the automation role, and vendConformancePackStep
+		// assumes it AGAIN for a separate awsapi.ConfigAPI client (a third
+		// role ARN — same role name, but childConfigClient builds its own
+		// session rather than sharing childIAMRoleClient's) — both only in
+		// the apply pass (the plan pass reports each as unknown rather than
+		// assuming anything, matching vendPolicySpecs' own first-vend plan
+		// behavior). Asserted so a future change that rebuilds the
+		// vendor-role client per pass, or that skips either child
+		// assumption, updates this rather than silently changing the count
+		// either direction.
+		t.Errorf("AssumeRole called %d times, want 3 (vendor role once, automation role once, "+
+			"conformance pack once)", n)
 	}
 	if got := aws.ToString(f.STS.LastAssumeRole.ExternalId); got != "" {
 		// The LAST AssumeRole is the automation-role one, which carries NO
@@ -1115,6 +1121,35 @@ func TestVendSkipsRegionEnablementWhenTheProfileNamesNoRegions(t *testing.T) {
 	}
 }
 
+// TestVendDeploysTheConformancePackFromTheCompiledControlSets is this
+// slice's own headline test: cmmc-l1 (vendProfileJSON's default control
+// set) binds many AWS Config managed rules, so a vend against it must
+// deploy a conformance pack naming them, using the SAME merged/narrowed
+// control set vendPolicySpecs already packs into SCPs.
+func TestVendDeploysTheConformancePackFromTheCompiledControlSets(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+
+	if n := child.CallCount("PutConformancePack"); n != 1 {
+		t.Errorf("PutConformancePack called %d times, want 1", n)
+	}
+	packs := child.ConformancePacks
+	if len(packs) != 1 {
+		t.Fatalf("want 1 deployed conformance pack, got %d: %+v", len(packs), packs)
+	}
+	for name := range packs {
+		if !strings.HasPrefix(name, "automat-research-cui") {
+			t.Errorf("conformance pack name %q does not derive from the profile id research-cui", name)
+		}
+	}
+}
+
 // TestVendRegionEnablementParksOnDenial confirms a denied EnableRegion parks
 // the vend rather than failing outright or silently continuing — the same
 // park discipline the automation-role step follows for the identical
@@ -1154,6 +1189,147 @@ func TestVendRegionEnablementParksOnDenial(t *testing.T) {
 	msg := err.Error()
 	if !strings.Contains(msg, "PARKED") {
 		t.Errorf("the error does not say the vend is parked:\n%s", msg)
+	}
+
+	m := loadVendManifest(t, accountID)
+	var parked *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpBaselineApply && m.Records[i].Outcome == evidence.OutcomeParked {
+			parked = &m.Records[i]
+		}
+	}
+	if parked == nil {
+		t.Fatalf("the manifest carries no parked baseline-apply record: %+v", m.Records)
+	}
+}
+
+// TestVendEstablishesTheConformancePackAlongsideTheAutomationRole confirms
+// both pieces of step 5 this build performs land before the SCP set is
+// attached — the "one baseline stage" consistency the command's own doc
+// comment describes for the conformance pack (which carries no Q13-shaped
+// ordering NEED, unlike the automation role, but is placed there anyway).
+func TestVendEstablishesTheConformancePackAlongsideTheAutomationRole(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	if n := f.ChildIAMRole(accountID).CallCount("PutRolePolicy"); n != 1 {
+		t.Errorf("automation role PutRolePolicy called %d times, want 1", n)
+	}
+	if n := f.ChildConfig(accountID).CallCount("PutConformancePack"); n != 1 {
+		t.Errorf("PutConformancePack called %d times, want 1", n)
+	}
+	if n := f.Policy.CallCount("AttachPolicy"); n < 1 {
+		t.Errorf("AttachPolicy was never called")
+	}
+}
+
+// TestVendFirstPlanReportsTheConformancePackAsUnknown mirrors
+// TestVendFirstPlanReportsTheAutomationRoleAsUnknown: a plan against a
+// profile whose account does not exist yet cannot assume into it, so it
+// must report the conformance pack as unknown-but-would-happen.
+func TestVendFirstPlanReportsTheConformancePackAsUnknown(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	out, _, err := runCLI(t, g, vendArgs(profile, "--dry-run")...)
+	if err != nil {
+		t.Fatalf("vend --dry-run: %v", err)
+	}
+	if !strings.Contains(out, "conformance pack") {
+		t.Errorf("the first-vend plan does not mention the conformance pack:\n%s", out)
+	}
+	if got := len(f.State.AccountIDs()); got != 0 {
+		t.Errorf("--dry-run created %d accounts", got)
+	}
+}
+
+// TestVendConformancePackReRunIsIdempotent is CLAUDE.md rule 4: a second
+// vend against an unchanged compiled control set must not redeploy the
+// conformance pack.
+func TestVendConformancePackReRunIsIdempotent(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+	seedDeployedInputParameters(t, child, profile)
+	child.Reset()
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("second vend: %v", err)
+	}
+	if n := child.CallCount("PutConformancePack"); n != 0 {
+		t.Errorf("PutConformancePack called %d times on an unchanged re-vend, want 0", n)
+	}
+}
+
+// seedDeployedInputParameters writes ConformancePackInputParameters onto
+// every deployed pack in child, computed by re-resolving the SAME control
+// sets the profile names — awsfake.Config's own PutConformancePack does not
+// persist this field through its write path (it stores only Arn/Id/Name;
+// see internal/awsfake/config.go), unlike real AWS Config, whose
+// DescribeConformancePacks does echo back exactly what PutConformancePack
+// was last called with (API_ConformancePackDetail's own field list). A
+// CLI-level idempotency test against the real fixture control set has to
+// seed this gap directly, the same way internal/baseline's own
+// seedDeployed test helper does for the package-level tests, since the
+// fake's write path cannot produce it.
+func seedDeployedInputParameters(t *testing.T, child *awsfake.Config, profilePath string) {
+	t.Helper()
+	in, err := loadVendInput(vendFlags{profilePath: profilePath, name: "Genomics"}, config.Context{})
+	if err != nil {
+		t.Fatalf("seedDeployedInputParameters: %v", err)
+	}
+	_, params, err := baseline.RenderConformancePackTemplate(in.Narrowed.Merged.SortedConfigRules())
+	if err != nil {
+		t.Fatalf("seedDeployedInputParameters: %v", err)
+	}
+	for name, detail := range child.ConformancePacks {
+		detail.ConformancePackInputParameters = params
+		child.ConformancePacks[name] = detail
+	}
+}
+
+// TestVendConformancePackParksOnPutDenial is BP.CFG-3's own Q13-shaped
+// scenario reached from the CLI, mirroring
+// TestVendAutomationRoleParksOnRePermissionDenial: config:PutConformancePack
+// denied on a re-vend must PARK, not fail outright or silently succeed, and
+// the manifest and the error must both say so.
+func TestVendConformancePackParksOnPutDenial(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildConfig(accountID)
+	// Seeds drift: a deployed input-parameter value differing from what this
+	// vend's compiled control sets resolve, so the second vend's read-then-
+	// branch finds something to change.
+	for name, detail := range child.ConformancePacks {
+		detail.ConformancePackInputParameters = nil
+		child.ConformancePacks[name] = detail
+	}
+	child.PutConformancePackErr = awsfake.AccessDenied("config:PutConformancePack")
+
+	_, _, err := runCLI(t, g, vendArgs(profile)...)
+	if err == nil {
+		t.Fatal("a re-vend against a pack whose PutConformancePack is denied returned no error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "PARKED") {
+		t.Errorf("the error does not say the vend is parked:\n%s", msg)
+	}
+	if !strings.Contains(msg, "baseline-protection") {
+		t.Errorf("the error does not mention baseline-protection (BP.CFG-3):\n%s", msg)
 	}
 
 	m := loadVendManifest(t, accountID)
@@ -1864,7 +2040,7 @@ func TestVendBirthCertificateCarriesTheHashes(t *testing.T) {
 		"cmmc-l1 sha256:",
 		"baseline-protection sha256:",
 		"dfars-7012 sha256:",
-		"NOT APPLIED",
+		"PARTLY APPLIED",
 		"evidence",
 	} {
 		if !strings.Contains(out, want) {

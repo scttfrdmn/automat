@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/account"
+	"github.com/aws/aws-sdk-go-v2/service/configservice"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -90,6 +91,13 @@ type globals struct {
 	// for the automation role, just against a different service client.
 	newChildAccount func(ctx context.Context, region, profile, partition, accountID,
 		roleName string) (awsapi.AccountAPI, error)
+	// newChildConfig is childConfigClient's test seam — `vend`'s in-child
+	// conformance-pack step (internal/baseline.EnsureConformancePack) needs
+	// an AWS Config client built from a session assumed INTO the
+	// just-vended account, the exact same assumption newChildIAMRole makes
+	// for the automation role, just against a different service client.
+	newChildConfig func(ctx context.Context, region, profile, partition, accountID,
+		roleName string) (awsapi.ConfigAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -387,9 +395,9 @@ func (g *globals) childIAMRoleClient(ctx context.Context, region, profile, parti
 // OrganizationAccountAccessRole (or whatever roleName names), returning an
 // AWS Account Management client on that session instead of an IAM one. Two
 // methods rather than one returning both clients because the two callers
-// (vendAutomationRoleStep, a future vendRegionsStep) each need only one
-// service, and awsapi's own per-interface-not-per-service split (CLAUDE.md)
-// is what this mirrors.
+// (vendAutomationRoleStep, vendRegionsStep) each need only one service, and
+// awsapi's own per-interface-not-per-service split (CLAUDE.md) is what this
+// mirrors.
 func (g *globals) childAccountClient(ctx context.Context, region, profile, partition, accountID,
 	roleName string) (awsapi.AccountAPI, error) {
 	if g.newChildAccount != nil {
@@ -408,6 +416,34 @@ func (g *globals) childAccountClient(ctx context.Context, region, profile, parti
 		return nil, err
 	}
 	return account.NewFromConfig(cfg), nil
+}
+
+// childConfigClient is childIAMRoleClient's sibling for
+// internal/baseline.EnsureConformancePack: the same assumption into
+// OrganizationAccountAccessRole (or whatever roleName names), returning an
+// AWS Config client on that session instead of an IAM one. A separate
+// method rather than one returning both clients, mirroring childIAMRoleClient's
+// own reasoning (see its doc comment) — the two callers (vendAutomationRoleStep,
+// vendConformancePackStep) each need only one service, and awsapi's own
+// per-interface-not-per-service split (CLAUDE.md) is what this mirrors.
+func (g *globals) childConfigClient(ctx context.Context, region, profile, partition, accountID,
+	roleName string) (awsapi.ConfigAPI, error) {
+	if g.newChildConfig != nil {
+		return g.newChildConfig(ctx, region, profile, partition, accountID, roleName)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	if partition == "" {
+		partition = "aws"
+	}
+	roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, "", region)
+	if err != nil {
+		return nil, err
+	}
+	return configservice.NewFromConfig(cfg), nil
 }
 
 // brokeredOrgReclaimClient is CloseAccount's client for the MEMBER state:
