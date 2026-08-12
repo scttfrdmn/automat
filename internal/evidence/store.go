@@ -28,6 +28,19 @@ import (
 // and send the reader after tampering that is not there.
 const MaxManifestBytes = 8 << 20
 
+// RotateThresholdRecords is the record count at which a caller writing
+// repeatedly to the same manifest — `verify` on a cron, or a heavily-resumed
+// `vend` — should rotate to a fresh one via Manifest.Rotate (Q23,
+// docs/open-questions.md).
+//
+// 2,000, well under the ~8,971-record ceiling MaxManifestBytes implies at
+// roughly 935 bytes per record: rotation is meant to happen long before a
+// manifest is at risk of refusing a write, not as a last-resort recovery from
+// one. Triggered automatically by the caller, but visibly logged rather than
+// silent — this project's stated preference for explicit, disclosed behavior
+// over implicit magic (ROADMAP.md's Q23 entry).
+const RotateThresholdRecords = 2000
+
 // Decode parses a manifest from raw JSON and verifies its chain.
 //
 // Unknown fields are rejected. The schema declares additionalProperties false, and

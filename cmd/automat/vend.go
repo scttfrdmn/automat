@@ -264,7 +264,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			// attach a policy has produced the state that most needs recording, and
 			// an operator who is handed only the error has an account nobody wrote
 			// down.
-			manifestPath, genesisSHA, writtenManifest, werr := writeVendEvidence(in, applied, signer)
+			manifestPath, genesisSHA, writtenManifest, werr := writeVendEvidence(in, applied, signer, out)
 			if werr != nil {
 				if aerr != nil {
 					return fmt.Errorf("%w (and the evidence manifest could not be written: %v)", aerr, werr)
@@ -1492,7 +1492,19 @@ func attestationIDs(in *vendInput) []string {
 // signer may be nil, in which case the manifest is unsigned — a valid
 // document, per Signer's own doc comment; whether the config file names a
 // KMS key is a policy decision this function does not make.
-func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (string, string, *evidence.Manifest, error) {
+//
+// # Rotation (Q23, docs/open-questions.md)
+//
+// `vend` runs once per account in the ordinary case, so it is far less likely
+// than `verify` to ever approach evidence.RotateThresholdRecords — but a
+// heavily-resumed vend against one account could theoretically accumulate
+// enough records to reach it, and the check costs nothing to have in place.
+// The active manifest is resolved by following any rotation pointer already
+// there (openActiveManifest, the same helper writeVerifyEvidence uses), and
+// the threshold is checked after this run's records are appended
+// (writeManifestWithRotation) — printing a notice to out rather than rotating
+// silently.
+func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer, out io.Writer) (string, string, *evidence.Manifest, error) {
 	if st == nil || st.AccountID == "" || len(st.Records) == 0 {
 		return "", "", nil, nil
 	}
@@ -1507,9 +1519,8 @@ func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (st
 		return "", "", nil, err
 	}
 	defer func() { _ = dir.Close() }()
-	path := dir.Path(st.AccountID)
 
-	m, err := dir.LoadOrNew(st.AccountID, st.AccountID, st.OrgID, in.Now, nil)
+	key, m, err := openActiveManifest(dir, st.AccountID, st.OrgID, in.Now)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w\n"+
 			"The account exists either way. automat refuses to continue a chain it cannot read, "+
@@ -1522,10 +1533,12 @@ func writeVendEvidence(in *vendInput, st *vendState, signer evidence.Signer) (st
 				st.Records[i].Operation, st.AccountID, aerr)
 		}
 	}
-	if err := dir.Write(m, st.AccountID); err != nil {
+	genesisSHA := m.Meta.GenesisSHA
+	path, written, err := writeManifestWithRotation(dir, key, m, signer, in.Now, out)
+	if err != nil {
 		return "", "", nil, err
 	}
-	return path, m.Meta.GenesisSHA, m, nil
+	return path, genesisSHA, written, nil
 }
 
 // vendFailure turns a step failure into the error the operator sees.

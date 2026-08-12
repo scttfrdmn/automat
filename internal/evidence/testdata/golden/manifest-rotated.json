@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0.0",
+  "manifest": {
+    "id": "444455556666",
+    "account_id": "444455556666",
+    "organization_id": "o-abc1234567",
+    "created_at": "2026-08-05T00:00:00Z",
+    "genesis_sha256": "a36104635750bf3050360168f648583f0811e42e74e0775bf45144ee66abda74"
+  },
+  "records": [
+    {
+      "sequence": 0,
+      "timestamp": "2026-08-05T00:00:01Z",
+      "operation": "account-create",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "request_id": "req-abc123",
+      "target": {
+        "account_id": "444455556666",
+        "account_name": "Physics CUI Enclave",
+        "ou_id": "ou-abc1-12345678",
+        "region": "us-east-1"
+      },
+      "artifact": {
+        "id": "cmmc-l1",
+        "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "schema_version": "1.0.0"
+      },
+      "environment_profile": {
+        "id": "research-cui",
+        "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_version": "1.0.0",
+        "review_by": "2026-11-10",
+        "verified_signatures": []
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "record_sha256": "a36104635750bf3050360168f648583f0811e42e74e0775bf45144ee66abda74",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "NhED1NPymW9dMCA/HDbfMqBPe6yAl8Ige1HRpu0EzDewMB2ZVA5YpTdxenbt8Wm99HDnJq+yMf1xrc2NqZTKBA=="
+      }
+    },
+    {
+      "sequence": 1,
+      "timestamp": "2026-08-05T00:00:02Z",
+      "operation": "verify",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "target": {
+        "account_id": "444455556666",
+        "region": "us-east-1"
+      },
+      "environment_profile": {
+        "id": "research-cui",
+        "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_version": "1.0.0",
+        "review_by": "2026-11-10",
+        "verified_signatures": []
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "a36104635750bf3050360168f648583f0811e42e74e0775bf45144ee66abda74",
+      "record_sha256": "88b9a016a1e1dc4d3289a9134d410d3be3fee9a55c9eb6f70e7763050a62830d",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "ZF4kZeHbXs5ZaIR8+g9NXekIaGEA/ReLiDkLbozMtEs+ZTS5KjvlMUkBlyipWBykSf/7y4DsP5b8cPsdN/g7AQ=="
+      }
+    },
+    {
+      "sequence": 2,
+      "timestamp": "2026-08-05T00:00:03Z",
+      "operation": "rotate",
+      "outcome": "success",
+      "operator": {
+        "arn": "arn:aws:sts::111122223333:assumed-role/automat-operator/session",
+        "account_id": "111122223333",
+        "user_id": "AROAEXAMPLEEXAMPLE:session",
+        "assumed_role": "automat-operator"
+      },
+      "rotation": {
+        "successor_manifest_id": "444455556666-2",
+        "reason": "reached the configured record threshold",
+        "record_count": 3
+      },
+      "tool_version": "0.1.0",
+      "previous_sha256": "88b9a016a1e1dc4d3289a9134d410d3be3fee9a55c9eb6f70e7763050a62830d",
+      "record_sha256": "7213d6cac26f907481b99f6b3e6ffa73203816d28d31589b91b3b4ba337717c4",
+      "signature": {
+        "algorithm": "ed25519",
+        "key_id": "test-key-1",
+        "value": "o0p/5nyqKJrsq1L6hR4gu8fGBLBgocVe2rahHr8eExP+/2lVc4HWOwHE+Ot8Ul7z9yicRJlajvicUZ60NlpUDA=="
+      }
+    }
+  ]
+}

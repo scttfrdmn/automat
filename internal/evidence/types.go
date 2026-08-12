@@ -22,7 +22,11 @@ type Operation string
 
 // The operations a record may name. One per mutating command plus verify and
 // assess, neither of which writes anything to AWS but are worth recording as
-// having run, and custody-transfer, which ends the chain.
+// having run, and two terminal kinds — custody-transfer, which ends the chain
+// because custody passed to someone else, and rotate, which ends the chain
+// because it reached this package's size threshold and a fresh manifest
+// continues it (Q23, docs/open-questions.md). Both are terminal; see
+// IsTerminal.
 const (
 	OpInit             Operation = "init"
 	OpSetup            Operation = "setup"
@@ -36,12 +40,14 @@ const (
 	OpAssess           Operation = "assess"
 	OpReclaim          Operation = "reclaim"
 	OpCustodyTransfer  Operation = "custody-transfer"
+	OpRotate           Operation = "rotate"
 )
 
 // AllOperations is the closed set, in the schema's order.
 var AllOperations = []Operation{
 	OpInit, OpSetup, OpAccountCreate, OpAccountMove, OpOUEnsure, OpSCPEnsure,
 	OpBaselineApply, OpAttestationWrite, OpVerify, OpAssess, OpReclaim, OpCustodyTransfer,
+	OpRotate,
 }
 
 // Outcome is how an operation ended.
@@ -133,14 +139,15 @@ type Record struct {
 	// MET), the same absent-is-honest convention Result.Determinations
 	// itself follows (schema/assessment-result-v1.schema.json's own
 	// $comment on that field).
-	Determinations *DocRef      `json:"determinations,omitempty"`
-	Enforcement    *Enforcement `json:"enforcement,omitempty"`
-	Err            *RecordError `json:"error,omitempty"`
-	Custody        *Custody     `json:"custody_transfer,omitempty"`
-	ToolVersion    string       `json:"tool_version"`
-	PreviousSHA    string       `json:"previous_sha256"`
-	RecordSHA      string       `json:"record_sha256"`
-	Signature      *Signature   `json:"signature,omitempty"`
+	Determinations *DocRef       `json:"determinations,omitempty"`
+	Enforcement    *Enforcement  `json:"enforcement,omitempty"`
+	Err            *RecordError  `json:"error,omitempty"`
+	Custody        *Custody      `json:"custody_transfer,omitempty"`
+	Rotation       *RotationInfo `json:"rotation,omitempty"`
+	ToolVersion    string        `json:"tool_version"`
+	PreviousSHA    string        `json:"previous_sha256"`
+	RecordSHA      string        `json:"record_sha256"`
+	Signature      *Signature    `json:"signature,omitempty"`
 }
 
 // Operator is the principal that performed the operation.
@@ -258,6 +265,33 @@ type Custody struct {
 	SuccessorManifestID string `json:"successor_manifest_id,omitempty"`
 }
 
+// RotationInfo records why a manifest was closed by rotation and which manifest
+// continues it. Required on a rotate record and forbidden on every other kind —
+// the same pairing discipline Custody follows.
+//
+// A SEPARATE type from Custody, deliberately, rather than Custody with its
+// custody-specific fields left empty. Custody's own fields — Transferee,
+// EffectiveDate — answer "who has it now and from when", which is a question
+// rotation has no answer to: nobody's custody changes when a manifest fills up,
+// the file is just full. A rotate record carrying an empty Transferee would read
+// as a transfer to nobody, which is not what happened.
+type RotationInfo struct {
+	// SuccessorManifestID names the manifest that continues the chain. Required:
+	// unlike a custody transfer, which may leave automat's scope entirely and
+	// therefore legitimately name no successor, a rotation is automat's own
+	// housekeeping — it always produces a successor, because producing one is the
+	// whole point of rotating.
+	SuccessorManifestID string `json:"successor_manifest_id"`
+	// Reason says why the chain was rotated here — "reached 2000 records", in
+	// practice, but stated by the writer rather than hard-coded so a future
+	// trigger (a size-based one, an operator-requested one) reads honestly too.
+	Reason string `json:"reason"`
+	// RecordCount is how many records were in the old manifest at the moment of
+	// rotation, including this terminal one — a fact a reader would otherwise
+	// have to recount from the closed file.
+	RecordCount int `json:"record_count"`
+}
+
 // Signature is a detached signature over a record's record_sha256.
 type Signature struct {
 	Algorithm string `json:"algorithm"`
@@ -280,8 +314,13 @@ const (
 // AllAlgorithms is the closed set.
 var AllAlgorithms = []Algorithm{AlgEd25519, AlgKMSRSAPSS256, AlgKMSECDSA256}
 
-// IsCustodyTransfer reports whether this record is the terminal kind.
-func (r *Record) IsCustodyTransfer() bool { return r.Operation == OpCustodyTransfer }
+// IsTerminal reports whether this record ends the chain: a custody transfer
+// (custody passed to someone else) or a rotation (this manifest reached the
+// size threshold and a fresh one continues it). Nothing may follow either kind
+// — see Append and validateChain.
+func (r *Record) IsTerminal() bool {
+	return r.Operation == OpCustodyTransfer || r.Operation == OpRotate
+}
 
 // Last returns the final record, or nil for an empty chain.
 func (m *Manifest) Last() *Record {
@@ -291,11 +330,12 @@ func (m *Manifest) Last() *Record {
 	return &m.Records[len(m.Records)-1]
 }
 
-// Closed reports whether the chain has been deliberately ended by a
-// custody-transfer record. A closed manifest takes no further records.
+// Closed reports whether the chain has been deliberately ended by a terminal
+// record — a custody transfer or a rotation. A closed manifest takes no
+// further records.
 func (m *Manifest) Closed() bool {
 	last := m.Last()
-	return last != nil && last.IsCustodyTransfer()
+	return last != nil && last.IsTerminal()
 }
 
 // Parked returns the records whose outcome is parked and which name an account,

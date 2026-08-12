@@ -106,8 +106,23 @@ func (d *Dir) Path(accountID string) string {
 // correct-looking document filed in the wrong place reads to an auditor as evidence
 // about an account it is not about.
 func (d *Dir) LoadOrNew(accountID, id, organizationID, createdAt string, verifier Verifier) (*Manifest, error) {
-	name := accountID + ".json"
-	shown := d.Path(accountID)
+	return d.LoadOrNewNamed(accountID, id, accountID, organizationID, createdAt, verifier)
+}
+
+// LoadOrNewNamed is LoadOrNew generalized over a filename key distinct from
+// the account id being checked against the loaded manifest's content.
+//
+// LoadOrNew's own accountID parameter does double duty: it is both the
+// filename key (accountID+".json") and the identity LoadOrNew's checkIsAbout
+// call verifies the loaded manifest is actually about. Those coincide for
+// every manifest until rotation (Q23, docs/open-questions.md): a rotated
+// manifest's successor is filed as "<accountID>-2.json" while remaining a
+// manifest ABOUT accountID, so a caller resolving which file currently
+// receives an account's records needs to open by one name and check identity
+// against another.
+func (d *Dir) LoadOrNewNamed(key, id, accountID, organizationID, createdAt string, verifier Verifier) (*Manifest, error) {
+	name := key + ".json"
+	shown := d.Path(key)
 
 	f, _, err := safeio.OpenChecked(d.root, name, shown)
 	switch {
@@ -164,6 +179,27 @@ func (m *Manifest) checkIsAbout(accountID, organizationID, shown string) error {
 	return nil
 }
 
+// Exists reports whether a manifest file named key+".json" is already present
+// in this directory, without reading or validating its content.
+//
+// For Path/LoadOrNew/Write, key is ordinarily the account id. Rotation (Q23)
+// is the exception: a rotated manifest's successor is named
+// "<accountID>-2.json", "<accountID>-3.json", and so on, and a caller
+// choosing the next free suffix needs to ask "is this name taken" without
+// paying for a full Decode of whatever is there — the file, if present, is
+// someone else's chain and not this call's business to parse.
+func (d *Dir) Exists(key string) (bool, error) {
+	_, err := d.root.Lstat(key + ".json")
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, fmt.Errorf("check for %s: %w", d.Path(key), err)
+	}
+}
+
 // ListAccountIDs returns the account id every manifest file in this directory
 // names, sorted — the id being whatever precedes ".json" in the filename, not
 // a field read out of the manifest's own content.
@@ -202,8 +238,17 @@ func (d *Dir) ListAccountIDs() ([]string, error) {
 // Write writes a manifest into this directory, with the same temp-file-first
 // discipline as the package-level Write and through the same checked open.
 func (d *Dir) Write(m *Manifest, accountID string) error {
-	base := accountID + ".json"
-	shown := d.Path(accountID)
+	return d.WriteNamed(m, accountID)
+}
+
+// WriteNamed is Write generalized over a filename key distinct from the
+// account id, for the same reason LoadOrNewNamed exists: a rotated manifest's
+// successor (Q23, docs/open-questions.md) is filed as
+// "<accountID>-2.json", not "<accountID>.json", while its Meta.AccountID is
+// still the account it is about.
+func (d *Dir) WriteNamed(m *Manifest, key string) error {
+	base := key + ".json"
+	shown := d.Path(key)
 	if err := m.Validate(); err != nil {
 		return fmt.Errorf("refusing to write %s: %w", shown, err)
 	}
