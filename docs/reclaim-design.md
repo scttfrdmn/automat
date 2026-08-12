@@ -95,6 +95,49 @@ Organizations* — CLAUDE.md rule 7's discipline (every failure says which actio
 resource, what would fix it), applied to a limit this tool cannot pre-check rather than
 one it can.
 
+## A closed account still counts against the account-count quota
+
+**Confirmed against a real organization (2026-08-13), not inferred from prose.** A sandbox
+org with exactly one `ACTIVE` account and four `SUSPENDED` ones (all four closed by earlier
+`reclaim` runs) refused a sixth `CreateAccount` with `ConstraintViolationException`,
+`ACCOUNT_NUMBER_LIMIT_EXCEEDED` — five total accounts, all statuses, was already at the
+ceiling. `reclaim` had changed each account's *status*; it had not freed the *slot* `L-29A0C5DF`
+counts against, at least not within the 90-day grace window AWS holds a closed account in
+before it can be reinstated (this design's own earlier section). This is worth stating
+plainly because it contradicts the natural reading of "reclaim" as a word: closing an
+account is not the same operation as returning its slot to the pool, and nothing in this
+tool's own text said so until this was hit live.
+
+**Consequence for anyone running the live smoke checklist (`docs/smoke.md`) or otherwise
+exercising `vend`+`reclaim` repeatedly against one sandbox org:** every account ever
+created, whether currently `ACTIVE` or long since `SUSPENDED`, keeps consuming headroom
+against the account-count ceiling until AWS actually purges it past the 90-day window (an
+opaque, automat-uninvolved process). A sandbox used for repeated testing accumulates this
+debt silently — `preflight`'s own `checkQuota` (covering `L-29A0C5DF`) reports the current
+count correctly when it can read the quota at all, but a brand-new payer account (as this
+one was) does not even expose `L-29A0C5DF` via Service Quotas
+(`NoSuchResourceException` — the same gap `preflight`'s own report already discloses,
+"could not read the quota") and can carry a **temporary, lower, unpublished ceiling** below
+the standard default while its billing history is still new. Neither figure — the real
+ceiling nor the current count against it — is reliably queryable in that state, which is
+exactly the "this tool cannot pre-check it" situation the close-account rate limit already
+described above, now confirmed to apply to account *creation* as well as account
+*closure*.
+
+**What this does not change:** `reclaim`'s own design (durable-by-default, detach-then-close,
+no ephemeral mode) is unaffected — this is a fact about AWS's account bookkeeping, not a
+defect in what `reclaim` does. It does mean a sandbox intended for repeated smoke-testing
+needs either headroom budgeted well above what a single test pass will create, or an AWS
+Support quota-increase request filed proactively rather than discovered mid-run — and that a
+"just close it when you're done" mental model is not actually free of a live-org resource
+that automat's own account-count quota check may not be able to see.
+
+**See `docs/hold-design.md`'s "Explicit interaction with Q26 and the quota finding" for why
+`automat hold` — a separate, later capability that keeps an account `ACTIVE` under a
+tightened SCP instead of closing it — is not an alternative to `reclaim` for managing this
+quota either.** Holding does not free a slot any more than reclaiming does; the two commands
+answer different questions about an account's disposition, and neither moves this quota.
+
 ## Evidence-record shape
 
 **A plain `OpReclaim` record, not a variant of custody-transfer.** `evidence.OpReclaim` is

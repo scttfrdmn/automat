@@ -1279,3 +1279,9 @@ existing `SUSPENDED` accounts age out, whichever happens first. Recorded so the 
 person to hit this — in this sandbox or another — has the confirmed fact (closed accounts
 count) and the open question (for how long, exactly) in one place, rather than
 rediscovering the first and guessing at the second.
+
+**See also `docs/hold-design.md`'s "Explicit interaction with Q26 and the quota finding":**
+`automat hold` (keeping an account `ACTIVE` under a tightened SCP instead of closing it) does
+not free or avoid consuming this quota either — an active held account counts exactly like
+any other active account. `hold` and `reclaim` are not alternative quota-management
+strategies; neither one moves this number.
