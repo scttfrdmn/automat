@@ -81,4 +81,15 @@ func (f *S3) Object(bucket, key string) ([]byte, bool) {
 	return data, ok
 }
 
+// SetObject seeds or overwrites the bytes at bucket/key directly, bypassing
+// PutObject — for a test simulating a mirror that disagrees with the local
+// copy (a tampered mirror, or a mirror that received a different write than
+// the local file did) without going through evidence.S3Mirror.Upload at all.
+func (f *S3) SetObject(bucket, key string, data []byte) {
+	if f.objects == nil {
+		f.objects = map[string][]byte{}
+	}
+	f.objects[s3Key(bucket, key)] = data
+}
+
 var _ awsapi.S3MirrorAPI = (*S3)(nil)

@@ -155,8 +155,22 @@ func newVerifyCmd(g *globals) *cobra.Command {
 				return err
 			}
 
+			// The read-and-diff half of ROADMAP.md's "Remote evidence mirror"
+			// backlog item, item 2 — the half that actually closes (not just
+			// narrows) docs/open-questions.md's Q21 residual. Checked BEFORE
+			// this run's own OpVerify record is appended below: see
+			// checkMirrorDrift's own doc comment for why the ordering matters
+			// — comparing AFTER this run re-uploads would make local and
+			// mirror agree by construction every time, hiding exactly the
+			// tamper this check exists to catch.
+			mirrorReports, mderr := checkMirrorDrift(ctx, g, region, profile, accountID,
+				in.profile.Baseline.Evidence, now)
+			if mderr != nil {
+				return mderr
+			}
+
 			out := cmd.OutOrStdout()
-			if err := renderVerifyReport(out, accountID, target, policyReport, freshness, honesty); err != nil {
+			if err := renderVerifyReport(out, accountID, target, policyReport, freshness, honesty, mirrorReports); err != nil {
 				return err
 			}
 
@@ -164,7 +178,8 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			if serr != nil {
 				return serr
 			}
-			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now, policyReport, signer, out)
+			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now,
+				policyReport, mirrorReports, signer, out)
 			if werr != nil {
 				return werr
 			}
@@ -187,7 +202,7 @@ func newVerifyCmd(g *globals) *cobra.Command {
 						return fmt.Errorf("write the warning: %w", perr)
 					}
 				} else {
-					for _, warn := range uploadToMirrors(ctx, mirrors, writtenManifest) {
+					for _, warn := range uploadToMirrors(ctx, mirrors, evidenceManifestKey(manifestPath), writtenManifest) {
 						if _, perr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn); perr != nil {
 							return fmt.Errorf("write the warning: %w", perr)
 						}
@@ -196,9 +211,9 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			}
 
 			switch {
-			case !policyReport.Clean():
+			case !policyReport.Clean(), anyMirrorDrifted(mirrorReports):
 				return &exitError{code: exitVerifyDrift}
-			case freshness.Unparseable:
+			case freshness.Unparseable, anyMirrorUnreachable(mirrorReports):
 				return &exitError{code: exitVerifyUnknown}
 			}
 			return nil
@@ -321,15 +336,25 @@ func verifyParentOf(ctx context.Context, api awsapi.OrgAPI, accountID string) (s
 	return aws.ToString(out.Parents[0].Id), nil
 }
 
-// renderVerifyReport prints the policy and freshness findings, plus the
+// renderVerifyReport prints the policy and freshness findings, the
 // per-control enforcement-class breakdown DESIGN §12 calls "structural
 // honesty" — how many of the compiled controls this tool enforces itself, how
 // many require a documented process outside this tool, and how many require
 // continuous evidence collection outside this tool's scope. Computed from the
 // artifact (verify.StructuralHonesty), not asserted in prose, so the report
-// states its own limits without pitching anything.
+// states its own limits without pitching anything — and, when at least one
+// mirror is configured, the mirror-drift findings from ROADMAP.md's "Remote
+// evidence mirror" slice 2 (docs/open-questions.md Q21).
+//
+// mirrorReports may be nil (no mirror bucket configured at all — the
+// common, today's-default case), in which case the section is omitted
+// entirely rather than printed empty: "nothing to check" and "checked, found
+// nothing" are different claims, and the absence of the section IS the
+// former's honest rendering, distinct from a checked-clean line for the
+// latter (see checkMirrorDrift's own doc comment).
 func renderVerifyReport(w io.Writer, accountID, target string,
-	policy *verify.PolicyReport, freshness verify.FreshnessStatus, honesty *verify.StructuralHonestyReport) error {
+	policy *verify.PolicyReport, freshness verify.FreshnessStatus, honesty *verify.StructuralHonestyReport,
+	mirrorReports []evidence.MirrorDriftReport) error {
 	p := func(format string, args ...any) error {
 		_, err := fmt.Fprintf(w, format, args...)
 		return err
@@ -392,7 +417,124 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		return err
 	}
 
+	if len(mirrorReports) > 0 {
+		if err := p("\nEvidence mirror layer:\n"); err != nil {
+			return err
+		}
+		for _, mr := range mirrorReports {
+			line, lerr := renderMirrorDriftLine(mr)
+			if lerr != nil {
+				return lerr
+			}
+			if err := p("  %s\n", line); err != nil {
+				return err
+			}
+		}
+	}
+
 	return p("\nautomat %s\n", version.Version)
+}
+
+// renderMirrorDriftLine renders one evidence.MirrorDriftReport as a single
+// report line — its own line, own outcome consideration, distinct from the
+// "Policy layer:"/"Structural honesty:" sections above, per this task's own
+// scope statement. bucket is quoted for the same reason renderVerifyReport
+// quotes target and an orphan's name: it names a bucket read out of the
+// environment profile, an operator-supplied document, not one of this
+// binary's own literals.
+func renderMirrorDriftLine(mr evidence.MirrorDriftReport) (string, error) {
+	switch {
+	case !mr.Checked:
+		return fmt.Sprintf("%q: could not verify — %s", mr.Bucket, mr.Detail), nil
+	case !mr.Drifted:
+		return fmt.Sprintf("%q: matches the local manifest", mr.Bucket), nil
+	case mr.DriftKind == evidence.DriftKindTruncation:
+		return fmt.Sprintf("%q: TRUNCATED relative to the local manifest — %s", mr.Bucket, mr.Detail), nil
+	default:
+		return fmt.Sprintf("%q: DISAGREES with the local manifest — %s", mr.Bucket, mr.Detail), nil
+	}
+}
+
+// anyMirrorDrifted reports whether any mirror-drift report found a genuine
+// disagreement or truncation — the condition that pushes verify's exit code
+// toward exitVerifyDrift, the same way !policy.Clean() does.
+func anyMirrorDrifted(reports []evidence.MirrorDriftReport) bool {
+	for _, r := range reports {
+		if r.Drifted {
+			return true
+		}
+	}
+	return false
+}
+
+// anyMirrorUnreachable reports whether any configured mirror could not be
+// read — the third, distinct state (checkMirrorDrift's own doc comment),
+// which must move the exit code toward exitVerifyUnknown rather than either
+// exitVerifyDrift (that would call an unreadable mirror a drift finding) or
+// a clean exit (that would call it a pass).
+func anyMirrorUnreachable(reports []evidence.MirrorDriftReport) bool {
+	for _, r := range reports {
+		if !r.Checked {
+			return true
+		}
+	}
+	return false
+}
+
+// checkMirrorDrift runs ROADMAP.md's "Remote evidence mirror" slice 2 — the
+// read-and-diff half that closes (for an account with a mirror configured)
+// docs/open-questions.md's Q21 residual — against every mirror bucket named
+// program.Baseline.Evidence, reusing evidenceMirrorReaders' bucket resolution
+// (the same one evidenceMirror's write side already uses) rather than
+// re-reading InAccountBucket/ManagementMirrorBucket a second time.
+//
+// # Why this must run BEFORE writeVerifyEvidence appends this run's own record
+//
+// Every evidence-writing command in this codebase uploads to its mirror
+// AFTER the local write (evidenceMirror's own doc comment: "the mirror
+// upload is additive and best-effort, after the local write above has
+// already succeeded"). If checkMirrorDrift ran after that upload, this run's
+// own OpVerify record would already be on both copies, and a rewrite
+// targeting an EARLIER record would be masked: local and mirror would agree
+// on their current tails regardless of what happened to the history beneath
+// them, because both received the identical fresh write moments before the
+// comparison. Running the check against the mirror's state as of the START
+// of this run — before this run touches either copy — is what makes the
+// comparison meaningful.
+//
+// Returns nil, nil (not an empty non-nil slice) when no mirror is
+// configured: renderVerifyReport and writeVerifyEvidence both treat a nil
+// slice as "nothing to check" and omit the section/skip the finding
+// entirely, which is the correct rendering of "opt-in, and not opted into"
+// (docs/open-questions.md Q21's own "closes the residual for accounts with a
+// mirror configured" scoping).
+func checkMirrorDrift(ctx context.Context, g *globals, region, profile, accountID string,
+	targets *envprofile.OutputTargets, now time.Time) ([]evidence.MirrorDriftReport, error) {
+	readers, err := evidenceMirrorReaders(ctx, g, region, profile, targets)
+	if err != nil {
+		return nil, err
+	}
+	if len(readers) == 0 {
+		return nil, nil
+	}
+
+	dir, err := evidence.OpenDir(".", targets.Dir(envprofile.DefaultEvidenceDir))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = dir.Close() }()
+
+	key, local, err := openActiveManifest(dir, accountID, "", now.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("cannot open the evidence manifest for account %s: %w", accountID, err)
+	}
+
+	reports := make([]evidence.MirrorDriftReport, len(readers))
+	for i, r := range readers {
+		report := evidence.MirrorDrift(ctx, r.reader, r.bucket, key, local)
+		reports[i] = *report
+	}
+	return reports, nil
 }
 
 // writeVerifyEvidence appends an OpVerify record to the account's evidence
@@ -417,6 +559,17 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // that changes no exit code (DESIGN §11a, §12), and a record marked failure for
 // a date would say the account drifted when nothing about it moved.
 //
+// Mirror drift (mirrorReports, ROADMAP.md's "Remote evidence mirror" slice 2)
+// follows the SAME rule the policy layer does, not freshness's: a mirror
+// that disagrees with the local manifest IS a finding this check made, so it
+// pushes outcome to failure exactly the way a missing or differing policy
+// does (mirrorDriftError, mirroring verifyDriftError's own shape per
+// CLAUDE.md rule 7). An UNREACHABLE mirror (Checked false) does NOT flip the
+// outcome — that is "could not verify", the same non-claim freshness's own
+// Unparseable makes, and a record marked failure for a network error or a
+// permission denial would say the account drifted when nothing about it was
+// shown to have moved.
+//
 // # Rotation (Q23, docs/open-questions.md)
 //
 // `verify` is the command this project's own research backlog names as the one
@@ -428,7 +581,8 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 // threshold is checked and a rotation performed if crossed
 // (writeManifestWithRotation) — visibly, via a notice on out, never silently.
 func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
-	policy *verify.PolicyReport, signer evidence.Signer, out io.Writer) (string, *evidence.Manifest, error) {
+	policy *verify.PolicyReport, mirrorReports []evidence.MirrorDriftReport,
+	signer evidence.Signer, out io.Writer) (string, *evidence.Manifest, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
@@ -447,8 +601,15 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 	}
 
 	outcome, recErr := evidence.OutcomeSuccess, (*evidence.RecordError)(nil)
-	if !policy.Clean() {
+	switch {
+	case !policy.Clean() && anyMirrorDrifted(mirrorReports):
+		outcome = evidence.OutcomeFailure
+		recErr = verifyDriftError(policy)
+		recErr.Message += " Additionally, " + mirrorDriftError(mirrorReports).Message
+	case !policy.Clean():
 		outcome, recErr = evidence.OutcomeFailure, verifyDriftError(policy)
+	case anyMirrorDrifted(mirrorReports):
+		outcome, recErr = evidence.OutcomeFailure, mirrorDriftError(mirrorReports)
 	}
 	rec := evidence.Record{
 		Timestamp: nowStr,
@@ -536,4 +697,32 @@ func verifyDriftRemediation(reattach, orphaned bool) string {
 			"this profile asks for, not less")
 	}
 	return strings.Join(parts, ". ")
+}
+
+// mirrorDriftError is the RecordError a mirror-drifted verify record
+// carries — verifyDriftError's own shape (CLAUDE.md rule 7: which action,
+// which resource, what grant/step would fix it), applied to
+// ROADMAP.md's "Remote evidence mirror" slice 2 finding instead of the
+// policy layer's. Called only when anyMirrorDrifted(reports) is true, so at
+// least one entry has Drifted set; unreachable mirrors (Checked false) are
+// a distinct, non-failing state and are not named here (writeVerifyEvidence's
+// own doc comment).
+func mirrorDriftError(reports []evidence.MirrorDriftReport) *evidence.RecordError {
+	var parts []string
+	for _, r := range reports {
+		if !r.Drifted {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%q %s: %s", r.Bucket, r.DriftKind, r.Detail))
+	}
+	return &evidence.RecordError{
+		Message: "the evidence mirror does not match the local manifest. " + strings.Join(parts, "; "),
+		Action:  "s3:GetObject",
+		Remediation: "the local manifest and its mirrored copy in the bucket(s) named above disagree; " +
+			"this is docs/open-questions.md Q21's own residual made concrete — determine which copy is " +
+			"the tampered one (a rewrite that truncates records and recomputes the genesis anchor is " +
+			"internally consistent by itself, which is exactly why a second copy is what catches it), " +
+			"and treat the account as needing a full manual review rather than a re-run of `vend`, " +
+			"which would not repair a chain that has already been edited",
+	}
 }

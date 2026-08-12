@@ -186,7 +186,7 @@ func newReclaimCmd(g *globals) *cobra.Command {
 						return fmt.Errorf("write the warning: %w", perr)
 					}
 				} else {
-					for _, warn := range uploadToMirrors(ctx, mirrors, writtenManifest) {
+					for _, warn := range uploadToMirrors(ctx, mirrors, evidenceManifestKey(manifestPath), writtenManifest) {
 						if _, perr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn); perr != nil {
 							return fmt.Errorf("write the warning: %w", perr)
 						}

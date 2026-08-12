@@ -51,11 +51,11 @@ and the delegation policy's own SCP-modification statements are scoped to it
 There is no separate "OU marker tag" distinct from this one — an OU automat creates gets
 the identical `automat:managed-by=automat` tag a policy does, not a second convention.
 
-## What DESIGN §14 named as future and is now half built
+## What DESIGN §14 named as future, and is now fully built
 
 DESIGN §14's original draft named a manifest storage convention —
 `s3://automat-evidence-<acct>/manifests/…` plus a management-side mirror — as part of the
-adoption contract. **The write half of that now exists; the read half does not.**
+adoption contract. **Both the write half and the read half now exist.**
 
 Every evidence-writing command (`vend`, `verify`, `reclaim`, `assess`) still writes the
 local file first and unconditionally, through `internal/evidence.Dir`
@@ -63,22 +63,31 @@ local file first and unconditionally, through `internal/evidence.Dir`
 `baseline.evidence.local_dir` (or a command's own `--evidence-dir` flag) — that has not
 changed and is not going to: DESIGN §11's "local copy always" priority.
 
-What is new is `internal/evidence.Mirror` (`S3Mirror`, `internal/awsapi.S3MirrorAPI`,
-`internal/awsfake.S3`): after the local write succeeds, `cmd/automat`'s `evidenceMirror`
-helper builds zero, one, or two mirrors from an environment profile's
-`baseline.evidence.in_account_bucket` and `management_mirror_bucket` — both, if a profile
-sets both, following DESIGN §11's own "and/or" — and uploads the same bytes the local file
-holds to each, via `s3:PutObject`. A mirror upload failure is reported as a warning and
-never fails the command that produced the manifest, and never blocks on the local write,
-which has already happened by the time a mirror is even considered.
+`internal/evidence.Mirror` (`S3Mirror`, `internal/awsapi.S3MirrorAPI`,
+`internal/awsfake.S3`) is the write side: after the local write succeeds,
+`cmd/automat`'s `evidenceMirror` helper builds zero, one, or two mirrors from an
+environment profile's `baseline.evidence.in_account_bucket` and
+`management_mirror_bucket` — both, if a profile sets both, following DESIGN §11's own
+"and/or" — and uploads the same bytes the local file holds to each, via `s3:PutObject`,
+under the SAME filename stem the local write just used (the account id, ordinarily; a
+rotated successor's own `<account_id>-N` stem post-rotation — see
+`evidence.Mirror`'s own doc comment). A mirror upload failure is reported as a warning
+and never fails the command that produced the manifest, and never blocks on the local
+write, which has already happened by the time a mirror is even considered.
 
-This is write-only. **`verify` does not fetch the mirrored copy and does not compare it
-against the local file.** ROADMAP.md's "Remote evidence mirror" backlog item calls that
-comparison slice 2 — a second interface method (kept separate from `Mirror`, the same
-`Signer`/`Verifier` split for the same reason: a writer never needs read access) that
-`verify` would use to flag drift between the two copies as a new finding class. Until that
-lands, a rewritten local manifest and its now-stale mirrored copy are two documents nothing
-in this codebase compares — the mirror is a copy an operator or auditor can go read by
-hand, not yet a check `verify` performs. This page states only what ships; when the
-read-and-diff half lands, it earns its own paragraph here rather than this one being
-corrected quietly.
+`internal/evidence.MirrorReader` (also implemented by `S3Mirror`, per this codebase's
+own `Signer`/`Verifier` split — a writer never needs read access, so the two stay
+separate interfaces) is the read side ROADMAP.md's "Remote evidence mirror" backlog item
+calls slice 2: `verify` fetches the mirrored copy through `evidenceMirrorReaders`
+(the same bucket resolution `evidenceMirror` uses, so the two sides cannot name
+different buckets) and compares it against the local manifest via
+`evidence.MirrorDrift`, BEFORE appending this run's own record — comparing after would
+make the two copies agree by construction and hide exactly the tamper this check exists
+to catch. The result is a new "Evidence mirror layer:" report section, a distinct
+`MirrorDriftReport` finding class in the evidence record on drift, and a third,
+explicitly distinct "could not verify" state for a configured-but-unreachable mirror
+(network error, permission denial, or an account that has never had anything uploaded) —
+never conflated with either a clean pass or a drift finding. See
+`docs/open-questions.md`'s Q21 entry for what this closes and what remains open (the
+residual persists only for an account with no mirror configured at all, since the mirror
+stays opt-in).
