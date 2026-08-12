@@ -6,19 +6,20 @@
 // just created, rather than against the organization itself (internal/org's
 // job, steps 3 and 4).
 //
-// This slice builds only the first piece of that step: EnsureAutomationRole,
-// which creates and permissions "the automat automation role" DESIGN §7 step 5
-// names — "least privilege for future verify". The remaining pieces (a Config
-// recorder and delivery channel, a conformance pack, opt-in region enablement,
-// attestation stubs) are later, separate slices against
-// awsapi.ConfigAPI/AccountAPI, which already exist as interfaces (a prior
-// slice) but have no Ensurer methods yet. Nothing here calls either one; the
-// automation role's own permissions policy is scoped to their methods anyway
-// (see automationRoleActions), so a later slice's Ensurer methods find the
-// grant already in place rather than having to widen a role a catalog's
-// baseline-protection SCP may by then forbid touching at all (the very
-// ordering problem this package's doc comment spends the rest of its words
-// on).
+// Two pieces of that step are built so far: EnsureAutomationRole, which
+// creates and permissions "the automat automation role" DESIGN §7 step 5
+// names — "least privilege for future verify" — and EnsureRegions, which
+// ensures opt-in region enablement matches envprofile.BaselineRegions
+// (ROADMAP's "internal/baseline, slices 2-9", item 5). The remaining pieces
+// (a Config recorder and delivery channel, a conformance pack, attestation
+// stubs) are later, separate slices against awsapi.ConfigAPI, which already
+// exists as an interface (a prior slice) but has no Ensurer method yet.
+// Nothing here calls it; the automation role's own permissions policy is
+// scoped to its methods anyway (see automationRoleActions), so a later
+// slice's Ensurer methods find the grant already in place rather than having
+// to widen a role a catalog's baseline-protection SCP may by then forbid
+// touching at all (the very ordering problem this package's doc comment
+// spends the rest of its words on).
 //
 // # The ordering surprise: this step runs BEFORE the SCP that DESIGN §7 lists
 // after it
@@ -84,9 +85,10 @@
 //
 // # What this package does not construct
 //
-// EnsureAutomationRole is handed an already-assumed awsapi.IAMRoleAPI client;
-// it never builds an aws.Config or assumes a role itself. Session construction
-// — assuming OrganizationAccountAccessRole into the just-vended account — is
-// `cmd/automat/globals.go`'s job, the same division org.Ensurer already
-// enforces for its own OrgVendAPI/OrgPolicyAPI clients.
+// EnsureAutomationRole is handed an already-assumed awsapi.IAMRoleAPI client,
+// and EnsureRegions an already-assumed awsapi.AccountAPI client; neither
+// method ever builds an aws.Config or assumes a role itself. Session
+// construction — assuming OrganizationAccountAccessRole into the just-vended
+// account — is `cmd/automat/globals.go`'s job, the same division org.Ensurer
+// already enforces for its own OrgVendAPI/OrgPolicyAPI clients.
 package baseline

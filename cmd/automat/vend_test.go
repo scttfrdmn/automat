@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	accounttypes "github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 
 	"github.com/scttfrdmn/automat/internal/awsfake"
@@ -930,6 +931,145 @@ func TestVendAutomationRoleParksOnRePermissionDenial(t *testing.T) {
 	}
 	if !strings.Contains(msg, "baseline-protection") {
 		t.Errorf("the error does not mention baseline-protection (Q13):\n%s", msg)
+	}
+
+	m := loadVendManifest(t, accountID)
+	var parked *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpBaselineApply && m.Records[i].Outcome == evidence.OutcomeParked {
+			parked = &m.Records[i]
+		}
+	}
+	if parked == nil {
+		t.Fatalf("the manifest carries no parked baseline-apply record: %+v", m.Records)
+	}
+}
+
+// TestVendEnablesAndDisablesTheProfilesRegions confirms baseline.regions is
+// actually applied to the child account: a region named in enable ends up
+// ENABLED. Disable needs a region that is already ENABLED, and the fake
+// account starts with only ENABLED_BY_DEFAULT regions (AWS's own always-on
+// set, which cannot be disabled — see the ENABLED_BY_DEFAULT refusal test
+// below), so this test enables a region with a first vend and then disables
+// that SAME region with a second vend against the same account, rather than
+// trying to seed a pre-ENABLED region before the account (and its
+// ChildAccount fake) exist.
+func TestVendEnablesAndDisablesTheProfilesRegions(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
+		}
+	})
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildAccount(accountID)
+	if got := child.Regions["ap-northeast-1"]; got != accounttypes.RegionOptStatusEnabled {
+		t.Fatalf("ap-northeast-1 status = %s, want ENABLED", got)
+	}
+
+	profile2 := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"regions":         map[string]any{"disable": []any{"ap-northeast-1"}},
+		}
+	})
+	if _, _, err := runCLI(t, g, vendArgs(profile2, "--name", "Genomics")...); err != nil {
+		t.Fatalf("second vend: %v", err)
+	}
+	if got := child.Regions["ap-northeast-1"]; got != accounttypes.RegionOptStatusDisabled {
+		t.Errorf("ap-northeast-1 status after disable = %s, want DISABLED", got)
+	}
+}
+
+// TestVendFirstPlanReportsRegionEnablementAsUnknown mirrors
+// TestVendFirstPlanReportsTheAutomationRoleAsUnknown for
+// baseline.regions: a plan against a profile whose account does not exist
+// yet cannot assume into it, so it must report region enablement as
+// unknown-but-would-happen rather than guessing.
+func TestVendFirstPlanReportsRegionEnablementAsUnknown(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
+		}
+	})
+
+	out, _, err := runCLI(t, g, vendArgs(profile, "--dry-run")...)
+	if err != nil {
+		t.Fatalf("vend --dry-run: %v", err)
+	}
+	if !strings.Contains(out, "region enablement") {
+		t.Errorf("the first-vend plan does not mention region enablement:\n%s", out)
+	}
+	if got := len(f.State.AccountIDs()); got != 0 {
+		t.Errorf("--dry-run created %d accounts", got)
+	}
+}
+
+// TestVendSkipsRegionEnablementWhenTheProfileNamesNoRegions confirms a
+// profile that carries no baseline.regions block at all issues no
+// EnableRegion/DisableRegion call — the region step must be a true no-op
+// for the common case, not merely idempotent against an empty spec.
+func TestVendSkipsRegionEnablementWhenTheProfileNamesNoRegions(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildAccount(accountID)
+	for _, op := range []string{"EnableRegion", "DisableRegion"} {
+		if n := child.CallCount(op); n != 0 {
+			t.Errorf("%s called %d times even though the profile names no baseline.regions", op, n)
+		}
+	}
+}
+
+// TestVendRegionEnablementParksOnDenial confirms a denied EnableRegion parks
+// the vend rather than failing outright or silently continuing — the same
+// park discipline the automation-role step follows for the identical
+// reason: the account already exists, so a bare failure here would strand
+// it with nothing in the manifest explaining why region enablement never
+// finished.
+//
+// The denial is seeded on the per-account fake AFTER a first, successful
+// vend, then a second vend names a region the first did not — the same
+// two-run shape TestVendAutomationRoleParksOnRePermissionDenial uses,
+// because ChildAccount's fake does not exist until the account itself does.
+func TestVendRegionEnablementParksOnDenial(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"regions":         map[string]any{"enable": []any{"ap-northeast-1"}},
+		}
+	})
+	if _, _, err := runCLI(t, g, vendArgs(profile)...); err != nil {
+		t.Fatalf("first vend: %v", err)
+	}
+	accountID := f.State.AccountIDs()[0]
+	child := f.ChildAccount(accountID)
+	child.EnableRegionErr = awsfake.AccessDenied("account:EnableRegion")
+
+	profile2 := vendProfileJSON(t, func(doc map[string]any) {
+		doc["baseline"] = map[string]any{
+			"config_recorder": map[string]any{"enabled": true},
+			"regions":         map[string]any{"enable": []any{"ap-south-1"}},
+		}
+	})
+	_, _, err := runCLI(t, g, vendArgs(profile2, "--name", "Genomics")...)
+	if err == nil {
+		t.Fatal("a vend whose EnableRegion is denied returned no error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "PARKED") {
+		t.Errorf("the error does not say the vend is parked:\n%s", msg)
 	}
 
 	m := loadVendManifest(t, accountID)

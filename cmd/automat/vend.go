@@ -65,39 +65,43 @@ var (
 //
 // # What this build does and does not do
 //
-// Steps 1 to 4 and step 6, plus ONE piece of step 5: resolve the environment
+// Steps 1 to 4 and step 6, plus TWO pieces of step 5: resolve the environment
 // profile to a compiled control set, create the account, place it in the OU,
-// establish the in-account automation role (internal/baseline.Ensurer, the
-// package skeleton and the first slice of step 5's in-child work), ensure the
-// OU's service control policies, write the evidence manifest, print the birth
-// certificate.
+// establish the in-account automation role and opt-in region enablement
+// (internal/baseline.Ensurer, ROADMAP.md's "internal/baseline, slices 2-9"
+// items 2 and 5), ensure the OU's service control policies, write the
+// evidence manifest, print the birth certificate.
 //
-// # The automation role runs BEFORE the SCP set, reversing DESIGN §7's listed
-// order
+// # The automation role and region enablement run BEFORE the SCP set,
+// reversing DESIGN §7's listed order for the automation role's own reason
 //
 // DESIGN §7 numbers "ensure the OU's service control policies" step 4 and the
 // in-child baseline work (which creates the automation role) step 5 — read
 // literally, the policies attach first. runVendSteps does the opposite for
-// this one piece of step 5, and that is a deliberate, disclosed decision
-// (CLAUDE.md rule 2), not a silent reinterpretation: baseline-protection's
-// BP.IAM-1 control denies re-permissioning the automation role to every
-// principal in the account, with no exemption, once it is attached
-// (docs/open-questions.md Q13). Attaching the SCP set before the role is
-// fully permissioned would mean the very iam:PutRolePolicy call that
-// permissions the role lands on a Deny automat itself compiled. See
-// internal/baseline's package doc for the full argument.
+// the automation role's piece of step 5, and that is a deliberate, disclosed
+// decision (CLAUDE.md rule 2), not a silent reinterpretation:
+// baseline-protection's BP.IAM-1 control denies re-permissioning the
+// automation role to every principal in the account, with no exemption, once
+// it is attached (docs/open-questions.md Q13). Attaching the SCP set before
+// the role is fully permissioned would mean the very iam:PutRolePolicy call
+// that permissions the role lands on a Deny automat itself compiled. See
+// internal/baseline's package doc for the full argument. Region enablement
+// has no such ordering constraint — it is an Account Management API concern,
+// not an IAM one, so BP.IAM-1 cannot touch it — but it runs alongside the
+// automation role, before the SCP set, for consistency within this one
+// baseline stage rather than because it needs to.
 //
 // # The rest of step 5 — is NOT performed, and it is reported rather than
 // omitted
 //
-// No Config recorder, no delivery channel, no conformance pack, no opt-in
-// region enablement, no attestation stubs — internal/baseline exists now but
-// carries only EnsureAutomationRole; the Ensurer methods those need
-// (ROADMAP.md's "internal/baseline, slices 3-6") are not built. A vend that
-// silently skipped them would produce an account an operator believes has a
-// detective baseline, which is the failure mode the whole evidence chain
-// exists to prevent: the plan says so, the applied output says so, and the
-// manifest carries a parked baseline-apply record saying so.
+// No Config recorder, no delivery channel, no conformance pack, no
+// attestation stubs — internal/baseline exists now but carries only
+// EnsureAutomationRole and EnsureRegions; the Ensurer methods those need
+// (ROADMAP.md's "internal/baseline, slices 3-4, 6") are not built. A vend
+// that silently skipped them would produce an account an operator believes
+// has a detective baseline, which is the failure mode the whole evidence
+// chain exists to prevent: the plan says so, the applied output says so, and
+// the manifest carries a parked baseline-apply record saying so.
 //
 // # The one thing a first-vend plan cannot tell you
 //
@@ -144,11 +148,11 @@ func newVendCmd(g *globals) *cobra.Command {
 			"--resume is also safe — an account is found by its root email, which belongs to\n" +
 			"exactly one AWS account — but --resume is the handle for a create that was still\n" +
 			"in flight.\n\n" +
-			"This build establishes the in-account automation role (DESIGN §7 step 5's first\n" +
-			"piece) before attaching the OU's service control policies, then performs no\n" +
-			"further in-child baseline work: no Config recorder, no conformance pack, no\n" +
-			"region enablement, no attestation stubs. The plan and the evidence manifest\n" +
-			"both say so.\n\n" +
+			"This build establishes the in-account automation role and opt-in region\n" +
+			"enablement (DESIGN §7 step 5's first two pieces) before attaching the OU's\n" +
+			"service control policies, then performs no further in-child baseline work: no\n" +
+			"Config recorder, no conformance pack, no attestation stubs. The plan and the\n" +
+			"evidence manifest both say so.\n\n" +
 			"--dry-run prints the plan and stops. Note that --profile is the AWS credential\n" +
 			"profile, as everywhere else; the environment profile is --environment-profile.",
 		Args: cobra.NoArgs,
@@ -222,6 +226,13 @@ func newVendCmd(g *globals) *cobra.Command {
 				return g.childIAMRoleClient(ctx, region, profile, partition, accountID,
 					envprofile.DefaultOrgAccessRole)
 			}
+			// Same exact role, same reason: EnsureRegions runs through the same
+			// assumed OrganizationAccountAccessRole session, just for the Account
+			// Management client instead of IAM's.
+			childAccount := func(ctx context.Context, accountID, partition string) (awsapi.AccountAPI, error) {
+				return g.childAccountClient(ctx, region, profile, partition, accountID,
+					envprofile.DefaultOrgAccessRole)
+			}
 
 			out := cmd.OutOrStdout()
 			// One clock read for the whole command. Every timestamp in the manifest
@@ -231,7 +242,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			in.Now = now
 
 			plan := newVendEnsurer(g, vendAPI, policyAPI, org.ModePlan, caller.ARN, credential)
-			planned, err := runVendSteps(ctx, plan, readAPI, caller, in, now, childIAMRole)
+			planned, err := runVendSteps(ctx, plan, readAPI, caller, in, now, childIAMRole, childAccount)
 			if err != nil {
 				return err
 			}
@@ -249,7 +260,7 @@ func newVendCmd(g *globals) *cobra.Command {
 			}
 
 			apply := newVendEnsurer(g, vendAPI, policyAPI, org.ModeApply, caller.ARN, credential)
-			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now, childIAMRole)
+			applied, aerr := runVendSteps(ctx, apply, readAPI, caller, in, now, childIAMRole, childAccount)
 
 			signer, serr := evidenceSigner(ctx, g, region, profile, orgCtx)
 			if serr != nil {
@@ -666,6 +677,10 @@ func newVendEnsurer(g *globals, vendAPI awsapi.OrgVendAPI, policyAPI awsapi.OrgP
 // takes clients rather than constructing them.
 type childIAMRoleFunc func(ctx context.Context, accountID, partition string) (awsapi.IAMRoleAPI, error)
 
+// childAccountFunc is childIAMRoleFunc's sibling for vendRegionsStep: the
+// same assumed-session shape, an Account Management client instead of IAM.
+type childAccountFunc func(ctx context.Context, accountID, partition string) (awsapi.AccountAPI, error)
+
 // runVendSteps is DESIGN §7, run identically in plan and apply mode.
 //
 // The ordering is the security property and it is this command's job rather than
@@ -676,7 +691,8 @@ type childIAMRoleFunc func(ctx context.Context, accountID, partition string) (aw
 // step order — see the command's doc comment), and baseline-protection goes
 // last within the policy set itself.
 func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
-	caller *callerIdentity, in *vendInput, now string, childIAMRole childIAMRoleFunc) (*vendState, error) {
+	caller *callerIdentity, in *vendInput, now string, childIAMRole childIAMRoleFunc,
+	childAccount childAccountFunc) (*vendState, error) {
 	st := &vendState{Partition: partitionOf(caller.ARN)}
 
 	if err := describeVendOrg(ctx, read, caller, st); err != nil {
@@ -737,6 +753,15 @@ func runVendSteps(ctx context.Context, e *org.Ensurer, read awsapi.OrgAPI,
 	st.PreSCPOrgActions = len(e.Actions())
 	if berr := vendAutomationRoleStep(ctx, e, caller, in, st, now, childIAMRole); berr != nil {
 		return st, berr
+	}
+
+	// Opt-in region enablement (DESIGN §7 step 5, ROADMAP's "internal/baseline,
+	// slices 2-9" item 5) — no ordering dependency on the automation role or
+	// the SCP set below, since it is an Account Management API call rather than
+	// an IAM one, but it still belongs to this same baseline stage, so it runs
+	// here rather than after the policy set.
+	if rerr := vendRegionsStep(ctx, e, caller, in, st, now, childAccount); rerr != nil {
+		return st, rerr
 	}
 
 	// Step 4. The pack needs the account id, so this is the earliest point it can
@@ -1077,6 +1102,61 @@ func vendAutomationRoleStep(ctx context.Context, e *org.Ensurer, caller *callerI
 	return nil
 }
 
+// vendRegionsStep ensures opt-in region enablement matches
+// baseline.regions (DESIGN §7 step 5, ROADMAP's "internal/baseline, slices
+// 2-9" item 5) — vendAutomationRoleStep's sibling, against the same assumed
+// OrganizationAccountAccessRole session but the Account Management client
+// rather than IAM's.
+//
+// A no-op when the profile names no baseline.regions block at all, or when
+// the account does not exist yet: a first-vend plan has no account to assume
+// into, so — like vendAutomationRoleStep's own first-vend case — this reports
+// the step as unknown-but-would-happen rather than guessing. No ordering
+// dependency on vendAutomationRoleStep or the SCP set below (region
+// enablement is an Account Management API concern, not an IAM one, so Q13's
+// BP.IAM-1 ordering constraint does not apply here), but it still runs
+// alongside the automation role as part of this same baseline stage, before
+// the policy set, for consistency with the rest of the stage.
+func vendRegionsStep(ctx context.Context, e *org.Ensurer, caller *callerIdentity,
+	in *vendInput, st *vendState, now string, childAccount childAccountFunc) error {
+	spec := in.Profile.Baseline.Regions
+	if spec == nil {
+		return nil
+	}
+	if st.AccountID == "" {
+		e.RecordUnknown("opt-in region enablement",
+			"cannot be checked: the account does not exist yet, so there is nothing to assume "+
+				envprofile.DefaultOrgAccessRole+" into. It would be established once the account "+
+				"exists; re-run the plan against the vended account to see it")
+		return nil
+	}
+	if e.Mode != org.ModeApply {
+		// A plan cannot assume into the account without an apply's session — the
+		// same reason vendAutomationRoleStep's own plan pass reports rather than
+		// checks.
+		e.RecordUnknown("opt-in region enablement",
+			"cannot be checked in plan mode without assuming "+envprofile.DefaultOrgAccessRole+
+				" into "+st.AccountID+"; apply to ensure it, or re-run this command's own apply pass "+
+				"which does assume into the account for exactly this check")
+		return nil
+	}
+
+	child, err := childAccount(ctx, st.AccountID, st.Partition)
+	if err != nil {
+		return err
+	}
+	bl := &baseline.Ensurer{Account: child, Mode: org.ModeApply, Principal: caller.ARN}
+	actions, err := bl.EnsureRegions(ctx, *spec)
+	st.BaselineActions = append(st.BaselineActions, actions...)
+	if err != nil {
+		st.park(in, caller, now, evidence.OpBaselineApply, err,
+			"opt-in region enablement could not be completed; fix the cause above, then "+
+				vendResumeHint(in, st))
+		return err
+	}
+	return nil
+}
+
 // vendPolicySpecs packs the narrowed control set into policy specs, in the order
 // EnsurePolicySet must see them.
 //
@@ -1165,14 +1245,15 @@ func (in *vendInput) automationRoleARN(st *vendState) string {
 // recordStepFiveIsMissing puts the REMAINING, unbuilt pieces of DESIGN §7 step
 // 5 in the plan as an unknown rather than leaving them out.
 //
-// The automation role is no longer listed here: vendAutomationRoleStep
-// actually establishes it (internal/baseline's first slice), and its own
-// actions are what report on it, the same way the SCP set's own actions
-// report on step 4 rather than a separate "step 4 is missing" note. Every
-// line still here is something an operator reading a vend's output would
-// otherwise assume happened. The detail names what is missing in the code
-// rather than only in the account, because the operator's next question is
-// whether a re-run would fix it.
+// The automation role and region enablement are no longer listed here:
+// vendAutomationRoleStep and vendRegionsStep actually perform them
+// (internal/baseline's first two slices), and their own actions are what
+// report on them, the same way the SCP set's own actions report on step 4
+// rather than a separate "step 4 is missing" note. Every line still here is
+// something an operator reading a vend's output would otherwise assume
+// happened. The detail names what is missing in the code rather than only in
+// the account, because the operator's next question is whether a re-run
+// would fix it.
 func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 	p := in.Profile
 	var missing []string
@@ -1182,9 +1263,6 @@ func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 	if len(configRuleNames(in)) > 0 {
 		missing = append(missing, "the conformance pack from the control sets' config-rule set")
 	}
-	if p.Baseline.Regions != nil {
-		missing = append(missing, "opt-in region enablement")
-	}
 	if attestationIDs(in) != nil {
 		missing = append(missing, "attestation stubs for the procedural controls")
 	}
@@ -1192,17 +1270,19 @@ func recordStepFiveIsMissing(e *org.Ensurer, in *vendInput) {
 		missing = append(missing, "disabling further use of "+envprofile.DefaultOrgAccessRole)
 	}
 	if len(missing) == 0 {
-		// Nothing left to disclose: the automation role is the only piece of
-		// step 5 this profile asked for, and it was established above.
+		// Nothing left to disclose: the automation role and region enablement
+		// are the only pieces of step 5 this profile asked for, and both were
+		// established above.
 		return
 	}
 	e.RecordUnknown("in-child baseline (DESIGN §7 step 5)",
-		"NOT PERFORMED by this build: "+strings.Join(missing, ", ")+". automat holds no Config or "+
-			"Account Management interface with an Ensurer method yet (internal/baseline carries only "+
-			"the automation role so far), so it cannot do this in-account work yet. The account's "+
+		"NOT PERFORMED by this build: "+strings.Join(missing, ", ")+". automat holds no Config "+
+			"interface with an Ensurer method yet (internal/baseline carries the automation role and "+
+			"region enablement so far), so it cannot do this in-account work yet. The account's "+
 			"preventive controls are real — the service control policies above are attached at the OU "+
-			"— and the in-account automation role exists, but the rest of its detective baseline does "+
-			"not. Re-running will not change that; a later build will")
+			"— and the in-account automation role and region enablement are established, but the rest "+
+			"of the detective baseline does not exist. Re-running will not change that; a later build "+
+			"will")
 
 	// DESIGN §14's five account tags, of which this build writes two. Reported for
 	// the same reason: an operator who reads §14 and then reads a vended account's
@@ -1355,13 +1435,13 @@ func (st *vendState) recordBaselineIsMissing(e *org.Ensurer, in *vendInput,
 		EnvProfile: in.Profile.Ref(in.ContentHash),
 		Err: &evidence.RecordError{
 			Message: "the in-child baseline (DESIGN §7 step 5) was only PARTLY performed: this build " +
-				"of automat established the in-account automation role, but holds no Config or " +
-				"Account Management Ensurer method yet. No Config recorder, no conformance pack, no " +
-				"region enablement, no attestation stubs",
+				"of automat established the in-account automation role and opt-in region enablement, " +
+				"but holds no Config Ensurer method yet. No Config recorder, no conformance pack, no " +
+				"attestation stubs",
 			Remediation: "the account's preventive controls are attached and real, and the automation " +
-				"role exists; the rest of its detective baseline does not. Re-running this build will " +
-				"not change that. This record is here so that nothing later mistakes the absence for " +
-				"a baseline that succeeded",
+				"role and region enablement exist; the rest of its detective baseline does not. " +
+				"Re-running this build will not change that. This record is here so that nothing later " +
+				"mistakes the absence for a baseline that succeeded",
 		},
 		ToolVersion: version.Version,
 	})
