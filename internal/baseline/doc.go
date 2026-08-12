@@ -6,20 +6,34 @@
 // just created, rather than against the organization itself (internal/org's
 // job, steps 3 and 4).
 //
-// Two pieces of that step are built so far: EnsureAutomationRole, which
-// creates and permissions "the automat automation role" DESIGN §7 step 5
-// names — "least privilege for future verify" — and EnsureRegions, which
-// ensures opt-in region enablement matches envprofile.BaselineRegions
-// (ROADMAP's "internal/baseline, slices 2-9", item 5). The remaining pieces
-// (a Config recorder and delivery channel, a conformance pack, attestation
-// stubs) are later, separate slices against awsapi.ConfigAPI, which already
-// exists as an interface (a prior slice) but has no Ensurer method yet.
-// Nothing here calls it; the automation role's own permissions policy is
-// scoped to its methods anyway (see automationRoleActions), so a later
-// slice's Ensurer methods find the grant already in place rather than having
-// to widen a role a catalog's baseline-protection SCP may by then forbid
-// touching at all (the very ordering problem this package's doc comment
-// spends the rest of its words on).
+// DESIGN §7 step 5 is now built in full. EnsureAutomationRole
+// (automation.go) creates and permissions "the automat automation role"
+// step 5 names — "least privilege for future verify". EnsureRegions
+// (regions.go) ensures opt-in region enablement matches
+// envprofile.BaselineRegions. EnsureAttestationStubs (attestations.go)
+// writes one Markdown stub per deduped procedural practice — the only
+// method here with no AWS call at all. EnsureConfigRecorder and
+// EnsureDeliveryChannel (configrecorder.go) ensure the AWS Config recorder
+// exists, carries the right recording scope, and is actively recording, and
+// that the delivery channel points at a pre-existing, operator-named S3
+// bucket (automat does not provision the bucket itself — a deliberate scope
+// cut, not an unbuilt piece). EnsureConformancePack (conformance.go)
+// deploys the conformance pack from compilesets.Merged.SortedConfigRules().
+// Only ROADMAP's slice 8 (disable_org_access_role_after_vend) remains
+// outside this package's scope, and deliberately so: the actual mechanism
+// (a deny policy vs. narrowing assumability) is a real open design question
+// DESIGN §7 does not settle, unlike every method named above.
+//
+// Every one of these methods' own permissions is scoped by
+// automationRoleActions (automation.go) — one static permissions policy
+// covering every awsapi.ConfigAPI and awsapi.AccountAPI method this package
+// ever calls, rendered once when the automation role is first created
+// rather than widened piecemeal as later slices landed. That ordering
+// choice is what let EnsureConfigRecorder, EnsureConformancePack, and every
+// other method added after the automation role's own slice find the grant
+// already in place, rather than needing a migration to widen a role a
+// catalog's baseline-protection SCP may by then forbid touching at all (the
+// very ordering problem the rest of this doc comment discusses).
 //
 // # The ordering surprise: this step runs BEFORE the SCP that DESIGN §7 lists
 // after it
@@ -86,9 +100,11 @@
 // # What this package does not construct
 //
 // EnsureAutomationRole is handed an already-assumed awsapi.IAMRoleAPI client,
-// and EnsureRegions an already-assumed awsapi.AccountAPI client; neither
-// method ever builds an aws.Config or assumes a role itself. Session
-// construction — assuming OrganizationAccountAccessRole into the just-vended
-// account — is `cmd/automat/globals.go`'s job, the same division org.Ensurer
-// already enforces for its own OrgVendAPI/OrgPolicyAPI clients.
+// EnsureRegions an already-assumed awsapi.AccountAPI client, and
+// EnsureConfigRecorder/EnsureDeliveryChannel/EnsureConformancePack an
+// already-assumed awsapi.ConfigAPI client; no method here ever builds an
+// aws.Config or assumes a role itself. Session construction — assuming
+// OrganizationAccountAccessRole into the just-vended account — is
+// `cmd/automat/globals.go`'s job, the same division org.Ensurer already
+// enforces for its own OrgVendAPI/OrgPolicyAPI clients.
 package baseline
