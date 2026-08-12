@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -82,6 +83,13 @@ type globals struct {
 	// OrganizationAccountAccessRole trusts the management account outright.
 	newChildIAMRole func(ctx context.Context, region, profile, partition, accountID,
 		roleName string) (awsapi.IAMRoleAPI, error)
+	// newChildAccount is childAccountClient's test seam — `vend`'s in-child
+	// region-enablement step (internal/baseline.EnsureRegions) needs an
+	// Account Management client built from a session assumed INTO the
+	// just-vended account, the exact same assumption newChildIAMRole makes
+	// for the automation role, just against a different service client.
+	newChildAccount func(ctx context.Context, region, profile, partition, accountID,
+		roleName string) (awsapi.AccountAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -372,6 +380,34 @@ func (g *globals) childIAMRoleClient(ctx context.Context, region, profile, parti
 		return nil, err
 	}
 	return iam.NewFromConfig(cfg), nil
+}
+
+// childAccountClient is childIAMRoleClient's sibling for
+// internal/baseline.EnsureRegions: the same assumption into
+// OrganizationAccountAccessRole (or whatever roleName names), returning an
+// AWS Account Management client on that session instead of an IAM one. Two
+// methods rather than one returning both clients because the two callers
+// (vendAutomationRoleStep, a future vendRegionsStep) each need only one
+// service, and awsapi's own per-interface-not-per-service split (CLAUDE.md)
+// is what this mirrors.
+func (g *globals) childAccountClient(ctx context.Context, region, profile, partition, accountID,
+	roleName string) (awsapi.AccountAPI, error) {
+	if g.newChildAccount != nil {
+		return g.newChildAccount(ctx, region, profile, partition, accountID, roleName)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	if partition == "" {
+		partition = "aws"
+	}
+	roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, "", region)
+	if err != nil {
+		return nil, err
+	}
+	return account.NewFromConfig(cfg), nil
 }
 
 // brokeredOrgReclaimClient is CloseAccount's client for the MEMBER state:

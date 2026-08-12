@@ -62,8 +62,8 @@ func newRootCmdWith(g *globals) *cobra.Command {
 			"`automat init` prepares it. Then `automat vend` creates accounts.\n\n" +
 			"Phase 2/3 build: preflight, onboarding, `init`, and `vend` work. `vend` attaches\n" +
 			"preventive controls (service control policies) and establishes the in-account\n" +
-			"automation role, but performs no further in-child baseline work — no Config\n" +
-			"recorder, no conformance pack, no region enablement, no attestation stubs\n" +
+			"automation role and opt-in region enablement, but performs no further in-child\n" +
+			"baseline work — no Config recorder, no conformance pack, no attestation stubs\n" +
 			"(DESIGN §7 step 5). Every plan and every evidence manifest says so.",
 		SilenceUsage:  true,
 		SilenceErrors: false,

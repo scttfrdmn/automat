@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -46,6 +47,12 @@ type Ensurer struct {
 	// closing section.
 	Role awsapi.IAMRoleAPI
 
+	// Account carries opt-in region enablement (EnsureRegions), the second
+	// in-child surface this package drives. nil for a caller that only needs
+	// EnsureAutomationRole — the same "field absent means capability absent"
+	// discipline internal/org.Ensurer's own Init/Setup fields follow.
+	Account awsapi.AccountAPI
+
 	// Mode is plan or apply, reusing org.Mode rather than a parallel enum.
 	// The zero value is org.ModePlan, deliberately: a forgotten field must not
 	// mutate an account, matching org.Ensurer's own reasoning for the same
@@ -54,9 +61,35 @@ type Ensurer struct {
 	// Principal is the identity automat is speaking as, for error text.
 	Principal string
 
+	// PollInterval and MaxPolls bound EnsureRegions' wait for
+	// EnableRegion/DisableRegion's asynchronous completion. Zero means the
+	// defaults below — the SAME shape internal/org.Ensurer gives its own
+	// account-creation poll, reused rather than reinvented (ROADMAP's
+	// "internal/baseline, slices 2-9", item 5).
+	PollInterval time.Duration
+	MaxPolls     int
+
+	// Sleep is how the poll loop waits. Injected so tests do not, and so a
+	// cancelled context ends a vend promptly rather than after the current
+	// interval. Nil means a context-aware sleep. Mirrors
+	// internal/org.Ensurer.Sleep exactly.
+	Sleep func(context.Context, time.Duration) error
+
 	// actions accumulates every Action this Ensurer produced, in order.
 	actions []org.Action
 }
+
+// Default poll bounds for EnsureRegions: five minutes of five-second polls,
+// the same numbers internal/org.Ensurer's defaultPollInterval/defaultMaxPolls
+// use for account creation. Region opt-in/opt-out is documented as taking
+// "a few minutes... [or] several hours" (EnableRegionInput's own doc
+// comment), so the ceiling is generous for the same reason account creation's
+// is: giving up early on a region enablement that then succeeds leaves an
+// account whose evidence manifest disagrees with what AWS is actually doing.
+const (
+	defaultRegionPollInterval = 5 * time.Second
+	defaultRegionMaxPolls     = 60
+)
 
 // Actions returns every action this Ensurer produced so far, in order.
 func (e *Ensurer) Actions() []org.Action { return append([]org.Action(nil), e.actions...) }
@@ -67,6 +100,34 @@ func (e *Ensurer) planning() bool { return e.Mode != org.ModeApply }
 func (e *Ensurer) record(a org.Action) *org.Action {
 	e.actions = append(e.actions, a)
 	return &e.actions[len(e.actions)-1]
+}
+
+func (e *Ensurer) pollInterval() time.Duration {
+	if e.PollInterval > 0 {
+		return e.PollInterval
+	}
+	return defaultRegionPollInterval
+}
+
+func (e *Ensurer) maxPolls() int {
+	if e.MaxPolls > 0 {
+		return e.MaxPolls
+	}
+	return defaultRegionMaxPolls
+}
+
+func (e *Ensurer) sleep(ctx context.Context, d time.Duration) error {
+	if e.Sleep != nil {
+		return e.Sleep(ctx, d)
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // EnsureAutomationRole makes the in-account automation role DESIGN §7 step 5
@@ -274,8 +335,9 @@ func grantSentence(action, resource, principal string) string {
 // awsapi.AccountAPI — the two in-child interfaces the REMAINING slices of
 // DESIGN §7 step 5 (a Config recorder and delivery channel, a conformance
 // pack, opt-in region enablement — ROADMAP.md's "internal/baseline, slices
-// 3-5") will drive, none of which are built yet and none of which this slice
-// calls.
+// 3-6") drive. EnsureRegions (regions.go) is now one of those callers; the
+// Config recorder, delivery channel, and conformance pack pieces remain
+// unbuilt.
 //
 // Widened now, ahead of the slices that will actually call these actions,
 // deliberately: option (b) of this task's two choices, over leaving the
