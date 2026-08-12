@@ -1243,3 +1243,39 @@ now, ahead of Stage 2, so the weight table's own schema/type (still to be drafte
 ROADMAP.md, "Assessment Stages 1-2," items 2 and 5) is designed to hold these three
 correctly from the start rather than retrofitted once a `null`/scalar mismatch surfaces in
 code.
+
+### Q26 — does a closed account's slot against the account-count quota free up at exactly the 90-day mark, or on some other, opaque schedule?
+
+Confirmed live (2026-08-13), not inferred: a sandbox org with one `ACTIVE` account and four
+`SUSPENDED` ones (all four closed by earlier `reclaim` runs, well within AWS's documented
+90-day reinstatement window) refused a sixth `CreateAccount` with
+`ConstraintViolationException`/`ACCOUNT_NUMBER_LIMIT_EXCEEDED` — five accounts, every
+status counted, already at the ceiling. `docs/reclaim-design.md`'s new "A closed account
+still counts against the account-count quota" section records the confirmed fact:
+`reclaim` changes an account's *status*, not whether it occupies a slot against
+`L-29A0C5DF`.
+
+**What is not confirmed, and cannot be from one observation:** whether that slot frees
+exactly when the 90-day grace window (during which AWS can reinstate a closed account on
+request) elapses, sometime after via a separate, undocumented purge process, or on some
+other schedule AWS does not publish. The inference that it tracks the 90-day window is
+reasonable — a still-reinstatable account has to remain a real, addressable entity in the
+org, which is consistent with it still counting — but AWS's own `CloseAccount` and account-
+status documentation does not state a quota-release timeline anywhere this project has
+found, so this is exactly the class of live-org fact `docs/smoke.md`'s checklist exists to
+answer and is not yet on that checklist.
+
+**What would settle it:** a sandbox account closed on a known date, with the account-count
+quota polled periodically afterward (`aws organizations list-accounts` plus whatever
+quota-check `preflight` can perform when it's not blocked by the same new-payer-account
+`NoSuchResourceException` gap Q24/`docs/reclaim-design.md` already describe) until the slot
+is observed to free — or a definitive answer from AWS Support, if a quota-increase case is
+already open for the same org (see the "A closed account still counts" section for why one
+was needed).
+
+**Not blocking anything today** beyond the immediate, already-hit inconvenience: this
+sandbox org cannot create another account until either the quota is raised or enough
+existing `SUSPENDED` accounts age out, whichever happens first. Recorded so the next
+person to hit this — in this sandbox or another — has the confirmed fact (closed accounts
+count) and the open question (for how long, exactly) in one place, rather than
+rediscovering the first and guessing at the second.
