@@ -73,6 +73,22 @@ func Narrow(m *Merged, opts NarrowOptions) (*Narrowed, error) {
 	for _, st := range m.Statements {
 		out.Merged.Statements = append(out.Merged.Statements, copyStatement(st))
 	}
+	// ConfigRules is the detective half, and it is copied here for the exact
+	// same reason the preventive half (Statements, the two allowlists) is:
+	// Narrow's own contract is "never mutate or alias the operand" — stated
+	// for Combine and inherited here — and internal/baseline's
+	// EnsureConformancePack (ROADMAP.md's "internal/baseline, slices 2-9"
+	// item 4) is the first caller that reads Narrowed.Merged.ConfigRules at
+	// all. Narrowing itself never changes what Config rules the union
+	// bound — DESIGN §9's permitted-region/service narrowing has nothing to
+	// say about detective rules — so this is a plain copy, not a second
+	// intersection the way the allowlists get one.
+	if len(m.ConfigRules) > 0 {
+		out.Merged.ConfigRules = make(map[string]*MergedConfigRule, len(m.ConfigRules))
+		for id, r := range m.ConfigRules {
+			out.Merged.ConfigRules[id] = cloneConfigRule(r)
+		}
+	}
 
 	for _, axis := range []struct {
 		name     string
