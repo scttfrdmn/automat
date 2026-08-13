@@ -20,6 +20,19 @@ routine teardown:
   routinely-disposable accounts (e.g. CI sandboxes) emerges, that is a separate,
   explicitly-scoped addition — not a flag bolted onto this command's default path.
 
+**A note on why this reads as the right call, not just a cautious one.** The technical
+reasoning above stands on its own — a closed account still occupies its account-count
+quota slot for at least 90 days (see below), and AWS gives no call to undo a closure —
+but it's worth recording an informal, anecdotal corroboration alongside it: account
+deletion is reportedly close to never done in practice even by AWS's own internal
+account-management processes, for reasons not documented anywhere this project has found.
+This is **explicitly not a claim about documented AWS policy or behavior** — it is
+secondhand, informal, and not the kind of fact CLAUDE.md's rule 9 would let this project
+assert as confirmed. It's recorded here only because it corroborates, from an unrelated
+direction, that "durable by default" is the operationally sound default this document
+already argues for on its own technical merits — not because it changes any decision made
+above.
+
 ## What `reclaim` does, in order
 
 Two AWS-side actions, sequenced deliberately:
