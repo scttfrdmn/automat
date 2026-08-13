@@ -422,9 +422,10 @@ func (e *Ensurer) createFailed(st *orgtypes.CreateAccountStatus, spec AccountSpe
 		return fmt.Errorf("create-account request %s failed: the organization is at its accounts quota "+
 			"(\"Maximum number of accounts\", quota L-E619E033). File a quota increase request from the "+
 			"management account — `aws service-quotas request-service-quota-increase "+
-			"--service-code organizations --quota-code L-E619E033 --desired-value <n>`, no AWS Support "+
-			"case needed; `automat preflight` reports the current limit so this is visible before a vend "+
-			"rather than during one", reqID)
+			"--service-code organizations --quota-code L-E619E033 --desired-value <n>`. This opens an "+
+			"AWS Support case, and AWS can deny it on internal account-history grounds (a newly created "+
+			"payer account may be told to ask again next billing cycle); `automat preflight` reports the "+
+			"current limit so this is visible before a vend rather than during one", reqID)
 	case orgtypes.CreateAccountFailureReasonMissingPaymentInstrument,
 		orgtypes.CreateAccountFailureReasonInvalidPaymentInstrument:
 		return fmt.Errorf("create-account request %s failed: the organization's management account has "+

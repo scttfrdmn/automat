@@ -138,15 +138,31 @@ opaque, automat-uninvolved process). A sandbox used for repeated testing accumul
 debt silently. `preflight`'s own `checkQuota` (covering `L-E619E033`) reports the current
 count and ceiling correctly once both are readable; a quota increase is a normal, CLI-driven
 Service Quotas request (`aws service-quotas request-service-quota-increase --service-code
-organizations --quota-code L-E619E033 --desired-value <n>`), not an AWS Support case.
+organizations --quota-code L-E619E033 --desired-value <n>`).
+
+**That request is not guaranteed to succeed, and the failure mode is worth naming
+precisely.** Confirmed live, 2026-08-12: filing the request against this sandbox's org
+returned `PENDING` and opened a real AWS Support case behind the scenes
+(`CASE_OPENED`) — the CLI call itself does not bypass AWS Support the way the phrase
+"no Support case needed" might suggest; it *files* one, automatically, as part of
+what `RequestServiceQuotaIncrease` does. That case was later denied: AWS Support's
+own reply cited "internal requirements" tied to the account being newly created,
+and suggested asking again "next billing cycle" once there is more account/usage
+history. Nothing about this is a code defect or a grant automat could hold — it is
+a real, AWS-side, account-age-based gate on this specific quota, observed rather
+than assumed. A sandbox that hits its ceiling early in its life may simply have to
+wait out either more billing history or the 90-day reinstatement window on its
+`SUSPENDED` accounts, whichever comes first, before a re-request has a better
+chance.
 
 **What this does not change:** `reclaim`'s own design (durable-by-default, detach-then-close,
 no ephemeral mode) is unaffected — this is a fact about AWS's account bookkeeping, not a
 defect in what `reclaim` does. It does mean a sandbox intended for repeated smoke-testing
 needs either headroom budgeted well above what a single test pass will create, or a
-quota-increase request filed proactively rather than discovered mid-run — and that a "just
-close it when you're done" mental model is not actually free of a live-org resource that
-stays consumed for at least 90 days after closure.
+quota-increase request filed proactively rather than discovered mid-run, filed early enough
+in the account's life that a denial on account-history grounds still leaves time to retry —
+and that a "just close it when you're done" mental model is not actually free of a live-org
+resource that stays consumed for at least 90 days after closure.
 
 **See `docs/hold-design.md`'s "Explicit interaction with Q26 and the quota finding" for why
 `automat hold` — a separate, later capability that keeps an account `ACTIVE` under a

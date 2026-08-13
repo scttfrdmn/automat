@@ -610,9 +610,13 @@ func (r *Runner) checkQuota(ctx context.Context, rep *Report) {
 				Grant: "raising the quota (L-E619E033) is a Service Quotas increase request, " +
 					"filed with `aws service-quotas request-service-quota-increase " +
 					"--service-code organizations --quota-code L-E619E033 --desired-value <n>` " +
-					"or the console — no AWS Support case needed; closing an unused account will " +
-					"not help within the 90-day reinstatement window, because a SUSPENDED account " +
-					"still occupies its slot (docs/reclaim-design.md)",
+					"or the console — this opens an AWS Support case behind the scenes " +
+					"(CASE_OPENED), and AWS can deny it on internal account-history grounds " +
+					"unrelated to any grant automat could hold (confirmed live, 2026-08-12: a " +
+					"newly created payer account was told to ask again next billing cycle); " +
+					"closing an unused account will not help within the 90-day reinstatement " +
+					"window either, because a SUSPENDED account still occupies its slot " +
+					"(docs/reclaim-design.md)",
 			})
 			return
 		}
