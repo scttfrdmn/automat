@@ -321,9 +321,16 @@ research plan's own order:
 7. **Evidence/manifest wiring**: replace `recordBaselineIsMissing` with real `OpBaselineApply`
    records populating `Enforcement.ConformancePackARN`/`ConfigRuleNames`/`RegionSet`/`AttestationIDs`
    (all four fields already exist on `evidence.Enforcement`, unused today).
-8. **`disable_org_access_role_after_vend`** — smallest, most speculative; the actual mechanism
-   (deny policy vs. narrowing assumability) is a real open design question DESIGN §7 doesn't
-   settle. Could defer to its own later follow-up entirely.
+8. **`disable_org_access_role_after_vend`** — design settled, 2026-08-12
+   (`docs/disable-org-access-role-design.md`): a deny-all inline permissions policy on
+   `OrganizationAccountAccessRole` via `iam:PutRolePolicy`, the same call/create-or-replace shape
+   `EnsureAutomationRole` already uses for its own role. An SCP is structurally impossible (SCPs
+   never bind the management account, which is who calls `AssumeRole` on this role) and
+   `DeleteRole` is eliminated on recoverability grounds (a recreated role has a different
+   identity). Must run LAST in `runVendSteps`, after the SCP set attaches — the mirror image of
+   `EnsureAutomationRole`'s own "must run first" constraint, both for the identical reason
+   (`BP.IAM-1` denies mutating either named role once baseline-protection is attached). No schema
+   change, no new `evidence.Operation`, no new `org.Verb`, no CLI flag needed — not yet built.
 9. **Wire `verify`'s detective and procedural layers** against what step 5 now installs — DESIGN
    §12's own next increment once baseline exists, not part of this track's own scope.
 
