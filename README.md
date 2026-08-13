@@ -4,9 +4,9 @@ A single static binary that vends AWS member accounts with compliance controls a
 birth — driven by a compiled control artifact rather than a landing-zone deployment.
 
 Built for university research computing: central IT holds the organization's management
-account and typically will not run an account factory for researchers. automat splits the
-ceremony so central IT approves one small, reviewable grant, and the research group vends
-thereafter without further involvement.
+account and typically will not run one-off account creation for researchers. automat
+splits the ceremony so central IT approves one small, reviewable grant, and the research
+group vends thereafter without further involvement.
 
 ---
 
@@ -34,10 +34,10 @@ everything else in the design is marked as not shipping yet, in this file and in
 |---|---|---|
 | `automat preflight` | Classifies where you stand — standalone, management, or member — and reports every capability automat needs, with the exact grant that would fix anything missing | Phase 1 |
 | `automat init` | Prepares an organization to vend into: creates one with all features if this account is not in one, enables the service control policy type on the root, and ensures an OU below it. Prints a plan first; every step is create-or-verify, so a second run writes nothing | Phase 2 |
-| `automat vend` | Creates one member account from an environment profile, moves it into the target OU, and ensures the OU's service control policies from the compiled control sets — controls attached before the account is handed to anyone. Writes a hash-chained evidence manifest and prints a birth certificate. **Preventive controls only:** it performs no in-child baseline work, and says so in every plan and every manifest (see below) | Phase 2 |
+| `automat vend` | Creates one member account from an environment profile, moves it into the target OU, ensures the OU's service control policies from the compiled control sets, and performs the full in-child baseline: the automation role, opt-in region enablement, attestation stubs, the Config recorder and delivery channel, and the conformance pack (DESIGN §7 step 5, in full). Controls attach before the account is handed to anyone. Writes a hash-chained evidence manifest and prints a birth certificate | Phase 2 |
 | `automat setup --request` | Generates the onboarding bundle a member account sends to whoever runs the organization: delegation policy, vendor role as CloudFormation and Terraform, and a cover note stating the blast radius. Writes five files; makes no AWS call | Phase 1 |
 | `automat setup` (no `--request`) | Applies the delegation policy and creates the vendor role directly, from the management account. Requires a real target OU (`--ou`) and an ExternalId reference (`--external-id-ref`) — no template parameter to defer either to, and automat does not generate an ExternalId. Ensure-semantics: a second run corrects drift | Phase 3 |
-| `automat verify` | Re-checks one account's attached service control policies against a fresh compile of the environment profile that vended it, and warns if the profile's `review_by` date has passed. Read-only; checks the policy and freshness layers only — the detective and procedural layers have nothing to check against until the in-child baseline exists (see below) | Phase 4 |
+| `automat verify` | Re-checks one account's attached service control policies against a fresh compile of the environment profile that vended it, and warns if the profile's `review_by` date has passed. Read-only; checks the policy and freshness layers, plus a structural-honesty breakdown — the detective and procedural layers are not yet checked (see below) | Phase 4 |
 | `automat list` | Inventories the organizational units and accounts under the configured OU (or the root), plus every account a local evidence manifest records as parked. Makes no write call, but is not read-only by construction the way `verify` is — the tree walk travels the same client `vend` uses and assumes the vendor role in the MEMBER state. Tag-based filtering is not available — see below | Phase 4 |
 | `automat assess` | Renders a CMMC Level 1 MET/NOT MET summary — the fifteen practices in `catalogs/cmmc-l1.json` against an optional operator-determinations file. Read-only beyond one `sts:GetCallerIdentity` call for evidence attribution. **This build contributes zero machine evidence**: the catalog carries no SCP fragments and no AWS Config read path exists yet, so every practice is an operator determination or, absent one, a NOT MET the renderer states rather than leaves silent — CMMC L1 permits no partial credit and no plan of action. The 800-171A worksheet and DFARS scoring (Stages 1–2) are not built; `--profile` accepts only `cmmc-l1` — see [`docs/assessment-reporting.md`](docs/assessment-reporting.md) | Phase 4 |
 | `automat reclaim` | Closes a vended account: detaches automat's own service control policies from its OU placement, then calls `CloseAccount`. A vended account is durable by default — this is the one destructive command in the tree, and `--yes` is required unconditionally to apply, not gated on one step the way `init`'s org-creation gate is. Writes an evidence record; see [`docs/reclaim-design.md`](docs/reclaim-design.md) | Phase 5 |
@@ -52,7 +52,10 @@ reliably tells you a grant is *missing*; it cannot promise a call will succeed.
 ## Quickstart: a standalone account, start to finish
 
 This walks a single AWS account with no organization yet through `init` → `vend` →
-`verify`. Every command below is copy-pasteable; flag names are exact.
+`verify`. Every command below is copy-pasteable; flag names are exact. If your account is
+already in an organization it doesn't own — the university case, central IT holds the
+management account — see [`docs/getting-started.md`](docs/getting-started.md) instead,
+which covers that path along with this one.
 
 **1. Sign in**, or export credentials another way — anything the standard AWS credential
 chain resolves works.
@@ -138,16 +141,15 @@ page.
 Named because leaving them out would read as an oversight, and naming them as though they
 worked would be worse. Each is in [`ROADMAP.md`](ROADMAP.md) with a phase.
 
-- **The in-child baseline** — the half of vending that works *inside* the new account: the
-  Config recorder and delivery channel, the conformance pack compiled from the control sets'
-  Config rules, opt-in region enablement, attestation stubs for the procedural controls, and
-  the in-account automation role. Phase 2, in progress. Vending itself works (see the table
-  above) and what it attaches is real, but it attaches only **preventive** controls. A
-  vended account therefore has no detective baseline: nothing in it is being *watched*.
-  Singled out here rather than left as a footnote because a vended account looks finished —
-  so the plan reports the step as not performed, and the evidence manifest carries a
-  **parked** `baseline-apply` record. That record is what stops a manifest which is merely
-  silent about the baseline from reading as a baseline that succeeded.
+- **`verify`'s detective and procedural layers** — DESIGN §12 names four verification
+  layers; `verify` today checks two (policy, freshness) plus a structural-honesty
+  breakdown. The detective layer (is the Config recorder actually recording, does the
+  deployed conformance pack match) and the procedural layer (are attestation stubs
+  present and current) are not yet checked, even though `vend` now installs everything
+  they would check against — `internal/baseline` is fully built (Config recorder,
+  delivery channel, conformance pack, opt-in regions, attestation stubs, the in-account
+  automation role all ship in `vend`, see the table above). `verify --help` says so
+  explicitly rather than staying silent about the gap.
 - **`list`'s tag-based filtering** — DESIGN §13 describes it as inventorying "vended
   accounts (by tags)". The vendor role bundle grants no
   `organizations:ListTagsForResource` on account resources
@@ -193,6 +195,19 @@ AWS**; everything is fake-backed. `make smoke` is the separate, manual, opt-in p
 live testing — see [`docs/smoke.md`](docs/smoke.md).
 
 ## Reading further
+
+**Using automat:**
+
+- [`docs/getting-started.md`](docs/getting-started.md) — walkthroughs for all three
+  `preflight` states, including the MEMBER/university case this quickstart doesn't cover.
+- [`docs/commands.md`](docs/commands.md) — every command, every flag, exit codes,
+  read-only/mutating/destructive, one example each.
+- [`docs/environment-profiles.md`](docs/environment-profiles.md) — every field in the one
+  file you author by hand, with a minimal and a fuller worked example.
+- [`docs/evidence-manifests.md`](docs/evidence-manifests.md) — how to read the manifest
+  `vend` writes, including what the hash chain does and does not protect against.
+
+**Design and status:**
 
 - [`DESIGN.md`](DESIGN.md) — the source of truth, including the AWS facts the whole design
   rests on.
