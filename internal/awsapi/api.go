@@ -484,6 +484,43 @@ type ConfigAPI interface {
 		optFns ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecorderStatusOutput, error)
 }
 
+// ConfigVerifyAPI is `automat verify`'s read-only view of the in-child
+// detective baseline internal/baseline installs — the exact sibling
+// OrgVerifyAPI already is for the policy layer, restated here for Config.
+//
+// A sibling of ConfigAPI carrying only its Describe* methods, on purpose:
+// verify reads what is deployed and compares it against the spec a fresh
+// resolve of the environment profile produces (internal/baseline's own
+// SameRecorderConfig/SameInputParameters comparators, reused rather than
+// re-derived — see internal/verify/detective.go) — it has no reason to hold
+// PutConfigurationRecorder, PutDeliveryChannel, PutConformancePack,
+// StartConfigurationRecorder, or any other write, and giving it none means a
+// bug in verify's detective check cannot mutate an account's Config setup no
+// matter what it does, the identical guarantee OrgVerifyAPI's own doc
+// comment states for the policy layer.
+//
+// DescribeConfigurationRecorders, DescribeConfigurationRecorderStatus, and
+// DescribeDeliveryChannels are the three reads EnsureConfigRecorder/
+// EnsureDeliveryChannel already perform before any write of their own
+// (ConfigAPI's own doc comment); DescribeConformancePacks is
+// EnsureConformancePack's identical read-first check. All four together are
+// exactly what DESIGN §12's detective-layer bullet names checkable: "recorder
+// on, delivery channel intact, conformance pack present and its rule set
+// matches" — nothing about region enablement is in that bullet, so
+// AccountAPI's own read (ListRegions) is deliberately NOT carried here; see
+// internal/verify/detective.go's own doc comment for why region enablement is
+// out of this slice's scope.
+type ConfigVerifyAPI interface {
+	DescribeConfigurationRecorders(ctx context.Context, in *configservice.DescribeConfigurationRecordersInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecordersOutput, error)
+	DescribeConfigurationRecorderStatus(ctx context.Context, in *configservice.DescribeConfigurationRecorderStatusInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConfigurationRecorderStatusOutput, error)
+	DescribeDeliveryChannels(ctx context.Context, in *configservice.DescribeDeliveryChannelsInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeDeliveryChannelsOutput, error)
+	DescribeConformancePacks(ctx context.Context, in *configservice.DescribeConformancePacksInput,
+		optFns ...func(*configservice.Options)) (*configservice.DescribeConformancePacksOutput, error)
+}
+
 // AccountAPI is opt-in region enablement, performed in-child via the Account
 // Management API and scoped to exactly one field of an environment profile:
 // envprofile.BaselineRegions (envprofile.Baseline.Regions), which is
@@ -527,20 +564,21 @@ type AccountAPI interface {
 // upgrade changes a signature, this fails at build time in one place rather than
 // wherever the interface happens to be used.
 var (
-	_ STSAPI        = (*sts.Client)(nil)
-	_ OrgAPI        = (*organizations.Client)(nil)
-	_ OrgVendAPI    = (*organizations.Client)(nil)
-	_ OrgPolicyAPI  = (*organizations.Client)(nil)
-	_ OrgInitAPI    = (*organizations.Client)(nil)
-	_ OrgSetupAPI   = (*organizations.Client)(nil)
-	_ OrgVerifyAPI  = (*organizations.Client)(nil)
-	_ OrgReclaimAPI = (*organizations.Client)(nil)
-	_ IAMAPI        = (*iam.Client)(nil)
-	_ IAMRoleAPI    = (*iam.Client)(nil)
-	_ QuotaAPI      = (*servicequotas.Client)(nil)
-	_ KMSAPI        = (*kms.Client)(nil)
-	_ S3MirrorAPI   = (*s3.Client)(nil)
-	_ SSOOIDCAPI    = (*ssooidc.Client)(nil)
-	_ ConfigAPI     = (*configservice.Client)(nil)
-	_ AccountAPI    = (*account.Client)(nil)
+	_ STSAPI          = (*sts.Client)(nil)
+	_ OrgAPI          = (*organizations.Client)(nil)
+	_ OrgVendAPI      = (*organizations.Client)(nil)
+	_ OrgPolicyAPI    = (*organizations.Client)(nil)
+	_ OrgInitAPI      = (*organizations.Client)(nil)
+	_ OrgSetupAPI     = (*organizations.Client)(nil)
+	_ OrgVerifyAPI    = (*organizations.Client)(nil)
+	_ OrgReclaimAPI   = (*organizations.Client)(nil)
+	_ IAMAPI          = (*iam.Client)(nil)
+	_ IAMRoleAPI      = (*iam.Client)(nil)
+	_ QuotaAPI        = (*servicequotas.Client)(nil)
+	_ KMSAPI          = (*kms.Client)(nil)
+	_ S3MirrorAPI     = (*s3.Client)(nil)
+	_ SSOOIDCAPI      = (*ssooidc.Client)(nil)
+	_ ConfigAPI       = (*configservice.Client)(nil)
+	_ ConfigVerifyAPI = (*configservice.Client)(nil)
+	_ AccountAPI      = (*account.Client)(nil)
 )

@@ -341,6 +341,33 @@ func fakeSet(t *testing.T, orgID, mgmt, caller string, allowActions ...string) (
 			}
 			return f.ChildConfig(accountID), nil
 		},
+		// configVerifyClient's test seam — newChildConfig's exact sibling,
+		// same assumption, same DenyChildAssume opt-in-to-failure knob,
+		// returning the SAME per-account *awsfake.Config as
+		// awsapi.ConfigVerifyAPI rather than awsapi.ConfigAPI: the fake
+		// already implements every ConfigAPI method (Describe and Put), so
+		// it satisfies the narrower read-only interface automatically —
+		// `verify`'s detective layer reads back exactly what `vend`'s own
+		// childConfig fake wrote, the same way f.Verify already reads back
+		// what f.Policy wrote for the policy layer.
+		newChildConfigVerify: func(ctx context.Context, region, _, partition, accountID,
+			roleName string) (awsapi.ConfigVerifyAPI, error) {
+			if f.DenyChildAssume {
+				return nil, awsapi.Denied(awsfake.AccessDenied("sts:AssumeRole"), "sts:AssumeRole",
+					accountID, "", "")
+			}
+			if partition == "" {
+				partition = "aws"
+			}
+			roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+			if _, ok := stsFake.Assumable[roleARN]; !ok {
+				stsFake.Assumable[roleARN] = ""
+			}
+			if _, err := broker.Assume(ctx, stsFake, roleARN, "", region); err != nil {
+				return nil, err
+			}
+			return f.ChildConfig(accountID), nil
+		},
 		newQuota: func(context.Context, string, string) (awsapi.QuotaAPI, error) {
 			return quotaFake, nil
 		},

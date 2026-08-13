@@ -4,6 +4,8 @@
 package safeio
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,4 +124,95 @@ func writeProbe(root *os.Root) error {
 	defer func() { _ = f.Close() }()
 	_, err = f.WriteString("ok\n")
 	return err
+}
+
+// OpenDirUnder's own attack surface, EnsureDirUnder's read-only sibling —
+// the same four refusals, none of which may create anything along the way.
+
+func TestOpenUnderRefusesAnIntermediateSymlink(t *testing.T) {
+	base := tightDir(t)
+	if err := os.Mkdir(filepath.Join(base, "elsewhere"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(base, "elsewhere", "evidence"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("elsewhere", filepath.Join(base, "out")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	root, err := OpenDirUnder(base, "out/evidence")
+	if err == nil {
+		_ = root.Close()
+		t.Fatal("OpenDirUnder accepted a path through an intermediate symlink")
+	}
+	if !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("the refusal should name the symlink: %v", err)
+	}
+}
+
+func TestOpenUnderRefusesASymlinkAtTheFinalComponent(t *testing.T) {
+	base := tightDir(t)
+	if err := os.Mkdir(filepath.Join(base, "elsewhere"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("elsewhere", filepath.Join(base, "evidence")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if _, err := OpenDirUnder(base, "evidence"); err == nil {
+		t.Fatal("OpenDirUnder accepted a symlink at the final component")
+	}
+}
+
+func TestOpenUnderRefusesAnAbsoluteRel(t *testing.T) {
+	base := tightDir(t)
+	if _, err := OpenDirUnder(base, "/etc/automat"); err == nil {
+		t.Fatal("OpenDirUnder accepted an absolute rel")
+	}
+}
+
+func TestOpenUnderRefusesEscapeByDotDot(t *testing.T) {
+	base := tightDir(t)
+	inner := filepath.Join(base, "work")
+	if err := os.Mkdir(inner, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenDirUnder(inner, "../escaped"); err == nil {
+		t.Fatal("OpenDirUnder accepted a rel containing ..")
+	}
+}
+
+// TestOpenUnderNeverCreates is the property that distinguishes OpenDirUnder
+// from EnsureDirUnder: a missing directory is reported as fs.ErrNotExist,
+// unwrapped, and nothing is created along the way — the whole reason this
+// function exists rather than every read-only caller reusing EnsureDirUnder
+// with a mode nobody checks.
+func TestOpenUnderNeverCreates(t *testing.T) {
+	base := tightDir(t)
+	if _, err := OpenDirUnder(base, "a/b/compliance"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("OpenDirUnder(%q) = %v, want fs.ErrNotExist", "a/b/compliance", err)
+	}
+	if _, serr := os.Stat(filepath.Join(base, "a")); serr == nil {
+		t.Error("OpenDirUnder created an intermediate directory; it must never create anything")
+	}
+}
+
+// TestOpenUnderAllowsASymlinkedBaseAndAnExistingMultiComponentRel is
+// TestUnderAllowsASymlinkedBase/TestUnderCreatesAMultiComponentRelAndIsRepeatable's
+// read-only counterpart: a symlinked base is still operator territory, and
+// an already-existing multi-component path still resolves.
+func TestOpenUnderAllowsASymlinkedBaseAndAnExistingMultiComponentRel(t *testing.T) {
+	outer := tightDir(t)
+	real := filepath.Join(outer, "real")
+	if err := os.MkdirAll(filepath.Join(real, "a", "b", "compliance"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(outer, "via")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	root, err := OpenDirUnder(filepath.Join(outer, "via"), "a/b/compliance")
+	if err != nil {
+		t.Fatalf("a symlinked base and an existing rel must be allowed: %v", err)
+	}
+	_ = root.Close()
 }

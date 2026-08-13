@@ -548,6 +548,83 @@ func EnsureDirUnder(base, rel string, mode fs.FileMode) (*os.Root, error) {
 	return root, nil
 }
 
+// OpenDirUnder is EnsureDirUnder's read-only sibling: it resolves rel beneath
+// base ONE COMPONENT AT A TIME through descriptors, refusing a symlink at any
+// component exactly as EnsureDirUnder does, but never creates anything. A
+// missing component is reported as fs.ErrNotExist, unwrapped, so a caller
+// can use errors.Is the same way OpenChecked's own missing-file case allows —
+// "the directory does not exist yet" is not an error for a read-only checker
+// that has no business creating it.
+//
+// This exists because EnsureDirUnder's own Mkdir-then-inspect shape is itself
+// a mutation: the very thing a read-only caller (internal/verify's
+// procedural-attestation check, checking a stub directory it must never
+// create) cannot do. See EnsureDirUnder's own doc comment for the base/rel
+// trust-boundary reasoning this reuses verbatim — base is operator territory,
+// resolved by name; rel is document territory (here,
+// baseline.attestations.local_dir), whose components this function distrusts
+// exactly as EnsureDirUnder does, one component at a time, for the identical
+// AUDIT-2 H1 reason.
+func OpenDirUnder(base, rel string) (*os.Root, error) {
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", base, err)
+	}
+
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return root, nil
+	}
+	if filepath.IsAbs(rel) {
+		_ = root.Close()
+		return nil, fmt.Errorf("%s must be a relative path, and %q is absolute: it is read from a "+
+			"document, and a document does not get to choose a location outside the directory automat "+
+			"was pointed at", relSubject(rel), rel)
+	}
+
+	shown := base
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		shown = filepath.Join(shown, part)
+		next, derr := descendReadOnly(root, part, shown)
+		_ = root.Close()
+		if derr != nil {
+			return nil, derr
+		}
+		root = next
+	}
+	return root, nil
+}
+
+// descendReadOnly verifies one component exists, is not a symlink, and is a
+// directory, then returns a root scoped to it — descend's read-only sibling:
+// no Mkdir, ever.
+func descendReadOnly(parent *os.Root, name, shown string) (*os.Root, error) {
+	fi, err := parent.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s: %w", shown, err)
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symbolic link (to %s), and automat will not read through one "+
+			"on a path read from a document: whoever controls the link chooses what is read. Remove "+
+			"it, or name the target directly",
+			shown, LinkTarget(filepath.Dir(shown), name))
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("%s exists and is not a directory (mode %s)", shown, fi.Mode())
+	}
+	root, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", shown, err)
+	}
+	return root, nil
+}
+
 // descend creates or verifies one component and returns a root scoped to it.
 //
 // The Mkdir through the parent's descriptor is what makes this safe to repeat: it

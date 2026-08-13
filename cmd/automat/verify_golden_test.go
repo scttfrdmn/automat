@@ -148,7 +148,17 @@ func TestVerifyReportMatchesGolden(t *testing.T) {
 			// 2 and must stay byte-identical for an account with no mirror
 			// configured. TestVerifyReportMatchesGoldenWithMirror below covers the
 			// new section's own output shape.
-			if err := renderVerifyReport(&sb, accountID, target, policy, freshness, honesty, nil); err != nil {
+			//
+			// detective and procedural are both nil, detectiveUnknown false: none
+			// of these scenarios configures a Config recorder or names a
+			// procedural control, so both sections render their own "not
+			// configured"/"nothing to attest" line — internal/verify's own
+			// DetectiveReport/ProceduralReport doc comments' "opt-in, and not
+			// opted into" discipline, restated here rather than fabricating a
+			// detective/procedural fixture this test's own synthetic control
+			// sets were never built to support.
+			if err := renderVerifyReport(&sb, accountID, target, policy, freshness, honesty,
+				nil, false, nil, nil); err != nil {
 				t.Fatalf("renderVerifyReport: %v", err)
 			}
 			got := sb.String()

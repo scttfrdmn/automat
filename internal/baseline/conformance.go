@@ -434,6 +434,17 @@ func sameInputParameters(a, b []configtypes.ConformancePackInputParameter) bool 
 	return true
 }
 
+// SameInputParameters reports whether a and b name the same
+// (ParameterName, ParameterValue) pairs, order-independent — exported
+// wrapper around sameInputParameters for internal/verify's detective layer,
+// which needs the IDENTICAL comparison EnsureConformancePack itself uses to
+// decide "matches" vs. "drifted" (see that function's own doc comment for
+// why this order-independent parameter comparison is the only drift check
+// possible at all), not a second, possibly-diverging reimplementation of it.
+func SameInputParameters(a, b []configtypes.ConformancePackInputParameter) bool {
+	return sameInputParameters(a, b)
+}
+
 // pollConformancePackStatus waits for packName's async deployment
 // (PutConformancePack's own doc: "creates... resources" via a CloudFormation
 // stack under the hood, matching awsapi.ConfigAPI's own doc comment) to

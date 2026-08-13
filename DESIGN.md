@@ -290,20 +290,28 @@ answer rather than an absent question.
 
 `automat verify --account <id>`: re-walk the artifact against reality.
 
-**Implemented (Phase 4): the policy, freshness, and structural-honesty layers** — see
-`docs/cli-surface.md` D4 for why `--ou` is not a separate accepted form (baseline-
-protection's automation-role exemption embeds the account id, so the expected policy
-set cannot be compiled for an OU with no account in hand) and why the detective and
-procedural layers are not checked (both check what DESIGN §7 step 5 —
-`internal/baseline` — would install, and that package does not exist yet).
+**Implemented: all four layers, plus structural honesty** — see `docs/cli-surface.md`
+D4 for why `--ou` is not a separate accepted form (baseline-protection's
+automation-role exemption embeds the account id, so the expected policy set cannot
+be compiled for an OU with no account in hand). D4 also records that the detective
+and procedural layers were unchecked until `internal/baseline` existed
+(ROADMAP.md's "internal/baseline, slices 2-9" item 9 closed that once the package
+did).
 
 - Policy layer: attached SCPs compared against a fresh compile of the same environment
   profile, by structural document comparison (`org.SameDocument`) — not by a content-hash
   tag, since automat writes no such tag on any SCP today (also D4).
-- Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches; then report current compliance findings (resource noncompliance is *signal*, not drift — present it as findings, distinct from baseline drift). **Not yet checkable — see D4.**
-- Procedural layer: attestation stubs present; staleness vs. declared frequency. **Not yet checkable — see D4.**
+- Detective layer: recorder on, delivery channel intact, conformance pack present and its rule set matches (`internal/verify.CheckDetective`, reusing `internal/baseline`'s own `SameRecorderConfig`/`SameInputParameters` comparators so "matches" means what it means to the `Ensure*` method that would correct a drift). A profile that never enabled the recorder, or whose compile binds no Config rule, reports that piece as not configured rather than as a failure. **Reporting current per-resource compliance findings from the deployed conformance pack (resource noncompliance as signal, distinct from baseline drift) is NOT built** — this slice checks that the pack is deployed and its parameters match, not what AWS Config's own evaluation of each rule currently reports; that is a larger, not-yet-scoped increment.
+- Procedural layer: attestation stubs present; staleness vs. declared frequency (`internal/verify.CheckProcedural`, read-only against the local stub directory `internal/baseline.EnsureAttestationStubs` writes into). The frequency-to-staleness mapping (annual=365d, semiannual=182d, quarterly=91d, monthly=30d; on-change and continuous are never stale by time, since neither cadence names a calendar fact) is this package's own choice — DESIGN.md does not define day-thresholds.
 - Freshness layer: **warn** when the environment profile's `review_by` date has lapsed (§11a). A warning, not a failure — the account is exactly as compliant as it was yesterday; what has expired is anyone's assurance that the document describing it is still a correct reading of policy.
 - Structural honesty: a per-control enforcement-class breakdown ("X of Y controls enforced by this tool; N require a documented process outside this tool; M require continuous evidence collection outside this tool's scope"), computed from the artifact rather than asserted in prose — this is also how the tool states its limits for L2+ catalogs without ever pitching anything. Implemented (`internal/verify.StructuralHonesty`): every control across the resolved control sets is placed in exactly one of three buckets — enforced (an SCP, either the control set's own or baseline-protection's), documented (a procedural attestation stub), or continuous (an AWS Config rule, nothing else watching it in this build) — with documented taking priority over continuous for a control curated bindings assign both to (`gen/MAPPING-NOTES.md`'s "Curated bindings": those rules observe a symptom of the requirement, not the requirement itself). This is a non-overlapping partition and a distinct computation from the double-counting `artifact.Artifact.Breakdown()` that `gen/catalog` prints at compile time.
+
+A detective or procedural finding that could not be checked at all (the in-child
+session could not be assumed, a Describe call was denied, or the local stub
+directory could not be read) is reported as unknown, never as drift — the same
+non-claim `CheckFreshness`'s own `Unparseable` and the evidence-mirror layer's own
+"unreachable" state already make: a denial is not evidence that the account
+drifted.
 
 Exit codes suitable for cron/CI.
 
@@ -317,16 +325,17 @@ automat init         # STANDALONE or MANAGEMENT: CreateOrganization(ALL) + resea
                       # Refuses MEMBER, which has neither authority and is pointed at `setup --request`.
 automat setup        # MANAGEMENT: apply delegation + create vendor role for a member acct
 automat setup --request   # MEMBER: emit onboarding bundle (§6)
-automat vend         # §7 steps 1-4 and 6 (compile control set, create account, move, attach SCPs,
-                      # write evidence + birth certificate). --override resolves a Config-rule
-                      # parameter conflict the union could not settle on its own (§9, D6). Step 5,
-                      # the in-child baseline (Config recorder, conformance pack, opt-in regions,
-                      # automation role), is NOT YET IMPLEMENTED — see docs/cli-surface.md D3. A
-                      # vended account's preventive controls are real; nothing in it is being
-                      # watched yet, and `vend` says so in its plan, its evidence manifest, and
-                      # its birth certificate rather than staying silent about the gap.
-automat verify       # §12: policy + freshness layers only (detective/procedural NOT YET
-                      # IMPLEMENTED — see docs/cli-surface.md D4). --override must match the one
+automat vend         # §7 steps 1-4 and 6, plus step 5 in full (compile control set, create
+                      # account, move, attach SCPs, establish the in-account automation role,
+                      # opt-in region enablement, attestation stubs, Config recorder, delivery
+                      # channel, conformance pack, write evidence + birth certificate).
+                      # --override resolves a Config-rule parameter conflict the union could
+                      # not settle on its own (§9, D6). Only `disable_org_access_role_after_vend`
+                      # (ROADMAP's "internal/baseline, slices 2-9" item 8) remains outside step
+                      # 5's scope, deliberately: the actual mechanism is a real open design
+                      # question DESIGN §7 does not settle.
+automat verify       # §12: all four layers (policy, detective, procedural, freshness) plus
+                      # structural honesty — see docs/cli-surface.md D4. --override must match the one
                       # `vend` used (D6), or the recompiled expectation will not be the one
                       # actually attached.
 automat list         # accounts and OUs under --ou (or the config `ou`, or the org root),

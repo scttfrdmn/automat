@@ -334,3 +334,11 @@ func containsString(list []string, want string) bool {
 }
 
 var _ awsapi.ConfigAPI = (*Config)(nil)
+
+// Config already implements every ConfigAPI method (Describe and Put), so it
+// satisfies the narrower, read-only ConfigVerifyAPI (internal/awsapi/api.go)
+// automatically — this assertion is here only so a future narrowing of
+// ConfigVerifyAPI that this fake stops satisfying fails at compile time
+// rather than at the first `automat verify` test that reaches it, the same
+// convention awsfake/quota.go's own var _ line follows for QuotaAPI.
+var _ awsapi.ConfigVerifyAPI = (*Config)(nil)

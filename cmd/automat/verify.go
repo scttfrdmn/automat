@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	configtypes "github.com/aws/aws-sdk-go-v2/service/configservice/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/spf13/cobra"
 
 	"github.com/scttfrdmn/automat/internal/awsapi"
+	"github.com/scttfrdmn/automat/internal/baseline"
 	"github.com/scttfrdmn/automat/internal/catalog"
 	"github.com/scttfrdmn/automat/internal/compilesets"
 	"github.com/scttfrdmn/automat/internal/envprofile"
@@ -46,16 +48,23 @@ var reVerifyAccountID = regexp.MustCompile(`^[0-9]{12}$`)
 // newVerifyCmd builds `automat verify` — DESIGN §12, scoped to what a `vend`
 // built by this binary actually produces.
 //
-// # Two layers, not four
+// # Four layers, now that internal/baseline exists
 //
-// DESIGN §12 names four: policy, detective, procedural, freshness. Only the
-// first and last are checked here. The detective layer (Config recorder,
-// conformance pack) and the procedural layer (attestation stubs) both check
-// something DESIGN §7 step 5 — internal/baseline — was meant to install, and
-// that package does not exist (the same gap `vend`'s own plan and evidence
-// manifest disclose, docs/cli-surface.md D3). This command says so in its own
-// output rather than staying silent about it, the same discipline `vend`
-// follows for the identical gap.
+// DESIGN §12 names four: policy, detective, procedural, freshness. All four
+// are checked as of ROADMAP.md's "internal/baseline, slices 2-9" item 9 —
+// wiring detective and procedural against what internal/baseline's own
+// Ensure* methods install. The detective layer (verify.CheckDetective, this
+// file's configVerifyClient) reads the Config recorder, delivery channel,
+// and conformance pack through the same read-only, in-child-assumed session
+// vend's own baseline steps establish through with a write-carrying one. The
+// procedural layer (verify.CheckProcedural) reads the attestation stub
+// directory EnsureAttestationStubs writes into, locally, no AWS call at all.
+//
+// Both layers are "opt-in, and not opted into" the same way the mirror layer
+// already is (checkMirrorDrift's own doc comment): a profile whose
+// config_recorder.enabled is false, or whose compile binds no Config rule,
+// or which names no procedural control at all, produces no finding for the
+// corresponding section — not a failure, because nothing was asked for.
 //
 // # --account, not --account | --ou
 //
@@ -78,14 +87,20 @@ func newVerifyCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Check a vended account against what it should be",
-		Long: "Re-checks an account against the environment profile that vended it: the\n" +
-			"policy layer (do the attached service control policies still match a fresh\n" +
-			"compile) and the freshness layer (has the profile's review_by date passed).\n\n" +
-			"The detective layer (Config recorder, conformance pack) and the procedural\n" +
-			"layer (attestation stubs) are NOT checked: this build of automat has no\n" +
-			"internal/baseline package, so nothing installs them for `vend` to check\n" +
-			"either, and a check here would be reporting on something that cannot exist\n" +
-			"yet. This command's output says so explicitly rather than staying silent.\n\n" +
+		Long: "Re-checks an account against the environment profile that vended it, across\n" +
+			"all four of DESIGN §12's layers:\n\n" +
+			"  - policy: do the attached service control policies still match a fresh compile\n" +
+			"  - detective: does the AWS Config recorder exist and record, does the delivery\n" +
+			"    channel point at the right bucket, and does the conformance pack's deployed\n" +
+			"    parameters match a fresh compile — each checked only when the profile asked\n" +
+			"    for it; a profile that never enabled the recorder, or whose compile binds no\n" +
+			"    Config rule, is reported as \"not configured\", not as a failure\n" +
+			"  - procedural: does each deduped attestation stub exist, does it carry content,\n" +
+			"    and is it stale against its own declared frequency\n" +
+			"  - freshness: has the profile's review_by date passed\n\n" +
+			"Detective and procedural findings that could not be checked at all — the\n" +
+			"in-child session could not be assumed, or a read was denied — are reported as\n" +
+			"unknown, never as drift: a denial is not evidence that something is wrong.\n\n" +
 			"Read-only: this command holds no write grant on anything it inspects.\n\n" +
 			"Exit codes are for cron and CI: 0 clean, 2 drift or an orphan was found,\n" +
 			"3 nothing was found wrong but a check could not be completed.",
@@ -155,6 +170,21 @@ func newVerifyCmd(g *globals) *cobra.Command {
 				return err
 			}
 
+			// The detective and procedural layers — ROADMAP.md's "internal/
+			// baseline, slices 2-9" item 9, wiring verify against what
+			// internal/baseline's own Ensure* methods install. detectiveUnknown
+			// and proceduralUnknown each report "could not be checked" (an
+			// in-child session could not be assumed, a read was denied, or the
+			// local stub directory could not be read) as a state DISTINCT from
+			// a report that came back clean — see runDetectiveCheck's own doc
+			// comment for why that distinction pushes the exit code toward
+			// exitVerifyUnknown, never exitVerifyDrift.
+			detectiveReport, detectiveUnknown := runDetectiveCheck(ctx, g, region, profile,
+				partitionOf(callerARN), accountID, in)
+			proceduralReport, proceduralUnknown := runProceduralCheck(
+				in.profile.Baseline.Attestations.Dir(envprofile.DefaultAttestationDir),
+				in.attestationGroups, now)
+
 			// The read-and-diff half of ROADMAP.md's "Remote evidence mirror"
 			// backlog item, item 2 — the half that actually closes (not just
 			// narrows) docs/open-questions.md's Q21 residual. Checked BEFORE
@@ -170,7 +200,8 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			if err := renderVerifyReport(out, accountID, target, policyReport, freshness, honesty, mirrorReports); err != nil {
+			if err := renderVerifyReport(out, accountID, target, policyReport, freshness, honesty,
+				detectiveReport, detectiveUnknown, proceduralReport, mirrorReports); err != nil {
 				return err
 			}
 
@@ -179,7 +210,7 @@ func newVerifyCmd(g *globals) *cobra.Command {
 				return serr
 			}
 			manifestPath, writtenManifest, werr := writeVerifyEvidence(in, accountID, target, callerARN, now,
-				policyReport, mirrorReports, signer, out)
+				policyReport, detectiveReport, proceduralReport, mirrorReports, signer, out)
 			if werr != nil {
 				return werr
 			}
@@ -211,9 +242,9 @@ func newVerifyCmd(g *globals) *cobra.Command {
 			}
 
 			switch {
-			case !policyReport.Clean(), anyMirrorDrifted(mirrorReports):
+			case !policyReport.Clean(), !detectiveReport.Clean(), !proceduralReport.Clean(), anyMirrorDrifted(mirrorReports):
 				return &exitError{code: exitVerifyDrift}
-			case freshness.Unparseable, anyMirrorUnreachable(mirrorReports):
+			case freshness.Unparseable, detectiveUnknown, proceduralUnknown, anyMirrorUnreachable(mirrorReports):
 				return &exitError{code: exitVerifyUnknown}
 			}
 			return nil
@@ -233,12 +264,38 @@ func newVerifyCmd(g *globals) *cobra.Command {
 
 // verifyInput is the already-resolved side of a verify run: the environment
 // profile plus the compiled, narrowed, packed policy set it produces for
-// accountID.
+// accountID, plus the two detective/procedural expectations
+// internal/verify's own doc comment requires a caller to resolve before
+// calling CheckDetective/CheckProcedural (that package "receives
+// already-resolved values... and reports on them, so it has no opinion
+// about where they came from").
 type verifyInput struct {
 	profile     *envprofile.Profile
 	contentHash string
 	sets        *catalog.Resolved
 	packed      *compilesets.Packed
+
+	// packName and packInputParams are the conformance pack's expected
+	// identity and resolved parameters, computed the SAME way
+	// vendConformancePackStep (vend.go) computes them for its own
+	// EnsureConformancePack call — conformancePackName and
+	// baseline.RenderConformancePackTemplate over
+	// narrowed.Merged.SortedConfigRules(). The rendered template body itself
+	// is not kept: CheckDetective compares only ConformancePackInputParameters
+	// (baseline.SameInputParameters' own doc comment explains why that is the
+	// only drift check possible at all — DescribeConformancePacks never
+	// returns deployed template text), so the body has no use here. packName
+	// is empty exactly when vendConformancePackStep's own no-op condition
+	// holds (the compile binds no Config rule at all), which CheckDetective
+	// reads as "no pack was asked for", not as an absent one.
+	packName        string
+	packInputParams []configtypes.ConformancePackInputParameter
+
+	// attestationGroups are compilesets.DedupeAttestations' own return value
+	// over sets.Artifacts — the same call vendAttestationStubsStep makes, so
+	// CheckProcedural checks against the identical stub filenames and
+	// frequencies a vend would have written.
+	attestationGroups []compilesets.DedupedAttestation
 }
 
 // loadVerifyInput resolves the environment profile to the same compiled,
@@ -296,7 +353,42 @@ func loadVerifyInput(profilePath, accountID, overridePath string) (*verifyInput,
 	if err != nil {
 		return nil, err
 	}
-	return &verifyInput{profile: p, contentHash: hash, sets: sets, packed: packed}, nil
+
+	in := &verifyInput{profile: p, contentHash: hash, sets: sets, packed: packed}
+
+	// The conformance pack's expected identity and content — computed the
+	// SAME way vendConformancePackStep computes them for its own
+	// EnsureConformancePack call, so CheckDetective compares against the
+	// pack a vend of this profile would actually deploy. Left at their zero
+	// values (packName empty) when the compile binds no Config rule at all,
+	// matching vendConformancePackStep's own no-op condition — a caller
+	// asking CheckDetective about a pack that no vend would ever create is
+	// not this function's job to invent one for.
+	rules := narrowed.Merged.SortedConfigRules()
+	if len(rules) > 0 {
+		in.packName = conformancePackNameFor(p.Meta.ID)
+		// The template body is discarded (see verifyInput.packInputParams'
+		// own doc comment for why): only the resolved parameters are kept,
+		// since that is the one thing CheckDetective can compare against
+		// what DescribeConformancePacks returns.
+		_, in.packInputParams, err = baseline.RenderConformancePackTemplate(rules)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The deduped attestation groups — compilesets.DedupeAttestations over
+	// the SAME resolved artifacts vendAttestationStubsStep dedupes, so
+	// CheckProcedural checks against the identical stub filenames and
+	// frequencies a vend would have written. nil (not an error) when the
+	// compile carries no procedural control at all, DedupeAttestations' own
+	// documented return for that case.
+	in.attestationGroups, err = compilesets.DedupeAttestations(sets.Artifacts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return in, nil
 }
 
 // automationRoleARNFor renders the in-account automation role's ARN the same
@@ -336,6 +428,68 @@ func verifyParentOf(ctx context.Context, api awsapi.OrgAPI, accountID string) (s
 	return aws.ToString(out.Parents[0].Id), nil
 }
 
+// runDetectiveCheck resolves verify's detective layer, assuming the SAME
+// OrganizationAccountAccessRole session (via g.configVerifyClient) `vend`'s
+// own baseline steps assume into with a write-carrying client — but through
+// the read-only awsapi.ConfigVerifyAPI, so nothing this call does can ever
+// mutate the account's Config setup (ConfigVerifyAPI's own doc comment).
+//
+// # "Cannot be checked" is swallowed here, not propagated as a command failure
+//
+// Both a failed assumption (the delegation policy does not grant sts:AssumeRole
+// into the automation role, or the role was never created) and a denied
+// Describe call inside verify.CheckDetective are read as "this layer could not
+// be checked", returned as (nil, true) rather than as an error that would fail
+// the whole command. This is the exact distinction freshness's own Unparseable
+// and the evidence-mirror layer's own "unreachable" state already draw
+// (checkMirrorDrift's doc comment): a denial is not evidence that the account
+// drifted, so it must not be reported alongside a genuine drift finding, and
+// it must not silently read as clean either — RunE's exit-code switch moves
+// detectiveUnknown to exitVerifyUnknown, never exitVerifyDrift or a plain 0.
+//
+// A no-op — no client built, no AWS call at all — when the profile asks for
+// neither a Config recorder nor a conformance pack: attempting to assume into
+// an account for a check that has nothing to check would be an AssumeRole call
+// with no purpose, the same "opt-in, and not opted into" discipline
+// DetectiveReport's own doc comment states for the fields themselves.
+func runDetectiveCheck(ctx context.Context, g *globals, region, profile, partition, accountID string,
+	in *verifyInput) (report *verify.DetectiveReport, unknown bool) {
+	if !in.profile.Baseline.ConfigRecorder.Enabled && in.packName == "" {
+		return &verify.DetectiveReport{}, false
+	}
+
+	api, err := g.configVerifyClient(ctx, region, profile, partition, accountID, envprofile.DefaultOrgAccessRole)
+	if err != nil {
+		return nil, true
+	}
+
+	automationRoleARN := automationRoleARNFor(accountID, in.profile)
+	report, err = verify.CheckDetective(ctx, api, in.profile.Baseline.ConfigRecorder,
+		automationRoleARN, in.packName, in.packInputParams)
+	if err != nil {
+		return nil, true
+	}
+	return report, false
+}
+
+// runProceduralCheck resolves verify's procedural layer, reading the local
+// attestation-stub directory through verify.CheckProcedural.
+//
+// Mirrors runDetectiveCheck's own "cannot be checked, not a command failure"
+// treatment for the identical reason: a local filesystem error reading the
+// stub directory (a permission problem, a symlink refusal) is not evidence
+// that a control's attestation is missing or stale, so it must land in
+// exitVerifyUnknown rather than exitVerifyDrift or a hard failure that would
+// abort the run before the report prints at all.
+func runProceduralCheck(dir string, groups []compilesets.DedupedAttestation,
+	now time.Time) (report *verify.ProceduralReport, unknown bool) {
+	report, err := verify.CheckProcedural(dir, groups, now)
+	if err != nil {
+		return nil, true
+	}
+	return report, false
+}
+
 // renderVerifyReport prints the policy and freshness findings, the
 // per-control enforcement-class breakdown DESIGN §12 calls "structural
 // honesty" — how many of the compiled controls this tool enforces itself, how
@@ -352,8 +506,20 @@ func verifyParentOf(ctx context.Context, api awsapi.OrgAPI, accountID string) (s
 // nothing" are different claims, and the absence of the section IS the
 // former's honest rendering, distinct from a checked-clean line for the
 // latter (see checkMirrorDrift's own doc comment).
+//
+// detective and procedural are printed as their own sections, in DESIGN §12's
+// own layer order (policy, detective, procedural, freshness) — each following
+// the identical quoting discipline the policy section already applies to an
+// AWS-supplied name (AUDIT-0 M1): a bucket name or a control id reaches this
+// text from a document or from AWS, not from this binary's own literals, so
+// it is quoted with %q the same way target and an orphan's name are.
+// detectiveUnknown/proceduralUnknown each print "could not be checked" rather
+// than either finding's own zero value, so a denied read never renders
+// indistinguishably from "checked, found nothing wrong" (this file's own
+// checkMirrorDrift precedent, restated for these two layers).
 func renderVerifyReport(w io.Writer, accountID, target string,
 	policy *verify.PolicyReport, freshness verify.FreshnessStatus, honesty *verify.StructuralHonestyReport,
+	detective *verify.DetectiveReport, detectiveUnknown bool, procedural *verify.ProceduralReport,
 	mirrorReports []evidence.MirrorDriftReport) error {
 	p := func(format string, args ...any) error {
 		_, err := fmt.Fprintf(w, format, args...)
@@ -400,6 +566,20 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		}
 	}
 
+	if err := p("\nDetective layer:\n"); err != nil {
+		return err
+	}
+	if err := renderDetectiveSection(p, detective, detectiveUnknown); err != nil {
+		return err
+	}
+
+	if err := p("\nProcedural layer:\n"); err != nil {
+		return err
+	}
+	if err := renderProceduralSection(p, procedural); err != nil {
+		return err
+	}
+
 	if err := p("\nFreshness layer:\n  %s\n", freshness.String()); err != nil {
 		return err
 	}
@@ -411,10 +591,6 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 		if err := p("  %s\n", line); err != nil {
 			return err
 		}
-	}
-	if err := p("  (detective and procedural findings are not checked in this build — see " +
-		"`automat verify --help`)\n"); err != nil {
-		return err
 	}
 
 	if len(mirrorReports) > 0 {
@@ -433,6 +609,109 @@ func renderVerifyReport(w io.Writer, accountID, target string,
 	}
 
 	return p("\nautomat %s\n", version.Version)
+}
+
+// renderDetectiveSection prints CheckDetective's findings, one line per
+// configured piece — a nil Recorder/DeliveryChannel/ConformancePack means
+// the profile never asked for it (DetectiveReport's own "opt-in, and not
+// opted into" doc comment), printed as its own distinct line rather than
+// omitted, so an operator reading the report sees "not configured" rather
+// than wondering whether the check ran at all.
+func renderDetectiveSection(p func(string, ...any) error, d *verify.DetectiveReport, unknown bool) error {
+	if unknown {
+		return p("  could not be checked: the in-child session could not be assumed, or a read " +
+			"was denied\n")
+	}
+	if d == nil {
+		return p("  not configured: this profile enables no Config recorder and binds no Config rule\n")
+	}
+
+	if d.Recorder == nil {
+		if err := p("  Config recorder: not configured (baseline.config_recorder.enabled is false)\n"); err != nil {
+			return err
+		}
+	} else {
+		switch {
+		case !d.Recorder.Present:
+			if err := p("  Config recorder: NOT PRESENT\n"); err != nil {
+				return err
+			}
+		case !d.Recorder.Recording:
+			if err := p("  Config recorder: present but NOT RECORDING (created without being started)\n"); err != nil {
+				return err
+			}
+		case !d.Recorder.ConfigMatches:
+			if err := p("  Config recorder: recording, but its recording scope or role differs from a fresh compile\n"); err != nil {
+				return err
+			}
+		default:
+			if err := p("  Config recorder: present, recording, matches\n"); err != nil {
+				return err
+			}
+		}
+	}
+
+	if d.DeliveryChannel == nil {
+		if err := p("  Config delivery channel: not configured (baseline.config_recorder.enabled is false)\n"); err != nil {
+			return err
+		}
+	} else {
+		switch {
+		case !d.DeliveryChannel.Present:
+			if err := p("  Config delivery channel: NOT PRESENT (expected bucket %q)\n", d.DeliveryChannel.Bucket); err != nil {
+				return err
+			}
+		case !d.DeliveryChannel.Matches:
+			if err := p("  Config delivery channel: present, but delivers to a different bucket than "+
+				"the expected %q\n", d.DeliveryChannel.Bucket); err != nil {
+				return err
+			}
+		default:
+			if err := p("  Config delivery channel: present, delivers to %q, matches\n", d.DeliveryChannel.Bucket); err != nil {
+				return err
+			}
+		}
+	}
+
+	if d.ConformancePack == nil {
+		return p("  Conformance pack: not configured (this compile binds no Config rule)\n")
+	}
+	switch {
+	case !d.ConformancePack.Present:
+		return p("  Conformance pack %q: NOT PRESENT\n", d.ConformancePack.Name)
+	case !d.ConformancePack.Matches:
+		return p("  Conformance pack %q: present, deployed parameters differ from a fresh compile\n",
+			d.ConformancePack.Name)
+	default:
+		return p("  Conformance pack %q: present, matches\n", d.ConformancePack.Name)
+	}
+}
+
+// renderProceduralSection prints CheckProcedural's findings, one line per
+// deduped attestation group. An empty Stubs slice (no procedural control in
+// this compile at all) is a distinct, explicitly stated line rather than a
+// silently empty section.
+func renderProceduralSection(p func(string, ...any) error, r *verify.ProceduralReport) error {
+	if r == nil || len(r.Stubs) == 0 {
+		return p("  no procedural control in this compile; nothing to attest\n")
+	}
+	for _, s := range r.Stubs {
+		line := fmt.Sprintf("%q (%s, %s)", s.FileName, strings.Join(s.ControlIDs, ", "), s.Frequency)
+		switch {
+		case !s.Present:
+			line += ": NOT WRITTEN"
+		case s.Empty:
+			line += ": present but EMPTY (never filled in)"
+		case s.StaleChecked && s.Stale:
+			line += ": STALE against its declared frequency"
+		default:
+			line += ": present, current"
+		}
+		if err := p("  %s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // renderMirrorDriftLine renders one evidence.MirrorDriftReport as a single
@@ -581,8 +860,8 @@ func checkMirrorDrift(ctx context.Context, g *globals, region, profile, accountI
 // threshold is checked and a rotation performed if crossed
 // (writeManifestWithRotation) — visibly, via a notice on out, never silently.
 func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, now time.Time,
-	policy *verify.PolicyReport, mirrorReports []evidence.MirrorDriftReport,
-	signer evidence.Signer, out io.Writer) (string, *evidence.Manifest, error) {
+	policy *verify.PolicyReport, detective *verify.DetectiveReport, procedural *verify.ProceduralReport,
+	mirrorReports []evidence.MirrorDriftReport, signer evidence.Signer, out io.Writer) (string, *evidence.Manifest, error) {
 	localDir := in.profile.Baseline.Evidence.Dir(envprofile.DefaultEvidenceDir)
 
 	dir, err := evidence.OpenDir(".", localDir)
@@ -600,16 +879,46 @@ func writeVerifyEvidence(in *verifyInput, accountID, target, callerARN string, n
 			accountID, err)
 	}
 
+	// Every genuine finding — policy, detective, procedural, mirror — pushes
+	// outcome to failure, following the SAME rule (CLAUDE.md rule 7 applied
+	// consistently): each is a definite answer this run computed, not a
+	// "could not check" state. detective/procedural's own Clean() already
+	// treats "not configured at all" as clean (DetectiveReport/
+	// ProceduralReport's own doc comments), so a profile that never enabled
+	// the recorder or named no procedural control never contributes a
+	// finding here — this switch cannot be tricked into calling "nothing was
+	// asked for" a failure.
+	//
+	// detectiveUnknown/proceduralUnknown are handled entirely by the CALLER
+	// (RunE's own exit-code switch): an unchecked layer produces a nil
+	// report from runDetectiveCheck/runProceduralCheck, and nil.Clean()
+	// returns true (both types' own Clean() methods), so this function
+	// never sees "could not check" as a drift finding — the same
+	// non-claim freshness's own Unparseable and mirror's own Checked:false
+	// already make, restated here rather than re-derived, because a record
+	// marked failure for a denial or a network error would say the account
+	// drifted when nothing about it was shown to have moved.
+	var findings []*evidence.RecordError
+	if !policy.Clean() {
+		findings = append(findings, verifyDriftError(policy))
+	}
+	if !detective.Clean() {
+		findings = append(findings, detectiveDriftError(detective))
+	}
+	if !procedural.Clean() {
+		findings = append(findings, proceduralDriftError(procedural))
+	}
+	if anyMirrorDrifted(mirrorReports) {
+		findings = append(findings, mirrorDriftError(mirrorReports))
+	}
+
 	outcome, recErr := evidence.OutcomeSuccess, (*evidence.RecordError)(nil)
-	switch {
-	case !policy.Clean() && anyMirrorDrifted(mirrorReports):
+	if len(findings) > 0 {
 		outcome = evidence.OutcomeFailure
-		recErr = verifyDriftError(policy)
-		recErr.Message += " Additionally, " + mirrorDriftError(mirrorReports).Message
-	case !policy.Clean():
-		outcome, recErr = evidence.OutcomeFailure, verifyDriftError(policy)
-	case anyMirrorDrifted(mirrorReports):
-		outcome, recErr = evidence.OutcomeFailure, mirrorDriftError(mirrorReports)
+		recErr = findings[0]
+		for _, f := range findings[1:] {
+			recErr.Message += " Additionally, " + f.Message
+		}
 	}
 	rec := evidence.Record{
 		Timestamp: nowStr,
@@ -697,6 +1006,89 @@ func verifyDriftRemediation(reattach, orphaned bool) string {
 			"this profile asks for, not less")
 	}
 	return strings.Join(parts, ". ")
+}
+
+// detectiveDriftError is the RecordError a detective-layer drift record
+// carries — verifyDriftError's own shape (CLAUDE.md rule 7), applied to
+// CheckDetective's findings. Called only when !detective.Clean(), so at
+// least one of Recorder/DeliveryChannel/ConformancePack is both non-nil
+// (configured) and not itself Clean.
+func detectiveDriftError(d *verify.DetectiveReport) *evidence.RecordError {
+	var parts []string
+	if d.Recorder != nil && !d.Recorder.Clean() {
+		switch {
+		case !d.Recorder.Present:
+			parts = append(parts, "Config recorder: not present")
+		case !d.Recorder.Recording:
+			parts = append(parts, "Config recorder: present but not recording")
+		default:
+			parts = append(parts, "Config recorder: recording scope or role differs from a fresh compile")
+		}
+	}
+	if d.DeliveryChannel != nil && !d.DeliveryChannel.Clean() {
+		if !d.DeliveryChannel.Present {
+			parts = append(parts, fmt.Sprintf("Config delivery channel: not present (expected %q)",
+				d.DeliveryChannel.Bucket))
+		} else {
+			parts = append(parts, fmt.Sprintf("Config delivery channel: delivers to the wrong bucket "+
+				"(expected %q)", d.DeliveryChannel.Bucket))
+		}
+	}
+	if d.ConformancePack != nil && !d.ConformancePack.Clean() {
+		if !d.ConformancePack.Present {
+			parts = append(parts, fmt.Sprintf("conformance pack %q: not present", d.ConformancePack.Name))
+		} else {
+			parts = append(parts, fmt.Sprintf("conformance pack %q: deployed parameters differ from a "+
+				"fresh compile", d.ConformancePack.Name))
+		}
+	}
+	return &evidence.RecordError{
+		Message:  "the detective layer does not match what this environment profile describes. " + strings.Join(parts, "; "),
+		Action:   "config:DescribeConfigurationRecorders",
+		Resource: "the account's AWS Config setup",
+		Remediation: "re-run `automat vend` with this environment profile to re-ensure the recorder, " +
+			"delivery channel, and conformance pack; every one of these is idempotent, so a re-vend " +
+			"corrects drift in place rather than duplicating anything",
+	}
+}
+
+// proceduralDriftError is the RecordError a procedural-layer drift record
+// carries. Called only when !procedural.Clean(), so at least one stub is
+// missing, empty, or stale.
+func proceduralDriftError(r *verify.ProceduralReport) *evidence.RecordError {
+	var missing, empty, stale []string
+	for _, s := range r.Stubs {
+		switch {
+		case !s.Present:
+			missing = append(missing, fmt.Sprintf("%q", s.FileName))
+		case s.Empty:
+			empty = append(empty, fmt.Sprintf("%q", s.FileName))
+		case s.StaleChecked && s.Stale:
+			stale = append(stale, fmt.Sprintf("%q", s.FileName))
+		}
+	}
+	var parts []string
+	add := func(names []string, what string) {
+		if len(names) > 0 {
+			parts = append(parts, what+": "+strings.Join(names, ", "))
+		}
+	}
+	add(missing, "never written")
+	add(empty, "present but never filled in")
+	add(stale, "present but stale against its declared frequency")
+
+	return &evidence.RecordError{
+		Message: "the procedural layer does not match what this environment profile describes. " +
+			strings.Join(parts, "; "),
+		// Action is deliberately empty: schema/evidence-manifest-v1.schema.json
+		// documents it as "the AWS action that was denied or failed", and this
+		// finding comes from a local file read, not an AWS call.
+		Resource: "the local attestation-stub directory",
+		Remediation: "a missing stub is created by re-running `automat vend` with this environment " +
+			"profile; an empty or stale one requires an operator to actually describe how the " +
+			"practice is implemented and evidenced — automat cannot write that content for them, " +
+			"only create the file for them to write it into",
+	}
 }
 
 // mirrorDriftError is the RecordError a mirror-drifted verify record
