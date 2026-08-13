@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/scttfrdmn/automat/internal/envprofile"
 	"github.com/scttfrdmn/automat/internal/evidence"
 )
@@ -62,14 +64,27 @@ func TestVerifyCleanRightAfterVend(t *testing.T) {
 // TestVerifyFromMemberReadsThroughTheDelegatedIdentity is the MEMBER-state
 // counterpart: the delegation policy already grants DescribePolicy,
 // ListPoliciesForTarget, and ListTagsForResource (internal/bundle/policy.go's
-// readActions), so verify's read must succeed WITHOUT the vendor role ever
-// being assumed — verify never brokers, unlike vend's account/OU half.
+// readActions), so verify's POLICY layer's read must succeed WITHOUT the
+// vendor role ever being assumed — that layer never brokers, unlike vend's
+// account/OU half.
+//
+// AssumeRole's total count DOES rise here, and that is expected rather than
+// a regression: the detective layer (verify.CheckDetective,
+// configVerifyClient) assumes OrganizationAccountAccessRole into the CHILD
+// account to read back the Config recorder/delivery channel/conformance
+// pack — the identical non-brokered, no-ExternalId assumption vend's own
+// baseline steps make (childConfigClient's doc comment), not the brokered
+// vendor-role one. What this test pins is that the vendor role's OWN
+// ExternalId is never sent a second time by verify — LastAssumeRole is
+// captured before verify runs and compared after, so a vendor-role
+// assumption (which WOULD carry an ExternalId) is what would fail this,
+// not the automation-role one (which carries none).
 func TestVerifyFromMemberReadsThroughTheDelegatedIdentity(t *testing.T) {
 	g, f := vendMemberWorld(t)
 	profile := vendProfileJSON(t, nil)
 	accountID := vendThenVerify(t, g, f, profile)
 
-	assumeCallsBefore := f.STS.CallCount("AssumeRole")
+	f.STS.LastAssumeRole = nil
 
 	out, _, err := runCLI(t, g, verifyArgs(profile, accountID)...)
 	if err != nil {
@@ -78,9 +93,11 @@ func TestVerifyFromMemberReadsThroughTheDelegatedIdentity(t *testing.T) {
 	if !strings.Contains(out, "matches") {
 		t.Errorf("verify did not report any policy as matching:\n%s", out)
 	}
-	if got := f.STS.CallCount("AssumeRole"); got != assumeCallsBefore {
-		t.Errorf("verify called AssumeRole %d more time(s); it must read through the delegated "+
-			"identity directly, never through the brokered vendor role", got-assumeCallsBefore)
+	if f.STS.LastAssumeRole != nil && aws.ToString(f.STS.LastAssumeRole.ExternalId) != "" {
+		t.Errorf("verify's last AssumeRole carried an ExternalId, which means it assumed the "+
+			"BROKERED vendor role rather than reading through the delegated identity or the "+
+			"in-child automation-role assumption (neither of which sends one): %+v",
+			f.STS.LastAssumeRole)
 	}
 }
 
@@ -131,11 +148,15 @@ func TestVerifyLapsedReviewByWarnsNotFails(t *testing.T) {
 	}
 }
 
-// TestVerifyDisclosesWhatItDoesNotCheck holds the plan's Task 1 scope
-// decision in the running binary: the detective and procedural layers are
-// named as not checked, in the command's own output, every time it runs —
-// not left to a --help page nobody reads before trusting a clean exit.
-func TestVerifyDisclosesWhatItDoesNotCheck(t *testing.T) {
+// TestVerifyReportsDetectiveAndProceduralLayers holds ROADMAP.md's
+// "internal/baseline, slices 2-9" item 9 in the running binary: an account
+// this binary just vended, with a Config recorder and a conformance pack
+// (vendProfileJSON's default profile enables both) and procedural controls
+// (cmmc-l1 compiles several), must report BOTH new layers as clean in
+// verify's own output — not "not checked", the old claim this test replaces
+// now that internal/baseline exists and vend actually installs what these
+// layers check.
+func TestVerifyReportsDetectiveAndProceduralLayers(t *testing.T) {
 	g, f := vendWorld(t)
 	profile := vendProfileJSON(t, nil)
 	accountID := vendThenVerify(t, g, f, profile)
@@ -144,8 +165,69 @@ func TestVerifyDisclosesWhatItDoesNotCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if !strings.Contains(out, "not checked in this build") {
-		t.Errorf("verify's own output does not disclose the detective/procedural gap:\n%s", out)
+	if !strings.Contains(out, "Detective layer:") {
+		t.Errorf("verify's output has no detective-layer section:\n%s", out)
+	}
+	if !strings.Contains(out, "Config recorder: present, recording, matches") {
+		t.Errorf("verify did not report the Config recorder as clean:\n%s", out)
+	}
+	if !strings.Contains(out, "Conformance pack") || !strings.Contains(out, "present, matches") {
+		t.Errorf("verify did not report the conformance pack as present and matching:\n%s", out)
+	}
+	if !strings.Contains(out, "Procedural layer:") {
+		t.Errorf("verify's output has no procedural-layer section:\n%s", out)
+	}
+	if !strings.Contains(out, "present, current") {
+		t.Errorf("verify did not report any attestation stub as present and current:\n%s", out)
+	}
+	if strings.Contains(out, "not checked in this build") {
+		t.Errorf("verify still claims the detective/procedural layers are unchecked:\n%s", out)
+	}
+}
+
+// TestVerifyReportsDetectiveDriftAsAFailedOutcome is
+// TestVerifyRecordsDriftAsAFailedOutcome's detective-layer counterpart: a
+// hand-edited (or out-of-band) recorder — RecorderRunning flipped false,
+// simulating an operator who ran `stop-configuration-recorder` outside
+// automat — must fail this run's exit code AND land in the evidence
+// manifest as outcome failure, not success.
+func TestVerifyReportsDetectiveDriftAsAFailedOutcome(t *testing.T) {
+	g, f := vendWorld(t)
+	profile := vendProfileJSON(t, nil)
+	accountID := vendThenVerify(t, g, f, profile)
+
+	f.ChildConfig(accountID).RecorderRunning["default"] = false
+
+	out, _, err := runCLI(t, g, verifyArgs(profile, accountID)...)
+	if err == nil {
+		t.Fatal("verify succeeded against a stopped Config recorder, want a non-zero exit for drift")
+	}
+	if code := exitCodeOf(err); code != exitVerifyDrift {
+		t.Errorf("exit code = %d, want %d (exitVerifyDrift)", code, exitVerifyDrift)
+	}
+	if !strings.Contains(out, "NOT RECORDING") {
+		t.Errorf("verify's output does not mention the stopped recorder:\n%s", out)
+	}
+
+	m, lerr := evidence.Load(filepath.Join(envprofile.DefaultEvidenceDir, accountID+".json"), nil)
+	if lerr != nil {
+		t.Fatalf("load the manifest verify wrote: %v", lerr)
+	}
+	var last *evidence.Record
+	for i := range m.Records {
+		if m.Records[i].Operation == evidence.OpVerify {
+			last = &m.Records[i]
+		}
+	}
+	if last == nil {
+		t.Fatal("no verify record in the manifest")
+	}
+	if last.Outcome != evidence.OutcomeFailure {
+		t.Errorf("the verify record's outcome is %q on a run that found detective drift, want %q",
+			last.Outcome, evidence.OutcomeFailure)
+	}
+	if last.Err == nil || !strings.Contains(last.Err.Message, "recording") {
+		t.Errorf("the error block does not name the detective finding: %+v", last.Err)
 	}
 }
 

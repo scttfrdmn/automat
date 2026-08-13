@@ -235,34 +235,51 @@ honors is the one AUDIT-2 wrote — step 5 not shipping must not quietly become 
 include this." Everything above about how the shortfall is disclosed and the two smaller
 ones alongside it is unchanged by the resolution.
 
-### D4 — `automat verify` takes `--account`, not `--account | --ou`, and checks two layers not four. RESOLVED — §13 amended
+### D4 — `automat verify` takes `--account`, not `--account | --ou`. Checks all four layers as of ROADMAP.md's "internal/baseline, slices 2-9" item 9. RESOLVED — §13 amended
 
 §12 and §13 both write the flag as `--account <id> | --ou <id>` and describe four
-verification layers: policy, detective, procedural, freshness. As built, `verify`
-accepts only `--account <id>` and checks only the policy and freshness layers.
+verification layers: policy, detective, procedural, freshness. `verify` accepts only
+`--account <id>`, for a reason that does not go away as the tool grows; the layer
+count, on the other hand, was a temporary capability gap and is now closed.
 
-**The flag cannot be built as written.** Baseline-protection — compiled into every
-vend, never optional — exempts automat's in-account automation role from its Deny
-statements, and that exemption is rendered as the role's ARN
-(`internal/compilesets`'s `renderCondition`), which embeds the account id. An OU with
-no account in hand has no ARN to render, so `compilesets.Pack` cannot produce the
-expected policy set for an OU-only check. `--account` resolves its own parent OU via
-`ListParents` and checks the policies attached there; a bare `--ou` flag is not offered
-rather than offered and silently wrong.
+**The flag cannot be built as written, and this half of D4 is permanent.**
+Baseline-protection — compiled into every vend, never optional — exempts automat's
+in-account automation role from its Deny statements, and that exemption is
+rendered as the role's ARN (`internal/compilesets`'s `renderCondition`), which
+embeds the account id. An OU with no account in hand has no ARN to render, so
+`compilesets.Pack` cannot produce the expected policy set for an OU-only check.
+`--account` resolves its own parent OU via `ListParents` and checks the policies
+attached there; a bare `--ou` flag is not offered rather than offered and silently
+wrong.
 
-**The two missing layers are the same capability gap D3 already discloses.** The
-detective layer (Config recorder, conformance pack) and the procedural layer
-(attestation stubs) both check something DESIGN §7 step 5 — `internal/baseline` — was
-meant to install, and that package does not exist. There is nothing in a vended account
-for either layer to check against. `verify`'s own output says so in every run rather than
-staying silent about it, the same discipline `vend`'s plan and evidence manifest follow
-for the identical gap.
+**The two-layers-not-four half is now closed.** When this page was first written,
+the detective layer (Config recorder, conformance pack) and the procedural layer
+(attestation stubs) both checked something DESIGN §7 step 5 — `internal/baseline`
+— was meant to install, and that package did not exist yet, so `verify` disclosed
+the gap in its own output rather than claiming to check a recorder that was never
+created. `internal/baseline` now exists in full (its own package doc), and
+`internal/verify.CheckDetective`/`CheckProcedural` (ROADMAP.md's "internal/
+baseline, slices 2-9" item 9) check exactly what it installs: the recorder's
+presence, recording state, and configuration; the delivery channel's bucket; the
+conformance pack's deployed parameters; and each attestation stub's presence,
+emptiness, and staleness against its declared frequency. Both layers still follow
+the "opt-in, and not opted into" discipline the mirror layer established: a
+profile that never asked for a piece reports it as not configured, not as a
+failure. A detective/procedural check that cannot complete at all (the in-child
+session cannot be assumed, or a read is denied) is reported as unknown, landing
+`verify`'s exit code at `exitVerifyUnknown`, never `exitVerifyDrift` — a denial is
+not evidence that the account drifted.
 
-**Resolved by amending §13's line**, not by building `internal/baseline` or an OU-only
-code path first: DESIGN.md's `verify` line now states `--account <id>` only and names
-the policy and freshness layers as what is checked, pointing here for the reasoning. When
-`internal/baseline` exists, the detective and procedural layers become checkable and this
-page is where that closes; nothing about resolving it now blocks that later.
+Explicitly NOT built by this closure: per-resource compliance findings from the
+conformance pack's own AWS Config evaluation (DESIGN §12's "report current
+compliance findings... present it as findings, distinct from baseline drift").
+This slice checks that the pack is deployed and its parameters match a fresh
+compile — it does not read what AWS Config's own rule evaluations currently say
+about individual resources. That remains a larger, unscoped increment.
+
+**Resolved by amending §13's line** to read all four layers again now that all
+four are checkable, and by updating this page rather than leaving the "not yet
+implemented" framing in place after the gap it described had closed.
 
 ### D5 — `automat list` has no tag-based filtering, and its two flags are not in §13. RESOLVED — §13 amended
 

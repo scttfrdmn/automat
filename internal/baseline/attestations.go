@@ -175,9 +175,18 @@ func (e *Ensurer) EnsureAttestationStubs(groups []compilesets.DedupedAttestation
 	return stubs, append([]org.Action(nil), e.actions[before:]...), nil
 }
 
-// stubFileName computes a group's deterministic filename, refusing a group
+// StubFileName computes a group's deterministic filename, refusing a group
 // whose leading control id cannot safely become one — see
-// reControlIDStubName.
+// reControlIDStubName. Exported so internal/verify's procedural layer
+// (CheckProcedural, ROADMAP.md's "internal/baseline, slices 2-9" item 9) can
+// compute the SAME filename EnsureAttestationStubs would write for a given
+// group, rather than re-deriving "ControlIDs[0]+\".md\"" a second time in a
+// different package and risking the two definitions drifting apart.
+func StubFileName(g *compilesets.DedupedAttestation) (string, error) {
+	return stubFileName(g)
+}
+
+// stubFileName is StubFileName's unexported body — see its doc comment.
 func stubFileName(g *compilesets.DedupedAttestation) (string, error) {
 	if len(g.ControlIDs) == 0 {
 		return "", fmt.Errorf("cannot write an attestation stub for a group with no control ids — " +

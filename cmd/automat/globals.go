@@ -98,6 +98,15 @@ type globals struct {
 	// for the automation role, just against a different service client.
 	newChildConfig func(ctx context.Context, region, profile, partition, accountID,
 		roleName string) (awsapi.ConfigAPI, error)
+	// newChildConfigVerify is configVerifyClient's test seam — `verify`'s
+	// detective layer (internal/verify.CheckDetective, ROADMAP.md's
+	// "internal/baseline, slices 2-9" item 9) needs the same assumption
+	// newChildConfig makes for `vend`, but returning the narrower read-only
+	// awsapi.ConfigVerifyAPI rather than the full read-write awsapi.ConfigAPI —
+	// orgVerifyClient's own read-only-by-construction reasoning, applied to
+	// Config instead of Organizations.
+	newChildConfigVerify func(ctx context.Context, region, profile, partition, accountID,
+		roleName string) (awsapi.ConfigVerifyAPI, error)
 
 	// sleep is how a command waits between polls, and it is a field for the same
 	// reason the constructors are. CreateAccount is asynchronous, so `vend` waits;
@@ -430,6 +439,40 @@ func (g *globals) childConfigClient(ctx context.Context, region, profile, partit
 	roleName string) (awsapi.ConfigAPI, error) {
 	if g.newChildConfig != nil {
 		return g.newChildConfig(ctx, region, profile, partition, accountID, roleName)
+	}
+	stsAPI, err := g.stsClient(ctx, region, profile)
+	if err != nil {
+		return nil, err
+	}
+	if partition == "" {
+		partition = "aws"
+	}
+	roleARN := "arn:" + partition + ":iam::" + accountID + ":role/" + roleName
+	cfg, err := broker.Assume(ctx, stsAPI, roleARN, "", region)
+	if err != nil {
+		return nil, err
+	}
+	return configservice.NewFromConfig(cfg), nil
+}
+
+// configVerifyClient is childConfigClient's read-only sibling for `verify`'s
+// detective layer (internal/verify.CheckDetective): the SAME assumption into
+// OrganizationAccountAccessRole (or whatever roleName names), returning the
+// narrower awsapi.ConfigVerifyAPI rather than the full read-write
+// awsapi.ConfigAPI — orgVerifyClient's own reasoning ("a bug in verify cannot
+// mutate an organization no matter what it does") restated for Config: a bug
+// in verify's detective comparison cannot mutate an account's Config setup no
+// matter what it does, because the type it holds carries no write method at
+// all.
+//
+// A separate method rather than childConfigClient's return value narrowed at
+// the call site, matching every other client constructor in this file: one
+// method per awsapi interface, not one per AWS service (globals' own doc
+// comment on its client-constructor fields).
+func (g *globals) configVerifyClient(ctx context.Context, region, profile, partition, accountID,
+	roleName string) (awsapi.ConfigVerifyAPI, error) {
+	if g.newChildConfigVerify != nil {
+		return g.newChildConfigVerify(ctx, region, profile, partition, accountID, roleName)
 	}
 	stsAPI, err := g.stsClient(ctx, region, profile)
 	if err != nil {

@@ -4,19 +4,31 @@
 // Package verify checks a vended account or OU against what it should be, and
 // says so per DESIGN §12 layer.
 //
-// # Two layers, not four
+// # Four layers, now that internal/baseline exists
 //
 // DESIGN §12 names four verification layers: policy, detective, procedural, and
-// freshness. Only the first and last are checkable against what automat's own
-// `vend` actually produces today. The detective layer (Config recorder,
-// conformance pack) and the procedural layer (attestation stubs) both check
-// something DESIGN §7 step 5 — internal/baseline — was meant to install, and
-// that package does not exist yet: `vend` performs steps 1-4 and 6, and its own
-// plan output already discloses step 5 as not done. A verify that claimed to
-// check a recorder that was never created would not be conservative, it would
-// be wrong, so this package has no function for either layer and
-// `cmd/automat/verify.go` says so in its own output rather than staying silent
-// about the gap.
+// freshness. All four are checkable now that internal/baseline (DESIGN §7 step
+// 5) actually installs what the detective and procedural layers check against —
+// ROADMAP.md's "internal/baseline, slices 2-9" item 9. CheckPolicy compares
+// attached SCPs against a fresh compile (policy.go). CheckDetective
+// (detective.go) compares the AWS Config recorder, delivery channel, and
+// conformance pack against what an environment profile describes, reusing
+// internal/baseline's own exported comparators (SameRecorderConfig,
+// SameInputParameters) so "matches" means exactly what it means to the Ensure*
+// method that would correct a drift. CheckProcedural (procedural.go) reads the
+// local attestation-stub directory EnsureAttestationStubs writes into and
+// reports each stub's presence, emptiness, and staleness against its own
+// declared frequency, using no AWS call at all. CheckFreshness (freshness.go)
+// compares an environment profile's review_by date against now.
+//
+// Both CheckDetective and CheckProcedural follow the same "opt-in, and not
+// opted into" discipline `cmd/automat/verify.go`'s checkMirrorDrift established
+// for the evidence-mirror layer: a profile that never enabled the Config
+// recorder, whose compile binds no Config rule, or that names no procedural
+// control at all produces no finding for the corresponding piece — not a
+// failure, because nothing was asked for. "Nothing to check" and "checked,
+// found nothing" are different claims, and both types' own Clean() methods
+// hold that distinction rather than a caller having to re-derive it.
 //
 // # The policy layer compares content, not a tag
 //
@@ -32,9 +44,14 @@
 //
 // # Read-only by construction
 //
-// CheckPolicy takes an awsapi.OrgVerifyAPI, which carries no write method at
-// all (internal/awsapi/api.go). A bug in this package's comparison logic
-// cannot mutate an organization no matter what it does.
+// CheckPolicy takes an awsapi.OrgVerifyAPI, and CheckDetective takes an
+// awsapi.ConfigVerifyAPI — both carry no write method at all
+// (internal/awsapi/api.go). A bug in either function's comparison logic
+// cannot mutate an organization or an account's Config setup no matter what
+// it does. CheckProcedural holds the analogous property for the filesystem:
+// it opens the attestation-stub directory read-only
+// (internal/safeio.OpenDirUnder), and creates nothing even when the
+// directory is absent.
 //
 // # What this package does not do
 //

@@ -289,8 +289,7 @@ apply — still outstanding).
 1. Assessment Stage 2 (DFARS scoring) — needs Stage 1 (Phase 3) and the weight table, which has
    been transcribing since Phase 1 on its own timeline; check its status well before this phase
    starts, since it's the likeliest long pole in the whole backlog.
-2. `internal/baseline` slice 9 (wire `verify`'s detective/procedural layers) — needs the whole
-   baseline track essentially done.
+2. **Done.** `internal/baseline` slice 9 (wire `verify`'s detective/procedural layers).
 3. `internal/baseline` slice 8 (`disable_org_access_role_after_vend`) — smallest, most
    speculative; could be deferred past this plan entirely.
 
@@ -331,8 +330,16 @@ research plan's own order:
    `EnsureAutomationRole`'s own "must run first" constraint, both for the identical reason
    (`BP.IAM-1` denies mutating either named role once baseline-protection is attached). No schema
    change, no new `evidence.Operation`, no new `org.Verb`, no CLI flag needed — not yet built.
-9. **Wire `verify`'s detective and procedural layers** against what step 5 now installs — DESIGN
-   §12's own next increment once baseline exists, not part of this track's own scope.
+9. **Done.** Wired `verify`'s detective and procedural layers against what step 5 now installs —
+   DESIGN §12's own next increment once baseline existed. `internal/verify.CheckDetective`
+   (detective.go) reuses `internal/baseline`'s own exported comparators (`SameRecorderConfig`,
+   `SameInputParameters`) through a new read-only `awsapi.ConfigVerifyAPI`, so "matches" means
+   exactly what it means to the `Ensure*` method that would correct a drift.
+   `internal/verify.CheckProcedural` (procedural.go) reads the local attestation-stub directory,
+   read-only, no AWS call. Both follow the "opt-in, and not opted into" discipline the evidence-
+   mirror layer established. `cmd/automat/verify.go` wires both in, with a detective/procedural
+   check that could not complete at all (assumption failure, denied read, unreadable stub
+   directory) landing at `exitVerifyUnknown`, never `exitVerifyDrift`.
 
 ### Assessment Stages 1-2 (800-171A worksheet + DFARS scoring)
 

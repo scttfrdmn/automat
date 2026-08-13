@@ -3,12 +3,17 @@ Account 777788889999 (OU/root "ou-exam-golden03")
 Policy layer:
   automat-golden-1: matches
 
+Detective layer:
+  not configured: this profile enables no Config recorder and binds no Config rule
+
+Procedural layer:
+  no procedural control in this compile; nothing to attest
+
 Freshness layer:
   environment profile golden-stale: review_by 2020-01-01 has passed; re-read this document against current policy
 
 Structural honesty:
   compiled from: baseline-protection, cmmc-l1
   5 controls total: 2 enforced by this tool, 2 require a documented process outside this tool, 1 require continuous evidence collection outside this tool's scope
-  (detective and procedural findings are not checked in this build — see `automat verify --help`)
 
 automat dev

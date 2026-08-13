@@ -318,6 +318,23 @@ func (e *Ensurer) deniedRecorderWrite(err error, action string) error {
 		configGrantSentence(action, defaultRecorderName, e.Principal))
 }
 
+// DefaultRecorderName is the recorder (and delivery channel) name this
+// package always uses — see defaultRecorderName's own doc comment. Exported
+// so internal/verify's detective layer (CheckDetective, ROADMAP.md's
+// "internal/baseline, slices 2-9" item 9) can Describe the exact resource
+// this package ensures, without a second, possibly-diverging definition of
+// "which recorder automat means" living in two packages.
+const DefaultRecorderName = defaultRecorderName
+
+// SameRecorderConfig reports whether rec, as deployed, already matches
+// spec's recording scope and roleARN — exported wrapper around
+// sameRecorderConfig for internal/verify's detective layer, which needs the
+// IDENTICAL comparison EnsureConfigRecorder itself uses to decide "matches"
+// vs. "drifted", not a second, possibly-diverging reimplementation of it.
+func SameRecorderConfig(rec *configtypes.ConfigurationRecorder, spec envprofile.ConfigRecorder, roleARN string) bool {
+	return sameRecorderConfig(rec, spec, roleARN)
+}
+
 // isNoSuchConfigurationRecorder reports whether err is AWS Config's own "you
 // asked about a recorder that does not exist" signal — the exact parallel
 // isNoSuchConformancePack draws for DescribeConformancePacks and

@@ -1479,7 +1479,16 @@ func vendAttestationStubsStep(in *vendInput, st *vendState, e *org.Ensurer) erro
 // schema.json) permits one — so dots are stripped rather than left to make
 // PutConformancePack refuse a name a valid profile id can otherwise produce.
 func conformancePackName(in *vendInput) string {
-	return "automat-" + strings.ReplaceAll(in.Profile.Meta.ID, ".", "-")
+	return conformancePackNameFor(in.Profile.Meta.ID)
+}
+
+// conformancePackNameFor is conformancePackName's body, taking a bare
+// profile id rather than a *vendInput — verify.go's loadVerifyInput needs
+// the IDENTICAL name a vend would compute (there is no vendInput to build
+// against outside a vend), so the naming rule lives here, once, rather than
+// being restated in cmd/automat/verify.go with a chance to drift.
+func conformancePackNameFor(profileID string) string {
+	return "automat-" + strings.ReplaceAll(profileID, ".", "-")
 }
 
 // vendPolicySpecs packs the narrowed control set into policy specs, in the order
