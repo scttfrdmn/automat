@@ -166,33 +166,32 @@ Upstream gaps were filed and behavior-framed rather than as endpoint lists, and 
 the Organizations blocker has since closed:
 
 **Closed.** [substrate#577](https://github.com/scttfrdmn/substrate/issues/577) (root had
-no stable identity — a live bug the probe found, worth an AUDIT-2 note as evidence the
-probe paid for itself independent of the migration decision) and
-[#578](https://github.com/scttfrdmn/substrate/issues/578) (Organizations: OU tree, policy
-lifecycle, placement, tagging) both closed in **substrate v0.97.0** (2026-08-09), which
-took the plugin from 5 read-only operations to 30 — asynchronous `CreateAccount`, the
-full SCP lifecycle including `EnablePolicyType`/`DisablePolicyType`, and
-`aws:ResourceTag`/`aws:RequestTag` condition-key enforcement all now exist. `docs/
-testing-strategy.md`'s "Substrate v0.98.0" section has the full account of what landed and
-what it changes for `internal/org`'s own migration candidacy — evaluate before assuming
-either way; a newly-emulatable operation is not automatically a faithful model of the
-undocumented behavior `docs/open-questions.md`'s Q8/Q9/Q13 are actually asking about.
-[#593](https://github.com/scttfrdmn/substrate/issues/593) (`AssumeRole` did not evaluate
-a role's trust policy or an `sts:ExternalId` condition) closed in **v0.95.0**, already
-covered above.
+no stable identity) and [#578](https://github.com/scttfrdmn/substrate/issues/578)
+(Organizations: OU tree, policy lifecycle, placement, tagging) closed in **v0.97.0**
+(2026-08-09). [#593](https://github.com/scttfrdmn/substrate/issues/593) (`AssumeRole` did
+not evaluate a role's trust policy or an `sts:ExternalId` condition) closed in **v0.95.0**.
+[#619](https://github.com/scttfrdmn/substrate/issues/619) (resource-policy plugin),
+[#623](https://github.com/scttfrdmn/substrate/issues/623) (member accounts saw their own
+private organization instead of the one they belong to — the actual blocker on Q5), and
+[#624](https://github.com/scttfrdmn/substrate/issues/624) (Service Quotas requests filed
+under a placeholder account) closed across **v0.98.0–v0.99.0** (2026-08-14).
+[#629](https://github.com/scttfrdmn/substrate/issues/629) (the Account Management API —
+`ListRegions`/`EnableRegion`/`DisableRegion`/`GetRegionOptStatus`,
+`internal/baseline.EnsureRegions`'s own surface, filed by this project) and
+[#625](https://github.com/scttfrdmn/substrate/issues/625) (`CloseAccount`, `reclaim`'s own
+surface, including the `L-E619E033` quota interaction this project confirmed live) both
+closed in **v0.99.0** too. `docs/testing-strategy.md`'s "Substrate v0.95.0 → v0.99.0"
+section has the full account of what landed and what it changes for migration candidacy —
+evaluate before assuming either way; a newly-emulatable operation is not automatically a
+faithful model of the undocumented behavior `docs/open-questions.md`'s Q5/Q8/Q9/Q13/Q24
+are actually asking about.
 
-**Still open.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
-(`SimulatePrincipalPolicy`, which `preflight` is built on),
+**Still open, down to two.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
+(`SimulatePrincipalPolicy`, which `preflight` is built on) and
 [#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: no plugin, so
 `internal/baseline`'s recorder/delivery-channel/conformance-pack work has nothing to run
-against), and [#629](https://github.com/scttfrdmn/substrate/issues/629) (the Account
-Management API — `ListRegions`/`EnableRegion`/`DisableRegion`/`GetRegionOptStatus`,
-`internal/baseline.EnsureRegions`'s own surface — filed by this project 2026-08-14; no
-plugin existed and nothing tracked it before). `preflight`'s simulated-permission check,
-`baseline`'s Config-backed slices, and `baseline.EnsureRegions` remain blocked on these
-three and are not migration candidates until they land. `CloseAccount` (`reclaim`'s own
-surface) is tracked as item 2 of
-[#625](https://github.com/scttfrdmn/substrate/issues/625), also open.
+against). `preflight`'s simulated-permission check and `baseline`'s Config-backed slices
+remain blocked on these two and are not migration candidates until they land.
 Keep the behavior-first framing on any further filings.
 
 ## Phase 4 — Verify + union hardening

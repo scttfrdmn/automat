@@ -79,78 +79,86 @@ real IAM user and access key for exactly this reason.
   which is the class of thing a fake cannot get wrong by construction because it never
   parses an error off the wire.
 
-## Substrate v0.98.0 (2026-08-14): Organizations went from unusable to load-bearing
+## Substrate v0.95.0 → v0.99.0 (2026-08-09 to 2026-08-14): Organizations went from unusable to nearly complete
 
-`test/integration` now pins **v0.98.0** (was v0.95.0). Between those two releases,
-substrate's Organizations plugin went from 5 read-only operations to 30 — it can now build
-an organization, not just describe one — which changes what belongs in this tier's scope,
-not merely what version number is in `go.mod`.
+`test/integration` now pins **v0.99.0**. Across five releases in five days, substrate's
+Organizations, Account Management, and Service Quotas plugins went from "describes an
+organization" to "can build, place, govern, and close one, as a specific caller in a
+specific account" — which changes what belongs in this tier's scope, not merely what
+version number is in `go.mod`.
 
-**What v0.96.0–v0.98.0 actually added, in order:**
+**What v0.96.0–v0.99.0 actually added, in order:**
 
 - **v0.96.0**: `iam:UpdateAssumeRolePolicy` (trust-policy tightening in place, the CDK/
   Terraform shape); every service's `AccessDenied*` code now follows its real wire
   protocol instead of one generic string (a **breaking** change for any test asserting
   `AccessDeniedException` against an XML-protocol service — `automat`'s own tests assert
   no such literal, confirmed by grep before upgrading, so this cost nothing here); the
-  configured event-store backend actually persists (`RecordEvent` now flushes; previously
-  had zero callers despite being fully documented and config-tested).
+  configured event-store backend actually persists.
 - **v0.97.0**: the OU tree, asynchronous account vending (`CreateAccount` now genuinely
   returns `IN_PROGRESS` with a real `car-` request id, matching what `internal/org`'s own
   poll loop already assumes), the full SCP lifecycle including `EnablePolicyType`/
   `DisablePolicyType` and the "SCPs disabled on the root" trap DESIGN §3 fact 8 exists
   because of, resource tagging with `aws:ResourceTag`/`aws:RequestTag` condition-key
-  enforcement (Q8/Q9's own open questions — see below), and a stable root identity (fixes
-  a real determinism defect: `ListRoots` used to mint a fresh id per call).
+  enforcement (Q8/Q9's own open questions), and a stable root identity.
 - **v0.98.0**: the organization's resource policy (`PutResourcePolicy`/
-  `DescribeResourcePolicy`/`DeleteResourcePolicy` — Q5's own question, delegation
-  visibility), and the `organizations` Service Quotas entries including `L-E619E033`
-  ("Maximum number of accounts") seeded at the value substrate's own plugin enforces.
+  `DescribeResourcePolicy`/`DeleteResourcePolicy`), and the `organizations` Service Quotas
+  entries including `L-E619E033` ("Maximum number of accounts") seeded at the value
+  substrate's own plugin enforces.
+- **v0.99.0**: the fix that made v0.98.0's resource-policy plugin actually answer Q5 —
+  substrate previously keyed all Organizations state by the caller's own account with no
+  member→management index, so a member account calling any Organizations operation was
+  silently handed a brand-new organization of its own rather than the one it actually
+  belongs to (substrate#623). Also added: the **Account Management Region opt-in API**
+  (`ListRegions`/`GetRegionOptStatus`/`EnableRegion`/`DisableRegion`, closing
+  [substrate#629](https://github.com/scttfrdmn/substrate/issues/629), filed by this
+  project) and **`CloseAccount`** (closing substrate#625's item 2, including the exact
+  `L-E619E033` quota interaction this project confirmed live and recorded in
+  `docs/reclaim-design.md` — a closed account keeps its place in the org, stays in
+  `ListAccounts`, and keeps counting against the quota). Also fixed: Service Quotas
+  increase requests now file under the real caller's account rather than a placeholder
+  `000000000000` (substrate#624).
 
 **What this means for `docs/open-questions.md`'s live-org-only entries.** Several of the
 questions this project's own `docs/smoke.md` runbook lists as needing a real organization
-are now, for the first time, expressible against a deterministic emulator instead — not a
-replacement for the live-org answer (an emulator's own behavior is a model of AWS, not
-AWS), but a way to develop and regression-test the *code path* against a realistic
-authorization surface before ever touching a sandbox org, and to catch what an emulator
-can catch (a malformed request, a condition key that doesn't gate the way the code
-assumes) without spending sandbox headroom on it:
+are now expressible against a deterministic emulator — not a replacement for the live-org
+answer (an emulator's own behavior is a model of AWS, not AWS), but a way to develop and
+regression-test the *code path* against a realistic authorization surface before ever
+touching a sandbox org:
 
+- **Q5** — now genuinely testable for the first time: substrate v0.99.0's member→
+  management index means a member account's `DescribeResourcePolicy` call resolves against
+  the organization it actually belongs to, with three distinguishable answers ("nothing
+  delegated", "something delegated but unreadable", "readable"). Worth a migration
+  evaluation before spending live-org headroom on this question.
 - **Q8/Q9** (`MoveAccount`'s `aws:ResourceTag` condition, source-vs-destination-parent
   authorization) — substrate v0.97.0's tag-condition enforcement and OU/root modeling are
-  exactly the mechanism these two questions are about. Worth a migration pass: does
-  substrate's `MoveAccount` implementation happen to answer either question, or does it
-  model AWS's own undocumented behavior as an assumption substrate's authors made — the
-  same distinction this file's own "Keep all three" section draws. Check substrate's own
-  issue tracker and source before treating an emulator result as the live-org answer.
+  exactly the mechanism these two questions are about. Worth a migration pass, with the
+  same caution as always: check whether substrate's `MoveAccount` implementation is
+  answering from AWS's own documented behavior or from an assumption its authors made,
+  before treating an emulator result as the live-org answer (this file's "Keep all three"
+  section).
 - **Q13** (`BP.IAM-1`'s ordering constraint) — substrate v0.96.0's `UpdateAssumeRolePolicy`
   plus its real authorization path can now express "can a Deny SCP actually block a
-  `PutRolePolicy` call once attached", which is the mechanical half of Q13. The *timing*
-  half (how long after `AttachPolicy` a Deny becomes effective) is still real-AWS-only —
-  an emulator has no propagation delay to observe unless it deliberately models one.
-- **Q5** — substrate v0.98.0's resource-policy plugin is scoped to the caller's own
-  organization only (substrate's own tracked gap, issue #623 — no member→organization
-  reverse index yet), so it cannot yet answer Q5's actual question (what a *member*
-  account sees). Not migratable until that lands upstream.
+  `PutRolePolicy` call once attached", the mechanical half of Q13. The *timing* half (how
+  long after `AttachPolicy` a Deny becomes effective) is still real-AWS-only — an emulator
+  has no propagation delay unless it deliberately models one.
+- **Q24** (`reclaim`'s detach-then-close timing assumptions) — substrate v0.99.0's
+  `CloseAccount` resolves `PENDING_CLOSURE` → `SUSPENDED` on first observation (no
+  wall-clock dependence), which can exercise `reclaim`'s own poll/park logic against a
+  believable async shape, though not the *real* propagation-delay timing Q24 is ultimately
+  asking about.
 
-**Not yet migratable at all, tracked upstream, not automat's own gap to build around:**
+**Not yet migratable at all, tracked upstream, not automat's own gap to build around —
+down to two:**
 
 - **AWS Config** (recorder, delivery channel, conformance pack) — no plugin exists.
-  Filed and tracked as [substrate#580](https://github.com/scttfrdmn/substrate/issues/580).
-  Blocks any emulator-tier test of `internal/baseline`'s `EnsureConfigRecorder`/
+  Tracked as [substrate#580](https://github.com/scttfrdmn/substrate/issues/580). Blocks
+  any emulator-tier test of `internal/baseline`'s `EnsureConfigRecorder`/
   `EnsureDeliveryChannel`/`EnsureConformancePack`.
-- **`iam:SimulatePrincipalPolicy`** — no plugin support. Filed and tracked as
+- **`iam:SimulatePrincipalPolicy`** — no plugin support. Tracked as
   [substrate#579](https://github.com/scttfrdmn/substrate/issues/579). Blocks any
   emulator-tier test of `internal/preflight`'s simulated-permission checks.
-- **The Account Management API** (`ListRegions`/`EnableRegion`/`DisableRegion`/
-  `GetRegionOptStatus`) — no plugin exists at all, and none was tracked until this
-  project filed [substrate#629](https://github.com/scttfrdmn/substrate/issues/629).
-  Blocks any emulator-tier test of `internal/baseline.EnsureRegions`.
-- **`CloseAccount`** — absent from substrate entirely, including the quota interaction
-  with `L-E619E033` this project confirmed live and recorded in
-  `docs/reclaim-design.md`. Tracked as item 2 of
-  [substrate#625](https://github.com/scttfrdmn/substrate/issues/625). Blocks any
-  emulator-tier test of `reclaim`.
 
 **The discipline stays the same regardless of how much of Organizations substrate now
 covers**: migrate a package's tests to the emulator only when the emulator can express
