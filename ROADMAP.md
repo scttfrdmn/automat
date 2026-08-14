@@ -162,23 +162,38 @@ Constraints, both non-negotiable and both from CLAUDE.md's testing section:
   fakes until an emulator can express a call that succeeds against state that
   changed underneath it.
 
-Upstream gaps are filed and behavior-framed rather than as endpoint lists:
-[substrate#577](https://github.com/scttfrdmn/substrate/issues/577) (root has no
-stable identity — a live bug the probe found, worth an AUDIT-2 note as evidence the
-probe paid for itself independent of the migration decision),
-[#578](https://github.com/scttfrdmn/substrate/issues/578) (Organizations: OU tree,
-policy lifecycle, placement, tagging — 17 operations plus the nine behaviors the
-ensure layer depends on), [#579](https://github.com/scttfrdmn/substrate/issues/579)
+Upstream gaps were filed and behavior-framed rather than as endpoint lists, and most of
+the Organizations blocker has since closed:
+
+**Closed.** [substrate#577](https://github.com/scttfrdmn/substrate/issues/577) (root had
+no stable identity — a live bug the probe found, worth an AUDIT-2 note as evidence the
+probe paid for itself independent of the migration decision) and
+[#578](https://github.com/scttfrdmn/substrate/issues/578) (Organizations: OU tree, policy
+lifecycle, placement, tagging) both closed in **substrate v0.97.0** (2026-08-09), which
+took the plugin from 5 read-only operations to 30 — asynchronous `CreateAccount`, the
+full SCP lifecycle including `EnablePolicyType`/`DisablePolicyType`, and
+`aws:ResourceTag`/`aws:RequestTag` condition-key enforcement all now exist. `docs/
+testing-strategy.md`'s "Substrate v0.98.0" section has the full account of what landed and
+what it changes for `internal/org`'s own migration candidacy — evaluate before assuming
+either way; a newly-emulatable operation is not automatically a faithful model of the
+undocumented behavior `docs/open-questions.md`'s Q8/Q9/Q13 are actually asking about.
+[#593](https://github.com/scttfrdmn/substrate/issues/593) (`AssumeRole` did not evaluate
+a role's trust policy or an `sts:ExternalId` condition) closed in **v0.95.0**, already
+covered above.
+
+**Still open.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
 (`SimulatePrincipalPolicy`, which `preflight` is built on),
 [#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: no plugin, so
-`baseline` has nothing to run against). Keep the behavior-first framing on any
-further filings. `preflight`, `org`, and `baseline` are blocked on #578–580 and are
-not migration candidates until they land.
-[#593](https://github.com/scttfrdmn/substrate/issues/593) (`AssumeRole` did not
-evaluate a role's trust policy or an `sts:ExternalId` condition — found while
-building this section, above) is **closed**, fixed in substrate v0.95.0; the
-resolution is why `broker`'s emulator tests now cover the real property rather than
-a documented gap around it.
+`internal/baseline`'s recorder/delivery-channel/conformance-pack work has nothing to run
+against), and [#629](https://github.com/scttfrdmn/substrate/issues/629) (the Account
+Management API — `ListRegions`/`EnableRegion`/`DisableRegion`/`GetRegionOptStatus`,
+`internal/baseline.EnsureRegions`'s own surface — filed by this project 2026-08-14; no
+plugin existed and nothing tracked it before). `preflight`'s simulated-permission check,
+`baseline`'s Config-backed slices, and `baseline.EnsureRegions` remain blocked on these
+three and are not migration candidates until they land. `CloseAccount` (`reclaim`'s own
+surface) is tracked as item 2 of
+[#625](https://github.com/scttfrdmn/substrate/issues/625), also open.
+Keep the behavior-first framing on any further filings.
 
 ## Phase 4 — Verify + union hardening
 - **`verify` SHIPPED, scoped to the policy and freshness layers.** DESIGN §12 names four layers (policy, detective, procedural, freshness); the detective layer (Config recorder, conformance pack) and the procedural layer (attestation stubs) both check something DESIGN §7 step 5 — `internal/baseline` — was meant to install, and that package still does not exist, so there is nothing in a vended account for either layer to check against. `automat verify --account <id>` says so in its own output rather than staying silent about the gap, the same discipline `vend` follows for the identical shortfall (docs/cli-surface.md D3). `--ou <id>` from DESIGN §12's literal flag text is not offered: baseline-protection (compiled into every vend, never optional) exempts automat's in-account automation role by ARN, which embeds the account id, so `compilesets.Pack` cannot render the expected policy set for an OU with no account in hand.
