@@ -79,14 +79,15 @@ real IAM user and access key for exactly this reason.
   which is the class of thing a fake cannot get wrong by construction because it never
   parses an error off the wire.
 
-## Substrate v0.95.0 → v0.100.0 (2026-08-09 to 2026-08-14): Organizations, Account Management, and IAM simulation all went from unusable to nearly complete
+## Substrate v0.95.0 → v0.101.0 (2026-08-09 to 2026-08-15): every tracked gap closed
 
-`test/integration` now pins **v0.100.0**. Across six releases in six days, substrate's
-Organizations, Account Management, Service Quotas, and IAM plugins went from "describes an
-organization, cannot say whether a call is allowed" to "can build, place, govern, and close
-an organization, as a specific caller in a specific account, and can answer the permission
-question `preflight` is built entirely around" — which changes what belongs in this tier's
-scope, not merely what version number is in `go.mod`.
+`test/integration` now pins **v0.101.0**. Across six releases in seven days, substrate's
+Organizations, Account Management, Service Quotas, IAM, and Config plugins went from
+"describes an organization, cannot say whether a call is allowed, has no detective
+controls at all" to covering every AWS surface `internal/org`, `internal/preflight`, and
+`internal/baseline` depend on — which changes what belongs in this tier's scope, not
+merely what version number is in `go.mod`. Every substrate gap this project ever filed or
+tracked (#577, #578, #579, #580, #619, #623, #624, #625, #629) is now **closed**.
 
 **What v0.96.0–v0.99.0 actually added, in order:**
 
@@ -132,6 +133,23 @@ scope, not merely what version number is in `go.mod`.
   support (a prerequisite for a correct simulation, not an extra) and `GetPolicyVersion`/
   `ListPolicyVersions`, which is what makes a simulated `implicitDeny` checkable — the
   caller can now read the policy that failed to grant it.
+- **v0.101.0**: AWS Config, taken whole (closing
+  [substrate#580](https://github.com/scttfrdmn/substrate/issues/580)) — 25 operations
+  covering the recorder, delivery channel, Config rules, and conformance packs, exactly
+  the surface `internal/baseline`'s `EnsureConfigRecorder`/`EnsureDeliveryChannel`/
+  `EnsureConformancePack` drive. Models the identical "created but not started" trap
+  those three methods' own doc comments already name as the reason they read-then-branch
+  twice rather than once: `PutConfigurationRecorder` leaves `recording: false`, only
+  `StartConfigurationRecorder` flips it, and the two are genuinely separate wire calls
+  with genuinely separate refusal shapes (`NoAvailableDeliveryChannelException` for one
+  ordering mistake, `NoAvailableConfigurationRecorderException` for the other). Every
+  state key carries the Region, matching `EnsureRegions`' own region-scoped baseline
+  model. `PutDeliveryChannel`'s S3 refusals are computed from real S3 bucket-policy
+  state in the same emulator, which is the kind of cross-service check a hand-rolled fake
+  cannot express by construction. Compliance is seeded, never computed — an unevaluated
+  rule reports `INSUFFICIENT_DATA`, matching real AWS, not a free `COMPLIANT` — so a test
+  asserting on compliance state must seed it explicitly rather than rely on emulator
+  inference.
 
 **What this means for `docs/open-questions.md`'s live-org-only entries.** Several of the
 questions this project's own `docs/smoke.md` runbook lists as needing a real organization
@@ -163,8 +181,7 @@ touching a sandbox org:
   believable async shape, though not the *real* propagation-delay timing Q24 is ultimately
   asking about.
 
-**`preflight`'s simulated-permission check is now migratable — the only one of the two
-long-standing blockers left un-migrated is the other one.** `internal/preflight`'s
+**`preflight`'s simulated-permission check is now migratable.** `internal/preflight`'s
 `checkPermissions` (DESIGN §4/§13) calls `iam:SimulatePrincipalPolicy` and reports
 `Certainty: Simulated` precisely because a simulated allow does not account for SCPs —
 substrate v0.100.0's own implementation makes that exact same disclosure for the exact
@@ -172,17 +189,26 @@ same reason, so an emulator-tier test of this check would be validating automat'
 Simulated/Observed distinction against a real (if not real-AWS) evaluator rather than a
 fake that was written to say yes. Worth a migration evaluation.
 
-**Not yet migratable at all, tracked upstream, not automat's own gap to build around —
-down to one:**
+**`internal/baseline`'s Config-backed slices are now migratable too.** Substrate v0.101.0
+models the identical "created but not started" trap `EnsureConfigRecorder`'s own doc
+comment already names as the reason it read-then-branches twice — a real emulator-tier
+test can now exercise the exact two-write sequence and its two distinct refusal shapes
+rather than only a hand-rolled fake's idea of them. `EnsureDeliveryChannel`'s S3-bucket-
+policy validation is a genuine cross-service check (substrate computes the refusal from
+real S3 bucket-policy state in the same emulator), which is precisely the class of thing
+an emulator is suited for and a fake cannot express by construction. Compliance state is
+seeded, never computed, on both sides — `internal/baseline` never reads Config compliance
+today, so this doesn't change what it can test, only confirms the emulator won't silently
+invent a compliance answer if that ever changes.
 
-- **AWS Config** (recorder, delivery channel, conformance pack) — no plugin exists.
-  Tracked as [substrate#580](https://github.com/scttfrdmn/substrate/issues/580). Blocks
-  any emulator-tier test of `internal/baseline`'s `EnsureConfigRecorder`/
-  `EnsureDeliveryChannel`/`EnsureConformancePack`.
+**Every substrate gap this project ever tracked is now closed.** There is nothing left in
+this list. Future gaps, if any surface, get filed and tracked the same way these were.
 
-**The discipline stays the same regardless of how much of Organizations substrate now
-covers**: migrate a package's tests to the emulator only when the emulator can express
-what those tests actually assert, and say in the commit which of the three tiers
-(`internal/awsfake`, the emulator, `internal/smoke`) the moved or added tests are testing.
-A newly-emulatable operation is an invitation to evaluate a migration, not a mandate to
-perform one.
+**The discipline stays the same regardless of how much of AWS substrate now covers**:
+migrate a package's tests to the emulator only when the emulator can express what those
+tests actually assert, and say in the commit which of the three tiers (`internal/awsfake`,
+the emulator, `internal/smoke`) the moved or added tests are testing. A newly-emulatable
+operation is an invitation to evaluate a migration, not a mandate to perform one — and a
+migration evaluation across `internal/org`, `internal/preflight`, and `internal/baseline`
+is now, for the first time, possible to actually carry out rather than blocked before it
+starts.

@@ -180,25 +180,28 @@ under a placeholder account) closed across **v0.98.0–v0.99.0** (2026-08-14).
 `internal/baseline.EnsureRegions`'s own surface, filed by this project) and
 [#625](https://github.com/scttfrdmn/substrate/issues/625) (`CloseAccount`, `reclaim`'s own
 surface, including the `L-E619E033` quota interaction this project confirmed live) both
-closed in **v0.99.0** too. `docs/testing-strategy.md`'s "Substrate v0.95.0 → v0.99.0"
-section has the full account of what landed and what it changes for migration candidacy —
-evaluate before assuming either way; a newly-emulatable operation is not automatically a
-faithful model of the undocumented behavior `docs/open-questions.md`'s Q5/Q8/Q9/Q13/Q24
-are actually asking about.
+closed in **v0.99.0** too.
 
-**Closed, most recently.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
+**Closed.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
 (`SimulatePrincipalPolicy`/`SimulateCustomPolicy`, which `preflight` is built on) closed in
 **v0.100.0** (2026-08-14) — runs the same evaluator substrate's own request gate enforces
 with, reports the three-way allowed/explicitDeny/implicitDeny distinction `preflight`'s own
 `Certainty` field is built around, and deliberately does not evaluate SCPs, matching
-exactly the caveat `preflight`'s own doc comment states about real IAM. `preflight`'s
-simulated-permission check is now a migration candidate.
+exactly the caveat `preflight`'s own doc comment states about real IAM.
 
-**Still open, down to one.** [#580](https://github.com/scttfrdmn/substrate/issues/580)
-(AWS Config: no plugin, so `internal/baseline`'s recorder/delivery-channel/
-conformance-pack work has nothing to run against). `baseline`'s Config-backed slices
-remain blocked on this one and are not migration candidates until it lands.
-Keep the behavior-first framing on any further filings.
+**Closed, and with it every substrate gap this project ever tracked.**
+[#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: recorder, delivery
+channel, Config rules, conformance packs — 25 operations) closed in **v0.101.0**
+(2026-08-15), modeling the identical "created but not started" trap
+`EnsureConfigRecorder`'s own doc comment already names, and computing
+`EnsureDeliveryChannel`'s S3 refusals from real bucket-policy state in the same emulator.
+`internal/org`, `internal/preflight`, and `internal/baseline` are now all migration
+candidates — `docs/testing-strategy.md`'s "Substrate v0.95.0 → v0.101.0" section has the
+full account of what landed across all six releases and what each change means for a
+migration evaluation; a newly-emulatable operation is not automatically a faithful model
+of the undocumented behavior `docs/open-questions.md`'s Q5/Q8/Q9/Q13/Q24 are actually
+asking about, so evaluate before assuming either way. Keep the behavior-first framing on
+any further filings, should a new gap surface.
 
 ## Phase 4 — Verify + union hardening
 - **`verify` SHIPPED, scoped to the policy and freshness layers.** DESIGN §12 names four layers (policy, detective, procedural, freshness); the detective layer (Config recorder, conformance pack) and the procedural layer (attestation stubs) both check something DESIGN §7 step 5 — `internal/baseline` — was meant to install, and that package still does not exist, so there is nothing in a vended account for either layer to check against. `automat verify --account <id>` says so in its own output rather than staying silent about the gap, the same discipline `vend` follows for the identical shortfall (docs/cli-surface.md D3). `--ou <id>` from DESIGN §12's literal flag text is not offered: baseline-protection (compiled into every vend, never optional) exempts automat's in-account automation role by ARN, which embeds the account id, so `compilesets.Pack` cannot render the expected policy set for an OU with no account in hand.
