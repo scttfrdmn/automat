@@ -186,12 +186,18 @@ evaluate before assuming either way; a newly-emulatable operation is not automat
 faithful model of the undocumented behavior `docs/open-questions.md`'s Q5/Q8/Q9/Q13/Q24
 are actually asking about.
 
-**Still open, down to two.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
-(`SimulatePrincipalPolicy`, which `preflight` is built on) and
-[#580](https://github.com/scttfrdmn/substrate/issues/580) (AWS Config: no plugin, so
-`internal/baseline`'s recorder/delivery-channel/conformance-pack work has nothing to run
-against). `preflight`'s simulated-permission check and `baseline`'s Config-backed slices
-remain blocked on these two and are not migration candidates until they land.
+**Closed, most recently.** [#579](https://github.com/scttfrdmn/substrate/issues/579)
+(`SimulatePrincipalPolicy`/`SimulateCustomPolicy`, which `preflight` is built on) closed in
+**v0.100.0** (2026-08-14) — runs the same evaluator substrate's own request gate enforces
+with, reports the three-way allowed/explicitDeny/implicitDeny distinction `preflight`'s own
+`Certainty` field is built around, and deliberately does not evaluate SCPs, matching
+exactly the caveat `preflight`'s own doc comment states about real IAM. `preflight`'s
+simulated-permission check is now a migration candidate.
+
+**Still open, down to one.** [#580](https://github.com/scttfrdmn/substrate/issues/580)
+(AWS Config: no plugin, so `internal/baseline`'s recorder/delivery-channel/
+conformance-pack work has nothing to run against). `baseline`'s Config-backed slices
+remain blocked on this one and are not migration candidates until it lands.
 Keep the behavior-first framing on any further filings.
 
 ## Phase 4 — Verify + union hardening

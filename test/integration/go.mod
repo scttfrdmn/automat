@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/iam v1.58.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.3
 	github.com/scttfrdmn/automat v0.0.0
-	github.com/scttfrdmn/substrate v0.99.0
+	github.com/scttfrdmn/substrate v0.100.0
 )
 
 require (

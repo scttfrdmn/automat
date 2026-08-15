@@ -79,13 +79,14 @@ real IAM user and access key for exactly this reason.
   which is the class of thing a fake cannot get wrong by construction because it never
   parses an error off the wire.
 
-## Substrate v0.95.0 → v0.99.0 (2026-08-09 to 2026-08-14): Organizations went from unusable to nearly complete
+## Substrate v0.95.0 → v0.100.0 (2026-08-09 to 2026-08-14): Organizations, Account Management, and IAM simulation all went from unusable to nearly complete
 
-`test/integration` now pins **v0.99.0**. Across five releases in five days, substrate's
-Organizations, Account Management, and Service Quotas plugins went from "describes an
-organization" to "can build, place, govern, and close one, as a specific caller in a
-specific account" — which changes what belongs in this tier's scope, not merely what
-version number is in `go.mod`.
+`test/integration` now pins **v0.100.0**. Across six releases in six days, substrate's
+Organizations, Account Management, Service Quotas, and IAM plugins went from "describes an
+organization, cannot say whether a call is allowed" to "can build, place, govern, and close
+an organization, as a specific caller in a specific account, and can answer the permission
+question `preflight` is built entirely around" — which changes what belongs in this tier's
+scope, not merely what version number is in `go.mod`.
 
 **What v0.96.0–v0.99.0 actually added, in order:**
 
@@ -118,6 +119,19 @@ version number is in `go.mod`.
   `ListAccounts`, and keeps counting against the quota). Also fixed: Service Quotas
   increase requests now file under the real caller's account rather than a placeholder
   `000000000000` (substrate#624).
+- **v0.100.0**: `SimulatePrincipalPolicy` and `SimulateCustomPolicy` (closing
+  [substrate#579](https://github.com/scttfrdmn/substrate/issues/579)) — running the
+  **same evaluator the request gate itself enforces with**, so a simulated answer cannot
+  disagree with what an actual call would do. Reports `allowed`/`explicitDeny`/
+  `implicitDeny` as three distinct outcomes, `MatchedStatements` (which policy decided),
+  and `MissingContextValues` — everything `preflight`'s own simulated-permission check
+  reads. Explicitly, correctly, does **not** evaluate SCPs (substrate stores them but
+  `CheckAccess` never consults them either), so a simulated allow here carries the exact
+  same caveat `preflight`'s own doc comment already states about real IAM: SCP effects
+  are invisible to simulation, full stop, on both AWS and substrate. Also added IAM group
+  support (a prerequisite for a correct simulation, not an extra) and `GetPolicyVersion`/
+  `ListPolicyVersions`, which is what makes a simulated `implicitDeny` checkable — the
+  caller can now read the policy that failed to grant it.
 
 **What this means for `docs/open-questions.md`'s live-org-only entries.** Several of the
 questions this project's own `docs/smoke.md` runbook lists as needing a real organization
@@ -149,16 +163,22 @@ touching a sandbox org:
   believable async shape, though not the *real* propagation-delay timing Q24 is ultimately
   asking about.
 
+**`preflight`'s simulated-permission check is now migratable — the only one of the two
+long-standing blockers left un-migrated is the other one.** `internal/preflight`'s
+`checkPermissions` (DESIGN §4/§13) calls `iam:SimulatePrincipalPolicy` and reports
+`Certainty: Simulated` precisely because a simulated allow does not account for SCPs —
+substrate v0.100.0's own implementation makes that exact same disclosure for the exact
+same reason, so an emulator-tier test of this check would be validating automat's own
+Simulated/Observed distinction against a real (if not real-AWS) evaluator rather than a
+fake that was written to say yes. Worth a migration evaluation.
+
 **Not yet migratable at all, tracked upstream, not automat's own gap to build around —
-down to two:**
+down to one:**
 
 - **AWS Config** (recorder, delivery channel, conformance pack) — no plugin exists.
   Tracked as [substrate#580](https://github.com/scttfrdmn/substrate/issues/580). Blocks
   any emulator-tier test of `internal/baseline`'s `EnsureConfigRecorder`/
   `EnsureDeliveryChannel`/`EnsureConformancePack`.
-- **`iam:SimulatePrincipalPolicy`** — no plugin support. Tracked as
-  [substrate#579](https://github.com/scttfrdmn/substrate/issues/579). Blocks any
-  emulator-tier test of `internal/preflight`'s simulated-permission checks.
 
 **The discipline stays the same regardless of how much of Organizations substrate now
 covers**: migrate a package's tests to the emulator only when the emulator can express
